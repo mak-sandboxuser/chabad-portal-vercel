@@ -8,6 +8,8 @@ import Login from './components/Login';
 import Portal from './components/Portal';
 import EmailLinkVerifier, { shouldRunEmailLinkVerifier } from './components/EmailLinkVerifier';
 import ToastHost from './components/shared/ToastHost';
+import OnboardWelcome, { ONBOARD_PATH } from './components/onboard/OnboardWelcome';
+import OnboardAboutYou, { ONBOARD_ABOUT_YOU_PATH } from './components/onboard/OnboardAboutYou';
 
 const LOGIN_SUCCESS_FLAG = 'show_login_success';
 const TOKEN_KEEPALIVE_MS = 30_000;
@@ -127,6 +129,24 @@ export default function App() {
       restoringSession,
     });
   }, [isLoaded, isSignedIn, userId, restoringSession, clerk, auth.authenticated, auth.clerkUserId, auth.effectiveUserId, sfUser]);
+
+  if (window.location.pathname === ONBOARD_PATH) {
+    return (
+      <>
+        <ToastHost />
+        <OnboardWelcome />
+      </>
+    );
+  }
+
+  if (window.location.pathname === ONBOARD_ABOUT_YOU_PATH) {
+    return (
+      <>
+        <ToastHost />
+        <OnboardAboutYou />
+      </>
+    );
+  }
 
   // If Direct Salesforce Login session exists, bypass Clerk authentication
   if (sfUser) {

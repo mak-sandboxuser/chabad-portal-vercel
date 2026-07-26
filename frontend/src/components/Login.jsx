@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Mail, ArrowRight, ShieldAlert, Shield, CheckCircle, HelpCircle, Moon, Sun, Lock, Headphones, KeyRound } from 'lucide-react';
 import BuildingSketch from './shared/BuildingSketch';
 import ChabadLogo from './shared/ChabadLogo';
+import { ONBOARD_PATH } from './onboard/OnboardWelcome';
 import { apiUrl } from '../config/api';
 import { authTrace } from '../utils/authTrace';
 import {
@@ -302,7 +303,7 @@ export default function Login({ initialError = '' }) {
                   <span className="divider-text">Need help?</span>
                 </div>
 
-                <a href="mailto:info@chabadbedford.com" className="support-link-btn">
+                <a href={ONBOARD_PATH} className="support-link-btn">
                   <Headphones size={18} className="phone-icon" />
                   <span>Contact Support</span>
                 </a>

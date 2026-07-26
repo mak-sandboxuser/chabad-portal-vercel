@@ -53,3 +53,17 @@ export async function fetchPortalApi(path, {
 
   return data;
 }
+
+export async function fetchGroups() {
+  const response = await fetch(apiUrl('/api/groups'), {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  const data = await response.json().catch(() => []);
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to fetch groups');
+  }
+  return data;
+}

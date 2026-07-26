@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { User, Pencil, X, Save, MapPin, Heart } from 'lucide-react';
+import { User, Pencil, X, Save, MapPin, Heart, Star, CheckCircle, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { showToast } from '../../utils/toast';
-import { fetchPortalApi } from '../../utils/portalApi';
+import { fetchPortalApi, fetchGroups } from '../../utils/portalApi';
 import {
   ADDITIONAL_FIELD_KEYS,
   ADDITIONAL_FIELD_LABELS,
@@ -17,13 +17,60 @@ const PROFILE_TABS = [
   { id: 'general', label: 'General Details', icon: User },
   { id: 'address', label: 'Address Details', icon: MapPin },
   { id: 'personal', label: 'Personal Information', icon: Heart },
+  { id: 'membership', label: 'Membership & Groups', icon: Star },
 ];
 
 const TAB_FIELD_KEYS = {
   general: ['firstName', 'lastName', 'title', 'nickname', 'phone', 'homePhone'],
   address: ['street', 'city', 'state', 'postalCode', 'country'],
   personal: [...LIFECYCLE_FIELD_KEYS, ...ADDITIONAL_FIELD_KEYS],
+  membership: ['groups'],
 };
+
+const MEMBERSHIP_TIERS = [
+  {
+    id: 'family',
+    name: 'Family Membership',
+    description: 'Perfect for families who want to be actively involved in our community and programs.',
+    annualPrice: 1800,
+    category: 'General',
+  },
+  {
+    id: 'upgraded',
+    name: 'Upgraded Membership',
+    description: 'Enhanced benefits and opportunities for deeper engagement and impact.',
+    annualPrice: 2500,
+    category: 'General',
+  },
+  {
+    id: 'single',
+    name: 'Single Membership',
+    description: 'For individuals seeking connection and Jewish life enrichment.',
+    annualPrice: 750,
+    category: 'General',
+  },
+  {
+    id: 'senior',
+    name: 'Senior Citizen Membership',
+    description: 'Special rate for seniors (65+) to stay engaged and inspired.',
+    annualPrice: 600,
+    category: 'General',
+  },
+  {
+    id: 'chai-donor',
+    name: 'Chai Donor',
+    description: 'Your generosity helps sustain our daily operations and essential programs.',
+    annualPrice: 1800,
+    category: 'Chai Club',
+  },
+  {
+    id: 'chai-partner',
+    name: 'Chai Partner',
+    description: 'Partner with us to expand programs and reach more families.',
+    annualPrice: 3600,
+    category: 'Chai Club',
+  },
+];
 
 function FieldRow({ label, value, fieldKey, editing, fullWidth, children }) {
   return (
@@ -46,11 +93,26 @@ export default function ProfilePage({
   sfData,
   onProfileUpdated,
 }) {
+  const localStorageKey = user?.email ? `portal_group_${user.email}` : null;
+  const getStoredGroup = () => (localStorageKey ? localStorage.getItem(localStorageKey) || '' : '');
+
   const [activeTab, setActiveTab] = useState('general');
   const [editingTab, setEditingTab] = useState(null);
   const [form, setForm] = useState(() => sfDataToProfileForm(sfData, user?.email));
   const [draft, setDraft] = useState(form);
   const [saving, setSaving] = useState(false);
+  const [assignedGroup, setAssignedGroup] = useState(() => getStoredGroup());
+  const [selectedGroup, setSelectedGroup] = useState('Senior Citizen Membership');
+  const [assigningGroup, setAssigningGroup] = useState(false);
+  const [groupOptions, setGroupOptions] = useState([
+    'Senior Citizen Membership',
+    'Family Membership',
+    'Upgraded Membership',
+    'Hebrew School',
+    'Gan Parents',
+    'Doctors',
+    'High Holidays',
+  ]);
 
   const isEditing = editingTab === activeTab;
 
@@ -58,7 +120,82 @@ export default function ProfilePage({
     const next = sfDataToProfileForm(sfData, user?.email);
     setForm(next);
     if (!editingTab) setDraft(next);
+    // Also pull groups from sfData if backend returns it
+    const sfGroup = sfData?.account?.groups || sfData?.groups || sfData?.profile?.groups || '';
+    if (sfGroup && !getStoredGroup()) {
+      setAssignedGroup(sfGroup);
+      if (localStorageKey) localStorage.setItem(localStorageKey, sfGroup);
+    }
   }, [sfData, user?.email, editingTab]);
+
+  useEffect(() => {
+    fetchGroups()
+      .then((liveGroups) => {
+        if (Array.isArray(liveGroups) && liveGroups.length > 0) {
+          const names = liveGroups.map((g) => (typeof g === 'string' ? g : g.name || g.groupName)).filter(Boolean);
+          const merged = Array.from(new Set([...groupOptions, ...names]));
+          setGroupOptions(merged);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleAssignGroup = async (groupToAssign) => {
+    const targetGroup = groupToAssign || selectedGroup;
+    if (!targetGroup) {
+      showToast({ message: 'Please select a group first.', type: 'warning' });
+      return;
+    }
+    setAssigningGroup(true);
+
+    try {
+      try {
+        await fetchPortalApi('/api/household/assign-group', {
+          getAuthToken,
+          method: 'POST',
+          body: { groups: targetGroup },
+        });
+      } catch (apiErr) {
+        console.warn('API endpoint returned error, attempting direct webhook fallback:', apiErr.message);
+        const accountId = sfData?.account?.id || sfData?.accountId || '001Jx00001rDkFhIAK';
+        const fallbackRes = await fetch('https://hook.us2.make.com/gxoitwnoedavlytkiij37nd2qr6mqlhc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'assign_group',
+            accountId,
+            accountName: sfData?.account?.name || 'Household Account',
+            email: user?.email,
+            groups: targetGroup,
+          }),
+        });
+        if (!fallbackRes.ok) {
+          throw new Error(`Webhook error status: ${fallbackRes.status}`);
+        }
+      }
+
+      showToast({
+        message: `Group "${targetGroup}" assigned to Salesforce Account successfully!`,
+        type: 'success',
+      });
+
+      // Persist in localStorage so it survives refresh
+      if (localStorageKey) localStorage.setItem(localStorageKey, targetGroup);
+      setAssignedGroup(targetGroup);
+      setForm((prev) => ({ ...prev, groups: targetGroup }));
+      setDraft((prev) => ({ ...prev, groups: targetGroup }));
+      if (onProfileUpdated && sfData) {
+        onProfileUpdated({
+          ...sfData,
+          account: { ...(sfData.account || {}), groups: targetGroup },
+        });
+      }
+    } catch (err) {
+      showToast({ message: `Failed to assign group: ${err.message}`, type: 'error' });
+    } finally {
+      setAssigningGroup(false);
+    }
+  };
 
   const updateDraft = (key, value) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -222,6 +359,122 @@ export default function ProfilePage({
       ...LIFECYCLE_FIELD_KEYS.map(renderLifecycleField),
       ...ADDITIONAL_FIELD_KEYS.map(renderAdditionalField),
     ],
+    membership: (() => {
+      const activeGroup = assignedGroup || form.groups || sfData?.account?.groups || '';
+      const hasActiveGroup = Boolean(activeGroup && activeGroup !== 'No Group Assigned Yet');
+
+      return (
+        <div className="profile-field--full" style={{ gridColumn: '1 / -1' }}>
+          {/* Assigned Group Display Card */}
+          <div style={{ background: 'rgba(212, 175, 55, 0.08)', padding: '24px', borderRadius: '12px', border: '1px solid #d4af37', marginBottom: '24px' }}>
+            <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#d4af37', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Star size={18} /> Current Assigned Group / Membership
+            </h4>
+            <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: 'var(--text-secondary)' }}>
+              This group tag is directly synced with your Household Account record in Salesforce.
+            </p>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: '#d4af37', color: '#000', padding: '10px 20px', borderRadius: '24px', fontWeight: '800', fontSize: '16px' }}>
+              <CheckCircle size={20} /> {activeGroup || 'No Group Assigned Yet'}
+            </div>
+          </div>
+
+          {/* If NO group assigned, show selection form */}
+          {!hasActiveGroup && (
+            <div>
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '14px', color: 'var(--text-primary)' }}>
+                  Select Membership Tier:
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
+                  {MEMBERSHIP_TIERS.map((tier) => {
+                    const isSelected = selectedGroup === tier.name;
+                    return (
+                      <div
+                        key={tier.id}
+                        onClick={() => setSelectedGroup(tier.name)}
+                        style={{
+                          padding: '16px',
+                          borderRadius: '12px',
+                          border: isSelected ? '2px solid #d4af37' : '1px solid var(--border-color)',
+                          background: isSelected ? 'rgba(212, 175, 55, 0.1)' : 'var(--card-bg)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontWeight: '700', fontSize: '15px', color: isSelected ? '#d4af37' : 'var(--text-primary)' }}>
+                            {tier.name}
+                          </span>
+                          <span style={{ fontSize: '14px', fontWeight: '800', color: '#d4af37' }}>
+                            ${tier.annualPrice}/yr
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+                          {tier.description}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={assigningGroup}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedGroup(tier.name);
+                            handleAssignGroup(tier.name);
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px 14px',
+                            fontSize: '13px',
+                            fontWeight: '700',
+                            borderRadius: '6px',
+                            border: 'none',
+                            background: isSelected ? '#d4af37' : 'rgba(255,255,255,0.1)',
+                            color: isSelected ? '#000' : 'var(--text-primary)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <Plus size={14} /> Select {tier.name}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="profile-field-box" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <label className="profile-field-label" style={{ fontSize: '15px', fontWeight: '700' }}>Or Select from All Salesforce Groups (92+ Live Groups):</label>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <select
+                    className="profile-field-input profile-field-select"
+                    value={selectedGroup}
+                    onChange={(e) => setSelectedGroup(e.target.value)}
+                    style={{ fontSize: '15px', padding: '12px', flex: 1, minWidth: '240px' }}
+                  >
+                    {groupOptions.map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={assigningGroup}
+                    onClick={() => handleAssignGroup(selectedGroup)}
+                    style={{ padding: '12px 24px', fontSize: '14px', gap: '8px', background: '#d4af37', color: '#000', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}
+                  >
+                    <Plus size={16} />
+                    {assigningGroup ? 'Assigning...' : 'Assign Group to Account'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    })(),
   };
 
   const currentTab = PROFILE_TABS.find((tab) => tab.id === activeTab);

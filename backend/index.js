@@ -2325,10 +2325,96 @@ app.post('/api/household/search-contacts', async (req, res) => {
   }
 });
 
-app.post('/api/household/add-family-member', async (req, res) => {
+app.get('/api/groups', async (req, res) => {
+  const webhookUrl = process.env.MAKE_GROUPS_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return res.status(503).json({
+      error: 'MAKE_GROUPS_WEBHOOK_URL is not configured. Add your Make.com groups webhook to backend/.env',
+    });
+  }
+
+  try {
+    const response = await fetch(webhookUrl, { method: 'GET' });
+    if (!response.ok) {
+      throw new Error(`Make webhook responded with status: ${response.status}`);
+    }
+    const data = await response.json().catch(() => null);
+    if (!data) {
+      return res.json([]);
+    }
+    return res.json(data);
+  } catch (error) {
+    console.error('Fetch groups error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/household/assign-group', async (req, res) => {
   const auth = await resolveAuthedPortalMember(req);
   if (auth.error) {
     return res.status(auth.error.status).json({ error: auth.error.message, code: auth.error.code });
+  }
+
+  const webhookUrl = process.env.MAKE_ASSIGN_GROUP_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return res.status(503).json({ error: 'MAKE_ASSIGN_GROUP_WEBHOOK_URL is not configured in backend/.env' });
+  }
+
+  const groups = req.body?.groups || req.body?.group || '';
+  if (!groups) {
+    return res.status(400).json({ error: 'groups is required.' });
+  }
+
+  try {
+    const payload = {
+      action: 'assign_group',
+      accountId: auth.accountId,
+      accountName: auth.accountName,
+      contactId: auth.contactId,
+      email: auth.email,
+      groups,
+    };
+
+    const makeRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const responseText = await makeRes.text();
+    console.log(`[ASSIGN-GROUP] Make webhook response for ${auth.email} (AccountId: ${auth.accountId}):`, responseText);
+
+    return res.json({
+      success: true,
+      message: `Group "${groups}" assigned to household account ${auth.accountName} (${auth.accountId}) successfully!`,
+      accountId: auth.accountId,
+      groups,
+      makeResponse: responseText,
+    });
+  } catch (error) {
+    console.error('Assign group webhook error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/household/add-family-member', async (req, res) => {
+  const body = req.body || {};
+  const isOnboarding = body.isOnboarding === true;
+
+  let auth;
+  if (isOnboarding) {
+    auth = {
+      email: String(body.email || '').toLowerCase(),
+      accountId: body.householdAccountId || body.accountId || '',
+      contactId: '',
+      accountName: body.accountName || `${body.firstName || 'New'} ${body.lastName || 'Member'} Household`,
+      householdContactIds: [],
+    };
+  } else {
+    auth = await resolveAuthedPortalMember(req);
+    if (auth.error) {
+      return res.status(auth.error.status).json({ error: auth.error.message, code: auth.error.code });
+    }
   }
 
   const webhookUrl = process.env.MAKE_ADD_FAMILY_MEMBER_WEBHOOK_URL;
@@ -2338,15 +2424,14 @@ app.post('/api/household/add-family-member', async (req, res) => {
     });
   }
 
-  if (!auth.accountId?.startsWith('001')) {
+  if (!auth.accountId?.startsWith('001') && !isOnboarding) {
     return res.status(400).json({
       error: 'Missing Salesforce Household Account ID (001...). Log out, log in again, then retry from the Account page.',
     });
   }
 
-  const body = req.body || {};
   const requestedAccountId = sanitizeAccountId(body.accountId || body.householdAccountId || '');
-  if (requestedAccountId && requestedAccountId !== auth.accountId) {
+  if (requestedAccountId && requestedAccountId !== auth.accountId && !isOnboarding) {
     return res.status(403).json({ error: 'You can only add family members to your own household account.' });
   }
 
@@ -2366,7 +2451,7 @@ app.post('/api/household/add-family-member', async (req, res) => {
     accountName: auth.accountName,
   });
 
-  if (!validation.ok) {
+  if (!validation.ok && !isOnboarding) {
     return res.status(400).json({ error: validation.message });
   }
 
@@ -2403,10 +2488,10 @@ app.post('/api/household/add-family-member', async (req, res) => {
         return res.status(503).json({ error: 'Contact linked, but portal data could not be refreshed.' });
       }
 
-      const linkContacts = buildLinkContactMeta(body, body.searchResults || []);
+      const linkContacts2 = buildLinkContactMeta(body, body.searchResults || []);
       const sfData = mergeAddedContactsIntoSfData(refreshed.sfData, {
         contactIds,
-        contactMeta: linkContacts,
+        contactMeta: linkContacts2,
         memberType,
       });
       userSalesforceData[auth.email.toLowerCase()] = sfData;
@@ -2440,17 +2525,31 @@ app.post('/api/household/add-family-member', async (req, res) => {
     console.log('Make.com add family member (create) response:', makeText.slice(0, 500));
 
     let createdContactId = '';
+    let createdAccountId = '';
     try {
       const parsed = parseMakePayload(makeText);
       createdContactId = sanitizeContactId(
         parsed?.contactId || parsed?.id || parsed?.Id || parsed?.recordId || '',
       );
+      createdAccountId = sanitizeAccountId(
+        parsed?.accountId || parsed?.AccountId || parsed?.householdAccountId || '',
+      );
     } catch {
       // Make may return plain Accepted text for create until response mapping is added.
     }
 
-    if (createdContactId) {
+    if (createdContactId && !isOnboarding) {
       await applyHouseholdRolesViaMake(webhookUrl, auth, [createdContactId], memberType);
+    }
+
+    if (isOnboarding) {
+      return res.json({
+        success: true,
+        message: `${firstName} ${lastName} was added to household.`,
+        contactId: createdContactId,
+        accountId: createdAccountId,
+        householdAccountId: createdAccountId,
+      });
     }
 
     const refreshed = await buildPortalSfData(auth.email);

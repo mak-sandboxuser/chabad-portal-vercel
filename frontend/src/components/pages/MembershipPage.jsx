@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import {
   ShieldCheck, Calendar, CircleDollarSign, Gem,
-  FileText, Users,
+  FileText, Users, Edit,
 } from 'lucide-react';
 import PortalPageLayout from '../shared/PortalPageLayout';
 import { fetchPortalApi } from '../../utils/portalApi';

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Users, UserPlus, Search, X, ChevronLeft, Contact, Building2, Loader2,
 } from 'lucide-react';
-import { fetchPortalApi } from '../../utils/portalApi';
+import { fetchPortalApi, fetchGroups } from '../../utils/portalApi';
 import { showToast } from '../../utils/toast';
 import {
   GENDER_OPTIONS,
@@ -45,7 +45,7 @@ export default function AddFamilyMemberModal({
   sfData,
   onSuccess,
 }) {
-  const [step, setStep] = useState('choose');
+  const [step, setStep] = useState('create');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
@@ -54,10 +54,34 @@ export default function AddFamilyMemberModal({
   const [linkMemberType, setLinkMemberType] = useState('child');
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [dynamicGroups, setDynamicGroups] = useState([]);
+  
+  useEffect(() => {
+    const DEFAULT_TIER_GROUPS = [
+      'Family Membership 25-26',
+      'Senior Membership 25-26',
+      'Upgraded Membership 25-26',
+    ];
+
+    fetchGroups()
+      .then((res) => {
+        const rawList = res && res.length ? res : HOUSEHOLD_GROUP_OPTIONS;
+        // Merge DEFAULT_TIER_GROUPS at the top
+        const merged = [...DEFAULT_TIER_GROUPS];
+        rawList.forEach((item) => {
+          const val = typeof item === 'string' ? item : (item.name || item.id);
+          if (val && !merged.includes(val)) {
+            merged.push(item);
+          }
+        });
+        setDynamicGroups(merged);
+      })
+      .catch(() => setDynamicGroups([...DEFAULT_TIER_GROUPS, ...HOUSEHOLD_GROUP_OPTIONS]));
+  }, []);
 
   useEffect(() => {
     if (!open) return;
-    setStep('choose');
+    setStep('create');
     setSearchQuery('');
     setSearchResults([]);
     setResolvedSearchQuery('');
@@ -576,7 +600,11 @@ export default function AddFamilyMemberModal({
                       onChange={(event) => setForm((prev) => ({ ...prev, groups: event.target.value }))}
                     >
                       <option value="">-- None --</option>
-                      {HOUSEHOLD_GROUP_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+                      {dynamicGroups.map((item) => (
+                        <option key={item.id || item} value={item.id || item}>
+                          {item.name || item}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -589,8 +617,8 @@ export default function AddFamilyMemberModal({
 
 
               <div className="add-family-modal-footer">
-                <button type="button" className="dash-btn-outline" onClick={() => setStep('choose')}>
-                  <ChevronLeft size={16} /> Back
+                <button type="button" className="dash-btn-outline" onClick={handleClose}>
+                  Cancel
                 </button>
                 <button type="submit" className="dash-btn-gold" disabled={submitting || !canCreate}>
                   <UserPlus size={16} />
