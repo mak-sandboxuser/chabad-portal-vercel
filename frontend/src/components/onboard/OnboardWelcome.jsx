@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import {
   ArrowRight,
+  ClipboardList,
   Clock,
   Flame,
   HandHeart,
@@ -10,7 +11,9 @@ import {
   Shield,
   ShoppingBasket,
   Sparkles,
+  Star,
   Tag,
+  User,
   Users,
   Wheat,
 } from 'lucide-react';
@@ -35,11 +38,9 @@ const BENEFITS = [
 ];
 
 const STEPS = [
-  'Household Information',
-  'Membership Selection',
-  'Family Details',
-  'Contribution Setup',
-  'Review & Submit',
+  { number: 1, label: 'About You', icon: User, active: true },
+  { number: 2, label: 'Membership Selection', icon: Star, active: false },
+  { number: 3, label: 'Confirmation', icon: ClipboardList, active: false },
 ];
 
 export default function OnboardWelcome() {
@@ -146,20 +147,6 @@ export default function OnboardWelcome() {
           min-height: 500px;
           margin-left: 50px;
         }
-        .onboard-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          border: 1px solid var(--color-accent);
-          color: var(--color-accent);
-          border-radius: 999px;
-          padding: 6px 14px;
-          font-size: 11.5px;
-          font-weight: 700;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          margin-bottom: 20px;
-        }
         .onboard-hero h1 {
           font-family: var(--font-heading), serif;
           color: var(--text-primary);
@@ -262,8 +249,20 @@ export default function OnboardWelcome() {
         .onboard-steps {
           display: flex;
           align-items: flex-start;
+          justify-content: space-between;
           gap: 0;
-          padding-top: 4px;
+          padding: 12px 8px 4px;
+          position: relative;
+        }
+        .onboard-steps::before {
+          content: '';
+          position: absolute;
+          left: 16%;
+          right: 16%;
+          top: 40px;
+          height: 2px;
+          background: var(--border-color);
+          z-index: 0;
         }
         .onboard-step {
           position: relative;
@@ -272,56 +271,70 @@ export default function OnboardWelcome() {
           flex-direction: column;
           align-items: center;
           text-align: center;
-          gap: 10px;
-          padding: 0 4px;
+          gap: 12px;
+          padding: 0 8px;
+          z-index: 1;
         }
-        .onboard-step::before {
-          content: '';
-          position: absolute;
-          left: -50%;
-          top: 19px;
-          width: 100%;
-          height: 2px;
-          background: var(--border-color);
-          z-index: 0;
+        .onboard-step-icon-wrap {
+          position: relative;
+          width: 56px;
+          height: 56px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
-        .onboard-step:first-child::before {
-          display: none;
+        .onboard-step-icon {
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          border: 2px solid rgba(148, 163, 184, 0.35);
+          background: transparent;
+          color: var(--text-secondary);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .onboard-step.is-active .onboard-step-icon {
+          border-color: var(--color-accent);
+          color: var(--color-accent);
+          background: rgba(200, 148, 63, 0.08);
         }
         .onboard-step-num {
-          flex-shrink: 0;
-          width: 40px;
-          height: 40px;
+          position: absolute;
+          left: 50%;
+          bottom: -6px;
+          transform: translateX(-50%);
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 15px;
+          font-size: 11px;
           font-weight: 700;
-          border: 2px solid var(--color-accent);
-          color: var(--color-accent);
-          background: var(--color-primary-light);
-          z-index: 1;
-        }
-        .onboard-step.is-first .onboard-step-num {
-          border-color: var(--brand-navy, var(--color-primary));
           color: #fff;
-          background: var(--brand-navy, var(--color-primary));
+          background: #1e293b;
+          border: 2px solid var(--bg-card, #0b0e14);
+          z-index: 2;
+        }
+        .light-theme .onboard-step-num {
+          background: #334155;
+          border-color: #ffffff;
+        }
+        .onboard-step.is-active .onboard-step-num {
+          background: var(--color-accent);
+          color: #fff;
         }
         .onboard-step-label {
           font-size: 13px;
-          font-weight: 700;
-          color: var(--text-primary);
+          font-weight: 600;
+          color: var(--text-secondary);
           line-height: 1.35;
+          margin-top: 4px;
         }
-        .onboard-start-here {
-          display: inline-block;
-          font-size: 10px;
-          font-weight: 700;
+        .onboard-step.is-active .onboard-step-label {
           color: var(--color-accent);
-          border: 1px solid var(--color-accent);
-          border-radius: 6px;
-          padding: 2px 8px;
+          font-weight: 700;
         }
         .onboard-steps-note {
           display: flex;
@@ -435,7 +448,6 @@ export default function OnboardWelcome() {
 
       <main className="onboard-main">
         <section className="onboard-hero">
-          <div className="onboard-badge">♥ We'd love your family to join our family</div>
           <h1>We'd Love Your Family To Join Our Family</h1>
           <p>
             Chabad of Bedford is a thriving Jewish community. We welcome you to join our
@@ -448,7 +460,7 @@ export default function OnboardWelcome() {
           </p>
           <div className="onboard-time-badge">
             <Clock size={16} />
-            Estimated time to complete: <strong>3-5 minutes</strong>
+            Estimated time to complete: <strong>1-3 minutes</strong>
           </div>
         </section>
 
@@ -472,16 +484,20 @@ export default function OnboardWelcome() {
           <div className="onboard-panel-col">
             <h2 className="onboard-panel-title">Application Process</h2>
             <div className="onboard-steps">
-              {STEPS.map((label, i) => (
-                <div className={`onboard-step${i === 0 ? ' is-first' : ''}`} key={label}>
-                  <div className="onboard-step-num">{i + 1}</div>
-                  {i === 0 && <span className="onboard-start-here">Start Here</span>}
+              {STEPS.map(({ number, label, icon: Icon, active }) => (
+                <div className={`onboard-step${active ? ' is-active' : ''}`} key={label}>
+                  <div className="onboard-step-icon-wrap">
+                    <div className="onboard-step-icon">
+                      <Icon size={22} strokeWidth={1.75} />
+                    </div>
+                    <span className="onboard-step-num">{number}</span>
+                  </div>
                   <div className="onboard-step-label">{label}</div>
                 </div>
               ))}
             </div>
             <div className="onboard-steps-note">
-              <Clock size={14} /> Approx. 3-5 Minutes
+              <Clock size={14} /> Approx. 1-3 Minutes
             </div>
           </div>
         </section>
