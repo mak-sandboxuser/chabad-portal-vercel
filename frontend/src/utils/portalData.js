@@ -178,6 +178,49 @@ export function getRecurring(sfData) {
   );
 }
 
+const GUEST_MEMBERSHIP_STATUSES = new Set([
+  'guest',
+  'prospect',
+  'non-member',
+  'non member',
+  'pending',
+  'inactive',
+  'lapsed',
+]);
+
+export const PAYMENT_TAB_IDS = new Set(['financial', 'contributions', 'payments', 'recurring']);
+
+export const GUEST_PAYMENTS_MESSAGE = 'Become a member to enable payments.';
+
+export function isGuestUser(sfData) {
+  if (!sfData) return true;
+
+  const membership = sfData.membership || {};
+  const status = (membership.status || sfData.profile?.lifecycle?.lifecycleStatus || '').toLowerCase().trim();
+  const role = (sfData.role || '').toLowerCase().trim();
+
+  if (GUEST_MEMBERSHIP_STATUSES.has(status)) return true;
+  if (role === 'guest') return true;
+
+  const tier = (membership.tier || '').trim();
+  const hasMembershipTier = /\d{2}[-/]\d{2}/.test(tier)
+    || /(family|individual|couple|patron|sustaining|benefactor|supporter)/i.test(tier);
+  const hasMemberSince = Boolean((membership.memberSince || sfData.joinedDate || '').trim());
+  const hasCommitment = parseMoney(membership.annualCommitment) > 0;
+  const pledges = sfData.financials?.pledges || [];
+  const hasPledges = pledges.some((item) => parseMoney(item.amount || item.total) > 0);
+  const recurring = sfData.financials?.recurring || [];
+  const hasActiveRecurring = recurring.some(
+    (item) => (item.status || '').toLowerCase() === 'active' && parseMoney(item.amount) > 0,
+  );
+
+  if (hasMembershipTier || hasMemberSince || hasCommitment || hasPledges || hasActiveRecurring) {
+    return false;
+  }
+
+  return true;
+}
+
 export function getMembership(sfData) {
   const membership = sfData?.membership || {};
   const pledges = getPledges(sfData);

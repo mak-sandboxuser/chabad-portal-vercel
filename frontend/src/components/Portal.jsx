@@ -17,6 +17,7 @@ import QuickPaymentModal from './shared/QuickPaymentModal';
 import ContactSupportModal from './shared/ContactSupportModal';
 import { showToast } from '../utils/toast';
 import { fetchPortalApi } from '../utils/portalApi';
+import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE } from '../utils/portalData';
 
 const PENDING_CHECKOUT_SESSION_KEY = 'pending_checkout_session_id';
 const syncingCheckoutSessions = new Set();
@@ -47,6 +48,11 @@ export default function Portal({ user, getAuthToken, onLogout }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedMember, setSelectedMember] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [sfData, setSfData] = useState(null);
+  const [showDonateModal, setShowDonateModal] = useState(false);
+  const [donateModalProps, setDonateModalProps] = useState(null);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [paymentAlert, setPaymentAlert] = useState(null);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -59,7 +65,13 @@ export default function Portal({ user, getAuthToken, onLogout }) {
   }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  const paymentsDisabled = isGuestUser(sfData);
+
   const handleNavigate = (tabId) => {
+    if (paymentsDisabled && PAYMENT_TAB_IDS.has(tabId)) {
+      showToast({ message: GUEST_PAYMENTS_MESSAGE, type: 'error' });
+      return;
+    }
     setActiveTab(tabId);
     if (tabId !== 'member-details') setSelectedMember(null);
     setSidebarOpen(false);
@@ -71,13 +83,11 @@ export default function Portal({ user, getAuthToken, onLogout }) {
     setSidebarOpen(false);
   };
 
-  const [sfData, setSfData] = useState(null);
-  const [showDonateModal, setShowDonateModal] = useState(false);
-  const [donateModalProps, setDonateModalProps] = useState(null);
-  const [showContactModal, setShowContactModal] = useState(false);
-  const [paymentAlert, setPaymentAlert] = useState(null);
-
   const handleOpenDonateModal = (presetProps) => {
+    if (paymentsDisabled) {
+      showToast({ message: GUEST_PAYMENTS_MESSAGE, type: 'error' });
+      return;
+    }
     if (presetProps && typeof presetProps === 'object') {
       setDonateModalProps({
         defaultAmount: presetProps.amount,
@@ -123,6 +133,14 @@ export default function Portal({ user, getAuthToken, onLogout }) {
   }, [getAuthToken]);
 
   useEffect(() => {
+    if (paymentsDisabled && PAYMENT_TAB_IDS.has(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [paymentsDisabled, activeTab]);
+
+  useEffect(() => {
+    if (paymentsDisabled) return;
+
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get('session_id');
     const isPaymentSuccess = params.get('payment') === 'success';
@@ -165,7 +183,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
     };
 
     handlePaymentReturn();
-  }, [getAuthToken]);
+  }, [getAuthToken, paymentsDisabled]);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
@@ -214,6 +232,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
         onNavigate={handleNavigate}
         isOpen={sidebarOpen}
         theme={theme}
+        paymentsDisabled={paymentsDisabled}
         onContactSupport={() => setShowContactModal(true)}
       />
 
@@ -253,7 +272,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
               </div>
               <div className="user-info" style={{ display: 'flex' }}>
                 <span className="user-email">{sfData?.name || user?.email}</span>
-                <span className="user-role">{user?.role || 'Member'}</span>
+                <span className="user-role">{isGuestUser(sfData) ? 'Guest' : (user?.role || 'Member')}</span>
               </div>
             </div>
             <button type="button" className="btn btn-secondary portal-signout" onClick={onLogout}>
@@ -297,8 +316,9 @@ export default function Portal({ user, getAuthToken, onLogout }) {
                 theme={theme}
                 user={user}
                 sfData={sfData}
+                paymentsDisabled={paymentsDisabled}
                 onNavigate={handleNavigate}
-                onDonate={() => setShowDonateModal(true)}
+                onDonate={handleOpenDonateModal}
               />
               <footer className="portal-page-footer">
                 <span>© {new Date().getFullYear()} Chabad Bedford. All rights reserved.</span>
@@ -314,6 +334,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
             <MembershipPage
               theme={theme}
               sfData={sfData}
+              user={user}
               getAuthToken={getAuthToken}
               onHouseholdUpdated={async (nextSfData) => {
                 if (nextSfData) {
@@ -332,6 +353,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
               theme={theme}
               sfData={sfData}
               user={user}
+              paymentsDisabled={paymentsDisabled}
               getAuthToken={getAuthToken}
               onNavigate={handleNavigate}
               onViewMember={handleViewMember}
@@ -476,6 +498,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
         </div>
       </main>
 
+      {!paymentsDisabled && (
       <QuickPaymentModal
         open={showDonateModal}
         onClose={() => {
@@ -488,6 +511,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
         onSuccess={fetchDashboardData}
         {...donateModalProps}
       />
+      )}
 
       <ContactSupportModal
         open={showContactModal}

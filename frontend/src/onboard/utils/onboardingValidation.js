@@ -12,6 +12,11 @@ export function isValidPersonName(value) {
   const trimmed = String(value || '').trim();
   if (trimmed.length < 2) return false;
   if (/^\d+$/.test(trimmed)) return false;
+
+
+
+
+  
   return true;
 }
 

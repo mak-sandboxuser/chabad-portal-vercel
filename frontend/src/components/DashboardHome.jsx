@@ -1,5 +1,6 @@
 import React from 'react';
 import { DollarSign, Calendar, TrendingUp, ArrowUpRight, ShieldCheck } from 'lucide-react';
+import PaymentActionButton from './shared/PaymentActionButton';
 import BuildingSketch from './shared/BuildingSketch';
 import {
   formatDisplayDate,
@@ -16,6 +17,7 @@ export default function DashboardHome({
   theme,
   user,
   sfData,
+  paymentsDisabled = false,
   onNavigate,
   onDonate,
 }) {
@@ -39,6 +41,37 @@ export default function DashboardHome({
   const contributedYtd = summary.contributedYtd || totalContributed || '$2824.00';
   const outstandingBal = formatMoney(summary.outstanding);
   const progressPct = summary.progressPct || 56;
+
+  if (paymentsDisabled) {
+    return (
+      <div className="member-dashboard" style={{ width: '100%' }}>
+        <div className="member-dashboard-main" style={{ width: '100%' }}>
+          <div className="dash-welcome-card glass-panel" style={{ width: '100%' }}>
+            <div className="dash-welcome-text">
+              <h2>Welcome, {firstName}!</h2>
+              <p>Explore membership benefits and join our Chabad Bedford community.</p>
+            </div>
+            <BuildingSketch theme={theme} className="dash-welcome-sketch" />
+          </div>
+
+          <div className="guest-payment-only-card glass-panel">
+            <div className="guest-payment-only-copy">
+              <h3>Payments</h3>
+              <p>Payment features are available after you become a member.</p>
+            </div>
+            <PaymentActionButton
+              paymentsDisabled
+              className="dash-btn-gold-action"
+              onClick={onDonate}
+            >
+              Make Payment
+              <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+            </PaymentActionButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="member-dashboard" style={{ width: '100%' }}>
@@ -105,10 +138,13 @@ export default function DashboardHome({
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                 {activeRecurring?.nextDate ? `Due on ${formatDisplayDate(activeRecurring.nextDate)}` : 'No due date scheduled'}
               </span>
-              <button type="button" className="dash-btn-gold-action" onClick={onDonate}>
+              <PaymentActionButton
+                className="dash-btn-gold-action"
+                onClick={onDonate}
+              >
                 Make Payment
                 <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
-              </button>
+              </PaymentActionButton>
             </div>
           </div>
 

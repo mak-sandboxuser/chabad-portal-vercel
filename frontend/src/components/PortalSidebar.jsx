@@ -46,7 +46,20 @@ const NAV_SECTIONS = [
   },
 ];
 
+const PAYMENT_NAV_IDS = new Set(['financial', 'contributions', 'payments', 'recurring']);
+
+function getNavSections(paymentsDisabled) {
+  if (!paymentsDisabled) return NAV_SECTIONS;
+
+  return NAV_SECTIONS
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !PAYMENT_NAV_IDS.has(item.id)),
+    }))
+    .filter((section) => section.items.length > 0);
+}
 const ALL_ITEMS = NAV_SECTIONS.flatMap((s) => s.items);
+
 const PAGE_TITLES = Object.fromEntries(
   ALL_ITEMS.map((item) => [item.id, item.id === 'dashboard' ? 'Member Portal' : item.label])
 );
@@ -73,7 +86,9 @@ function NavLink({ item, activeTab, onNavigate }) {
   );
 }
 
-export default function PortalSidebar({ activeTab, onNavigate, isOpen, theme, onContactSupport }) {
+export default function PortalSidebar({ activeTab, onNavigate, isOpen, theme, paymentsDisabled = false, onContactSupport }) {
+  const navSections = getNavSections(paymentsDisabled);
+
   return (
     <aside className={`portal-sidebar ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-brand">
@@ -82,7 +97,7 @@ export default function PortalSidebar({ activeTab, onNavigate, isOpen, theme, on
 
       <div className="sidebar-body">
         <nav className="sidebar-nav">
-          {NAV_SECTIONS.map((section) => (
+          {navSections.map((section) => (
             <div key={section.label} className="sidebar-section">
               <p className="sidebar-section-label">{section.label}</p>
               <ul className="sidebar-menu">

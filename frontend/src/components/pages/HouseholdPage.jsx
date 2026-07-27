@@ -7,6 +7,7 @@ import SectionTabs from '../shared/SectionTabs';
 import ContactsTable from '../shared/ContactsTable';
 import AddFamilyMemberModal from '../shared/AddFamilyMemberModal';
 import EditFamilyMemberModal from '../shared/EditFamilyMemberModal';
+import PaymentActionButton from '../shared/PaymentActionButton';
 import { fetchPortalApi } from '../../utils/portalApi';
 import {
   formatAddress,
@@ -29,6 +30,7 @@ export default function HouseholdPage({
   onViewMember,
   onDonate,
   onHouseholdUpdated,
+  paymentsDisabled = false,
 }) {
   const [activeTab, setActiveTab] = useState('contacts');
   const [showAddFamilyModal, setShowAddFamilyModal] = useState(false);
@@ -99,9 +101,11 @@ export default function HouseholdPage({
           <button type="button" className="dash-btn-outline" onClick={() => setShowAddFamilyModal(true)}>
             <UserPlus size={16} /> Add Family Members
           </button>
-          <button type="button" className="dash-btn-gold" onClick={onDonate}>
-            <Lock size={16} /> General Payment
-          </button>
+          {!paymentsDisabled && (
+            <PaymentActionButton className="dash-btn-gold" onClick={onDonate}>
+              <Lock size={16} /> General Payment
+            </PaymentActionButton>
+          )}
         </div>
       </div>
 

@@ -218,11 +218,7 @@ export default function Login({ initialError = '' }) {
   return (
     <div className="chabad-login-layout">
       {/* Top Header */}
-      <header className="chabad-header">
-        <div className="logo-section">
-          <ChabadLogo className="chabad-logo chabad-logo--header" alt="Chabad Bedford" />
-        </div>
-
+      <header className="chabad-header" style={{ justifyContent: 'flex-end' }}>
         <div className="header-links">
           <button className="theme-toggle-btn" onClick={toggleTheme} title="Toggle Theme">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
@@ -254,11 +250,13 @@ export default function Login({ initialError = '' }) {
 
         {/* Right Form Card Panel */}
         <section className="form-panel">
-          <div className="login-card-wrapper glass-panel">
+          <div className="login-card-wrapper">
             {!sentTo ? (
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={handleSubmit} className="login-card-form">
                 <div className="card-top-icon">
-                  <ChabadLogo className="chabad-logo chabad-logo--card" alt="Chabad Bedford" />
+                  <div className="login-logo-ring">
+                    <ChabadLogo className="chabad-logo chabad-logo--login-card" alt="Chabad Bedford" />
+                  </div>
                 </div>
 
                 <h2 className="card-title">Sign in to your account</h2>

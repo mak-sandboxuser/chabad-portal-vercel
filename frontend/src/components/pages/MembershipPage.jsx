@@ -1,19 +1,33 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ShieldCheck, Calendar, CircleDollarSign, Gem,
   FileText, Users, Edit,
 } from 'lucide-react';
 import PortalPageLayout from '../shared/PortalPageLayout';
+import EditFamilyMemberModal from '../shared/EditFamilyMemberModal';
 import { fetchPortalApi } from '../../utils/portalApi';
-import { formatDisplayDate, getFinancialSummary, getMembership, getContacts } from '../../utils/portalData';
+import {
+  formatDisplayDate,
+  getFinancialSummary,
+  getMembership,
+  getContacts,
+  isGuestUser,
+} from '../../utils/portalData';
+import GuestMembershipPage from './GuestMembershipPage';
 
-export default function MembershipPage({ theme, sfData, getAuthToken, onHouseholdUpdated, onNavigate, onDonate }) {
-  const membership = getMembership(sfData);
-  const summary = getFinancialSummary(sfData);
-  const contacts = getContacts(sfData);
+export default function MembershipPage({
+  theme,
+  sfData,
+  user,
+  getAuthToken,
+  onHouseholdUpdated,
+  onNavigate,
+  onDonate,
+}) {
+  const [editingMember, setEditingMember] = useState(null);
 
   useEffect(() => {
-    if (!getAuthToken) return;
+    if (!getAuthToken || isGuestUser(sfData)) return;
     let cancelled = false;
 
     const loadHouseholdData = async () => {
@@ -35,7 +49,22 @@ export default function MembershipPage({ theme, sfData, getAuthToken, onHousehol
     return () => {
       cancelled = true;
     };
-  }, [getAuthToken, onHouseholdUpdated]);
+  }, [getAuthToken, onHouseholdUpdated, sfData]);
+
+  if (isGuestUser(sfData)) {
+    return (
+      <GuestMembershipPage
+        theme={theme}
+        onNavigate={onNavigate}
+        user={user}
+        sfData={sfData}
+      />
+    );
+  }
+
+  const membership = getMembership(sfData);
+  const summary = getFinancialSummary(sfData);
+  const contacts = getContacts(sfData);
 
   const getDatesFromTier = (tierStr) => {
     const raw = String(tierStr || '');
@@ -208,6 +237,24 @@ export default function MembershipPage({ theme, sfData, getAuthToken, onHousehol
           </div>
         </div>
       </div>
+
+      {editingMember && (
+        <EditFamilyMemberModal
+          open={Boolean(editingMember)}
+          onClose={() => setEditingMember(null)}
+          member={editingMember}
+          user={user}
+          getAuthToken={getAuthToken}
+          sfData={sfData}
+          onSuccess={async (nextSfData) => {
+            if (nextSfData) {
+              await onHouseholdUpdated?.(nextSfData);
+            } else {
+              await onHouseholdUpdated?.();
+            }
+          }}
+        />
+      )}
     </PortalPageLayout>
   );
 }
