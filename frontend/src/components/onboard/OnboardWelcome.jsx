@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowRight,
   ClipboardList,
@@ -7,11 +7,13 @@ import {
   HandHeart,
   HelpCircle,
   IdCard,
+  Moon,
   Package,
   Shield,
   ShoppingBasket,
   Sparkles,
   Star,
+  Sun,
   Tag,
   User,
   Users,
@@ -44,10 +46,16 @@ const STEPS = [
 ];
 
 export default function OnboardWelcome() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+
   useEffect(() => {
-    const theme = localStorage.getItem('theme') || 'dark';
     document.documentElement.classList.toggle('light-theme', theme === 'light');
-  }, []);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
 
   const handleBeginApplication = () => {
     window.location.href = ONBOARD_ABOUT_YOU_PATH;
@@ -120,6 +128,26 @@ export default function OnboardWelcome() {
           letter-spacing: 0.22em;
           color: var(--color-accent);
           margin-top: 2px;
+        }
+        .onboard-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .onboard-theme-toggle {
+          background: none;
+          border: none;
+          color: var(--text-secondary);
+          cursor: pointer;
+          padding: 6px;
+          border-radius: 50%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .onboard-theme-toggle:hover {
+          background: var(--color-primary-light);
+          color: var(--text-primary);
         }
         .onboard-help-link {
           display: flex;
@@ -441,9 +469,19 @@ export default function OnboardWelcome() {
             <span>BEDFORD</span>
           </div>
         </div>
-        <a href={`mailto:${SUPPORT_EMAIL}`} className="onboard-help-link">
-          <HelpCircle size={16} /> Need Help?
-        </a>
+        <div className="onboard-header-actions">
+          <button
+            type="button"
+            className="onboard-theme-toggle"
+            onClick={toggleTheme}
+            title="Toggle Theme"
+          >
+            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="onboard-help-link">
+            <HelpCircle size={16} /> Need Help?
+          </a>
+        </div>
       </header>
 
       <main className="onboard-main">
