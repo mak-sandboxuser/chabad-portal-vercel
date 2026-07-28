@@ -35,8 +35,9 @@ export const ONBOARD_ABOUT_YOU_PATH = '/onboard/about-you';
 
 const WIZARD_STEPS = [
   { icon: User, label: 'About You' },
-  { icon: Star, label: 'Membership Selection' },
-  { icon: ClipboardList, label: 'Confirmation' },
+  // HIDDEN for now — keep for later restore
+  // { icon: Star, label: 'Membership Selection' },
+  // { icon: ClipboardList, label: 'Confirmation' },
 ];
 
 const MONTHS = [
@@ -447,7 +448,6 @@ export default function OnboardAboutYou() {
               contactEmail: child.email.trim(),
               mobilePhone: child.phone.trim(),
               memberType: 'child',
-              groups: child.group || assignedGroup,
               groups: assignedGroup,
             },
           });
@@ -462,6 +462,16 @@ export default function OnboardAboutYou() {
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
+    if (!validateStep()) {
+      window.setTimeout(() => {
+        const firstError = document.querySelector('.ay-input-wrap.has-error input, .ay-input-wrap.has-error select');
+        if (firstError) {
+          firstError.focus({ preventScroll: true });
+          firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 0);
+      return;
+    }
     setIsSubmitting(true);
     
     try {
@@ -1119,8 +1129,8 @@ export default function OnboardAboutYou() {
       </header>
 
       <main className="ay-main">
-        {/* Stepper (Only visible if not on Success step) */}
-        {currentStep < 4 && (
+        {/* HIDDEN: Stepper (code kept for later) */}
+        {false && currentStep < 4 && (
           <div className="ay-stepper">
             {WIZARD_STEPS.map(({ icon, label }, i) => {
               const Icon = icon;
@@ -1153,7 +1163,7 @@ export default function OnboardAboutYou() {
               </div>
             </div>
 
-            <form onSubmit={handleNext}>
+            <form onSubmit={handleSubmit}>
               <p className="ay-section-label">Primary Member Info</p>
 
               <div className="ay-row">
@@ -1439,16 +1449,22 @@ export default function OnboardAboutYou() {
               )}
 
               <div className="ay-actions ay-actions-end">
-                <button type="submit" className="ay-btn-solid">
-                  Save & Next <ArrowRight size={16} />
+                <button type="submit" className="ay-btn-solid" disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>Submitting Application...</>
+                  ) : (
+                    <>
+                      Confirm & Submit <Check size={16} />
+                    </>
+                  )}
                 </button>
               </div>
             </form>
           </div>
         )}
 
-        {/* Step 2: Membership Selection */}
-        {currentStep === 1 && (
+        {/* HIDDEN: Step 2 Membership Selection + Step 3 Confirmation (code kept for later) */}
+        {false && currentStep === 1 && (
           <div className="ay-card">
             <div className="ay-card-head">
               <div>
@@ -1566,8 +1582,8 @@ export default function OnboardAboutYou() {
           </div>
         )}
 
-        {/* Step 3: Confirmation */}
-        {currentStep === 2 && (
+        {/* HIDDEN: Step 3 Confirmation (code kept for later) */}
+        {false && currentStep === 2 && (
           <div className="ay-card">
             <div className="ay-card-head">
               <div>

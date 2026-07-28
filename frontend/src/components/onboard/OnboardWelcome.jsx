@@ -41,8 +41,9 @@ const BENEFITS = [
 
 const STEPS = [
   { number: 1, label: 'About You', icon: User, active: true },
-  { number: 2, label: 'Membership Selection', icon: Star, active: false },
-  { number: 3, label: 'Confirmation', icon: ClipboardList, active: false },
+  // HIDDEN for now — keep for later restore
+  // { number: 2, label: 'Membership Selection', icon: Star, active: false },
+  // { number: 3, label: 'Confirmation', icon: ClipboardList, active: false },
 ];
 
 export default function OnboardWelcome() {
@@ -116,14 +117,14 @@ export default function OnboardWelcome() {
         }
         .onboard-logo-text strong {
           font-family: var(--font-heading), serif;
-          font-size: 19px;
+          font-size: 24px;
           font-weight: 700;
           letter-spacing: 0.04em;
           color: var(--text-primary);
         }
         .onboard-logo-text span {
           font-family: var(--font-body), sans-serif;
-          font-size: 10.5px;
+          font-size: 12.5px;
           font-weight: 600;
           letter-spacing: 0.22em;
           color: var(--color-accent);
@@ -209,7 +210,8 @@ export default function OnboardWelcome() {
           border-radius: 18px;
           box-shadow: var(--glass-shadow);
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          /* Application Process temporarily hidden — restore 1fr 1fr when re-enabled */
+          grid-template-columns: 1fr;
           gap: 0;
           overflow: hidden;
           position: relative;
@@ -218,7 +220,7 @@ export default function OnboardWelcome() {
           margin-bottom: 24px;
         }
         .onboard-panel-col {
-          padding: 32px;
+          padding: 40px 36px;
         }
         .onboard-panel-col + .onboard-panel-col {
           border-left: 1px solid var(--border-color);
@@ -226,14 +228,14 @@ export default function OnboardWelcome() {
         .onboard-panel-title {
           text-align: center;
           font-family: var(--font-heading), serif;
-          font-size: 13.5px;
+          font-size: 20px;
           font-weight: 800;
           letter-spacing: 0.06em;
           text-transform: uppercase;
           color: var(--text-primary);
-          margin: 0 0 22px;
+          margin: 0 0 28px;
           position: relative;
-          padding-bottom: 12px;
+          padding-bottom: 14px;
         }
         .onboard-panel-title::after {
           content: '';
@@ -241,7 +243,7 @@ export default function OnboardWelcome() {
           left: 50%;
           bottom: 0;
           transform: translateX(-50%);
-          width: 36px;
+          width: 48px;
           height: 3px;
           background: var(--color-accent);
           border-radius: 2px;
@@ -249,18 +251,18 @@ export default function OnboardWelcome() {
         .onboard-benefits-grid {
           display: grid;
           grid-template-columns:repeat(5, 1fr);
-          gap: 20px 18px;
+          gap: 28px 22px;
         }
         .onboard-benefit {
           display: flex;
           flex-direction: column;
           align-items: center;
           text-align: center;
-          gap: 8px;
+          gap: 12px;
         }
         .onboard-benefit-icon {
-          width: 40px;
-          height: 40px;
+          width: 56px;
+          height: 56px;
           border-radius: 50%;
           background: var(--color-primary-light);
           color: var(--color-accent);
@@ -269,9 +271,9 @@ export default function OnboardWelcome() {
           justify-content: center;
         }
         .onboard-benefit span {
-          font-size: 9px;
+          font-size: 13px;
           color: var(--text-secondary);
-          line-height: 1.4;
+          line-height: 1.45;
           font-weight: 600;
         }
         .onboard-steps {
@@ -467,7 +469,7 @@ export default function OnboardWelcome() {
 
       <header className="onboard-header">
         <div className="onboard-header-left">
-          <ChabadLogo className="chabad-logo" size={40} alt="Chabad Bedford" />
+          <ChabadLogo className="chabad-logo" size={72} alt="Chabad Bedford" />
           <div className="onboard-logo-text">
             <strong>CHABAD</strong>
             <span>BEDFORD</span>
@@ -500,10 +502,13 @@ export default function OnboardWelcome() {
             support our community. Joining Chabad will help guarantee the strength of your family
             and that of our community.
           </p>
+          {/* HIDDEN: Estimated time badge (code kept for later) */}
+          {false && (
           <div className="onboard-time-badge">
             <Clock size={16} />
             Estimated time to complete: <strong>1-3 minutes</strong>
           </div>
+          )}
         </section>
 
         <section className="onboard-panel">
@@ -515,7 +520,7 @@ export default function OnboardWelcome() {
                 return (
                   <div className="onboard-benefit" key={label}>
                     <div className="onboard-benefit-icon">
-                      <Icon size={18} />
+                      <Icon size={24} />
                     </div>
                     <span>{label}</span>
                   </div>
@@ -523,6 +528,8 @@ export default function OnboardWelcome() {
               })}
             </div>
           </div>
+          {/* HIDDEN: Application Process box (code kept for later) */}
+          {false && (
           <div className="onboard-panel-col">
             <h2 className="onboard-panel-title">Application Process</h2>
             <div className="onboard-steps">
@@ -542,6 +549,7 @@ export default function OnboardWelcome() {
               <Clock size={14} /> Approx. 1-3 Minutes
             </div>
           </div>
+          )}
         </section>
 
         <section className="onboard-cta-bar">
