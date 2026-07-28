@@ -28,8 +28,8 @@ import {
 import ChabadLogo from '../shared/ChabadLogo';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '../../constants/supportContact';
 import { showToast } from '../../utils/toast';
-import { fetchPortalApi, fetchGroups } from '../../utils/portalApi';
-import { SALUTATIONS, GENDER_OPTIONS, HOUSEHOLD_GROUP_OPTIONS } from '../../constants/householdMembers';
+import { fetchPortalApi } from '../../utils/portalApi';
+import { SALUTATIONS, GENDER_OPTIONS } from '../../constants/householdMembers';
 
 export const ONBOARD_ABOUT_YOU_PATH = '/onboard/about-you';
 
@@ -195,29 +195,6 @@ export default function OnboardAboutYou() {
   });
 
   const [errors, setErrors] = useState({});
-  const [dynamicGroups, setDynamicGroups] = useState([]);
-
-  useEffect(() => {
-    const DEFAULT_TIER_GROUPS = [
-      'Family Membership 25-26',
-      'Senior Membership 25-26',
-      'Upgraded Membership 25-26',
-    ];
-
-    fetchGroups()
-      .then((res) => {
-        const rawList = res && res.length ? res : HOUSEHOLD_GROUP_OPTIONS;
-        const merged = [...DEFAULT_TIER_GROUPS];
-        rawList.forEach((item) => {
-          const val = typeof item === 'string' ? item : (item.name || item.id);
-          if (val && !merged.includes(val)) {
-            merged.push(item);
-          }
-        });
-        setDynamicGroups(merged);
-      })
-      .catch(() => setDynamicGroups([...DEFAULT_TIER_GROUPS, ...HOUSEHOLD_GROUP_OPTIONS]));
-  }, []);
 
   useEffect(() => {
     // Sync dark/light theme on mount
@@ -265,7 +242,7 @@ export default function OnboardAboutYou() {
       ...f,
       children: [
         ...f.children,
-        { salutation: '', gender: '', firstName: '', lastName: '', email: '', phone: '', group: '' }
+        { salutation: '', gender: '', firstName: '', lastName: '', email: '', phone: '' }
       ]
     }));
   };
@@ -323,6 +300,8 @@ export default function OnboardAboutYou() {
       if (form.hasSpouse) {
         if (!form.spouseFirstName.trim()) nextErrors.spouseFirstName = 'Spouse First Name is required';
         if (!form.spouseLastName.trim()) nextErrors.spouseLastName = 'Spouse Last Name is required';
+        if (!form.spouseEmail.trim()) nextErrors.spouseEmail = 'Email is required';
+        if (!form.spousePhone.trim()) nextErrors.spousePhone = 'Mobile Phone is required';
       }
 
       // Children Validation
@@ -333,6 +312,8 @@ export default function OnboardAboutYou() {
           form.children.forEach((child, index) => {
             if (!child.firstName.trim()) nextErrors[`child_${index}_firstName`] = 'First Name is required';
             if (!child.lastName.trim()) nextErrors[`child_${index}_lastName`] = 'Last Name is required';
+            if (!child.email.trim()) nextErrors[`child_${index}_email`] = 'Email is required';
+            if (!child.phone.trim()) nextErrors[`child_${index}_phone`] = 'Mobile Phone is required';
           });
         }
       }
@@ -467,6 +448,7 @@ export default function OnboardAboutYou() {
               mobilePhone: child.phone.trim(),
               memberType: 'child',
               groups: child.group || assignedGroup,
+              groups: assignedGroup,
             },
           });
           console.log(`Child ${child.firstName} created in CRM successfully.`);
@@ -1343,18 +1325,20 @@ export default function OnboardAboutYou() {
                       </div>
                       <div className="ay-row">
                         <div className="ay-field">
-                          <label className="ay-label">Email</label>
-                          <div className="ay-input-wrap">
+                          <label className="ay-label">Email<span>*</span></label>
+                          <div className={`ay-input-wrap ${errors.spouseEmail ? 'has-error' : ''}`}>
                             <Mail size={16} />
                             <input type="text" placeholder="spouse@example.com" value={form.spouseEmail} onChange={update('spouseEmail')} />
                           </div>
+                          {errors.spouseEmail && <span className="ay-input-error">{errors.spouseEmail}</span>}
                         </div>
                         <div className="ay-field">
-                          <label className="ay-label">Mobile Phone</label>
-                          <div className="ay-input-wrap">
+                          <label className="ay-label">Mobile Phone<span>*</span></label>
+                          <div className={`ay-input-wrap ${errors.spousePhone ? 'has-error' : ''}`}>
                             <Phone size={16} />
                             <input type="text" placeholder="(123) 456-7890" value={form.spousePhone} onChange={update('spousePhone')} />
                           </div>
+                          {errors.spousePhone && <span className="ay-input-error">{errors.spousePhone}</span>}
                         </div>
                       </div>
                     </div>
@@ -1427,32 +1411,20 @@ export default function OnboardAboutYou() {
 
                           <div className="ay-row">
                             <div className="ay-field">
-                              <label className="ay-label">Email</label>
-                              <div className="ay-input-wrap">
+                              <label className="ay-label">Email<span>*</span></label>
+                              <div className={`ay-input-wrap ${errors[`child_${index}_email`] ? 'has-error' : ''}`}>
                                 <Mail size={16} />
                                 <input type="text" placeholder="child@example.com" value={child.email} onChange={(e) => updateChild(index, 'email', e.target.value)} />
                               </div>
+                              {errors[`child_${index}_email`] && <span className="ay-input-error">{errors[`child_${index}_email`]}</span>}
                             </div>
                             <div className="ay-field">
-                              <label className="ay-label">Mobile Phone</label>
-                              <div className="ay-input-wrap">
+                              <label className="ay-label">Mobile Phone<span>*</span></label>
+                              <div className={`ay-input-wrap ${errors[`child_${index}_phone`] ? 'has-error' : ''}`}>
                                 <Phone size={16} />
                                 <input type="text" placeholder="(123) 456-7890" value={child.phone} onChange={(e) => updateChild(index, 'phone', e.target.value)} />
                               </div>
-                            </div>
-                          </div>
-
-                          <div className="ay-field">
-                            <label className="ay-label">Group / Class</label>
-                            <div className="ay-input-wrap">
-                              <select value={child.group} onChange={(e) => updateChild(index, 'group', e.target.value)}>
-                                <option value="">-- None --</option>
-                                {dynamicGroups.map((g) => (
-                                  <option key={g.id || g} value={g.id || g}>
-                                    {g.name || g}
-                                  </option>
-                                ))}
-                              </select>
+                              {errors[`child_${index}_phone`] && <span className="ay-input-error">{errors[`child_${index}_phone`]}</span>}
                             </div>
                           </div>
                         </div>
@@ -1671,12 +1643,6 @@ export default function OnboardAboutYou() {
                             <div className="summary-row">
                               <span>Email:</span>
                               <span>{child.email}</span>
-                            </div>
-                          )}
-                          {child.group && (
-                            <div className="summary-row">
-                              <span>Group:</span>
-                              <span>{child.group}</span>
                             </div>
                           )}
                         </div>
