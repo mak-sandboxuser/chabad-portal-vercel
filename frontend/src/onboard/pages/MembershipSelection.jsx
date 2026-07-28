@@ -23,7 +23,7 @@ const NEXT_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
 
 function TierRow({ tier, selected, onChange }) {
   const Icon = tier.icon;
-  const monthly = tier.isOpenEnded ? tier.tagline : `$${formatCurrency(tier.annualPrice / 12)} / month`;
+  const monthly = tier.isOpenEnded ? tier.tagline : `$${Math.floor(tier.annualPrice / 12)} / month`;
 
   return (
     <label className={`onboard-tier-row onboard-tier-accent-${tier.accent}`} htmlFor={`tier-${tier.id}`}>

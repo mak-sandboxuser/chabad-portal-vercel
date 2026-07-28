@@ -282,16 +282,6 @@ export default function OnboardWelcome() {
           padding: 12px 8px 4px;
           position: relative;
         }
-        .onboard-steps::before {
-          content: '';
-          position: absolute;
-          left: 16%;
-          right: 16%;
-          top: 40px;
-          height: 2px;
-          background: var(--border-color);
-          z-index: 0;
-        }
         .onboard-step {
           position: relative;
           flex: 1;
@@ -302,6 +292,20 @@ export default function OnboardWelcome() {
           gap: 12px;
           padding: 0 8px;
           z-index: 1;
+        }
+        .onboard-step::before {
+          content: '';
+          position: absolute;
+          left: calc(-50% + 28px);
+          right: calc(50% + 28px);
+          top: 27px;
+          height: 2px;
+          background: var(--border-color);
+          z-index: 0;
+          pointer-events: none;
+        }
+        .onboard-step:first-child::before {
+          display: none;
         }
         .onboard-step-icon-wrap {
           position: relative;

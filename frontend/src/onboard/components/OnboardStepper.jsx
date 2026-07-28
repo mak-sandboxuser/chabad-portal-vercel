@@ -1,4 +1,4 @@
-import { Check, ArrowRight } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { onboardingSteps } from '../data/onboardingSteps';
 
 function stepStatus(stepId, currentStepId) {
@@ -28,9 +28,7 @@ export default function OnboardStepper({ currentStepId }) {
                 <span
                   className={`onboard-stepper-connector ${reached ? 'onboard-stepper-connector-reached' : ''}`}
                   aria-hidden="true"
-                >
-                  <ArrowRight size={14} />
-                </span>
+                />
               )}
               <div
                 role="listitem"

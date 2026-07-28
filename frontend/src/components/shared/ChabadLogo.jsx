@@ -1,4 +1,4 @@
-const LOGO_PNG = '/chabad-bedford-logo.png';
+const LOGO_PNG = '/chabad-bedford-logo-source.png';
 const LOGO_SVG = '/chabad-bedford-logo.svg';
 
 export default function ChabadLogo({
