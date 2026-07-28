@@ -26,7 +26,6 @@ import {
   CreditCard as CardIcon
 } from 'lucide-react';
 import ChabadLogo from '../shared/ChabadLogo';
-import { ONBOARD_PATH } from './routes';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '../../constants/supportContact';
 import { showToast } from '../../utils/toast';
 import { fetchPortalApi, fetchGroups } from '../../utils/portalApi';
@@ -53,7 +52,7 @@ const MEMBERSHIP_TIERS = [
     id: 'family',
     name: 'Family Membership',
     description: 'Perfect for families who want to be actively involved in our community and programs.',
-    annualPrice: 1800,
+    annualPrice: 2244,
     icon: Users,
     category: 'General',
   },
@@ -61,23 +60,31 @@ const MEMBERSHIP_TIERS = [
     id: 'upgraded',
     name: 'Upgraded Membership',
     description: 'Enhanced benefits and opportunities for deeper engagement and impact.',
-    annualPrice: 2500,
+    annualPrice: 3000,
     icon: Star,
+    category: 'General',
+  },
+  {
+    id: 'single-parent',
+    name: 'Single Parent Family',
+    description: 'Supporting single parents and their children with connection and care.',
+    annualPrice: 1560,
+    icon: Users,
     category: 'General',
   },
   {
     id: 'single',
     name: 'Single Membership',
     description: 'For individuals seeking connection and Jewish life enrichment.',
-    annualPrice: 750,
+    annualPrice: 1128,
     icon: User,
     category: 'General',
   },
   {
     id: 'senior',
-    name: 'Senior Membership (65+)',
+    name: 'Senior Citizen Membership',
     description: 'Special rate for seniors (65+) to stay engaged and inspired.',
-    annualPrice: 600,
+    annualPrice: 1800,
     icon: User,
     category: 'General',
   },
@@ -85,7 +92,7 @@ const MEMBERSHIP_TIERS = [
     id: 'chai-donor',
     name: 'Chai Donor',
     description: 'Your generosity helps sustain our daily operations and essential programs.',
-    annualPrice: 1800,
+    annualPrice: 5000,
     icon: DollarSign,
     category: 'Chai Club',
   },
@@ -93,7 +100,23 @@ const MEMBERSHIP_TIERS = [
     id: 'chai-partner',
     name: 'Chai Partner',
     description: 'Partner with us to expand programs and reach more families.',
-    annualPrice: 3600,
+    annualPrice: 10000,
+    icon: DollarSign,
+    category: 'Chai Club',
+  },
+  {
+    id: 'chai-rabbis-circle',
+    name: "Chai Rabbi's Circle",
+    description: 'Invest in leadership, education, and inspiring Jewish experiences.',
+    annualPrice: 18000,
+    icon: DollarSign,
+    category: 'Chai Club',
+  },
+  {
+    id: 'chai-leadership-circle',
+    name: 'Chai Leadership Circle',
+    description: 'Make a transformational impact and help shape the future of our community.',
+    annualPrice: 36000,
     icon: DollarSign,
     category: 'Chai Club',
   },
@@ -279,11 +302,6 @@ export default function OnboardAboutYou() {
     }
   };
 
-  const handleSaveExit = () => {
-    showToast({ message: 'Progress saved. You can pick up where you left off any time.', type: 'success' });
-    window.location.href = ONBOARD_PATH;
-  };
-
   const validateStep = () => {
     const nextErrors = {};
     if (currentStep === 0) {
@@ -345,7 +363,14 @@ export default function OnboardAboutYou() {
       setCurrentStep((prev) => prev + 1);
       window.scrollTo(0, 0);
     } else {
-      showToast({ message: 'Please correct the errors in the form before proceeding.', type: 'error' });
+      // Wait for error classes to paint, then focus the first invalid field.
+      window.setTimeout(() => {
+        const firstError = document.querySelector('.ay-input-wrap.has-error input, .ay-input-wrap.has-error select');
+        if (firstError) {
+          firstError.focus({ preventScroll: true });
+          firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 0);
     }
   };
 
@@ -472,7 +497,7 @@ export default function OnboardAboutYou() {
 
   const selectedTierObj = MEMBERSHIP_TIERS.find((t) => t.id === form.membershipTier) || MEMBERSHIP_TIERS[0];
   const calculatedPrice = form.paymentFrequency === 'monthly'
-    ? Math.round(selectedTierObj.annualPrice / 12)
+    ? Math.floor(selectedTierObj.annualPrice / 12)
     : selectedTierObj.annualPrice;
 
   return (
@@ -544,12 +569,13 @@ export default function OnboardAboutYou() {
         .ay-step::before {
           content: '';
           position: absolute;
-          left: -50%;
-          top: 22px;
-          width: 100%;
+          left: calc(-50% + 28px);
+          right: calc(50% + 28px);
+          top: 21px;
           height: 2px;
           background: var(--border-color);
-          z-index: -1;
+          z-index: 0;
+          pointer-events: none;
         }
         .ay-step:first-child::before {
           display: none;
@@ -559,6 +585,8 @@ export default function OnboardAboutYou() {
           background: var(--color-accent);
         }
         .ay-step-icon {
+          position: relative;
+          z-index: 1;
           width: 44px;
           height: 44px;
           border-radius: 50%;
@@ -567,7 +595,7 @@ export default function OnboardAboutYou() {
           justify-content: center;
           border: 2px solid var(--border-color);
           color: var(--text-secondary);
-          background: var(--bg-card);
+          background: var(--bg-main);
           transition: var(--transition-smooth);
         }
         .ay-step.is-active .ay-step-icon {
@@ -591,16 +619,18 @@ export default function OnboardAboutYou() {
           justify-content: center;
           font-size: 10px;
           font-weight: 700;
-          color: #fff;
-          background: var(--brand-navy, var(--color-primary));
+          color: var(--text-secondary);
+          background: var(--border-color);
           border: 2px solid var(--bg-main);
           z-index: 2;
         }
         .ay-step.is-active .ay-step-badge {
           background: var(--color-accent);
+          color: #fff;
         }
         .ay-step.is-completed .ay-step-badge {
-          background: var(--color-success, #10b981);
+          background: var(--color-primary);
+          color: #fff;
         }
         .ay-step-label {
           font-size: 12px;
@@ -1029,6 +1059,9 @@ export default function OnboardAboutYou() {
           border-top: 1px solid var(--border-color);
           padding-top: 20px;
         }
+        .ay-actions-end {
+          justify-content: flex-end;
+        }
         .ay-btn-outline {
           display: flex;
           align-items: center;
@@ -1093,7 +1126,7 @@ export default function OnboardAboutYou() {
       `}</style>
 
       <header className="ay-header">
-        <ChabadLogo className="chabad-logo" size={34} alt="Chabad Bedford" />
+        <ChabadLogo className="chabad-logo" size={90} alt="Chabad Bedford" />
         <div className="ay-header-title">
           <h1>Membership Onboarding</h1>
           <p>Join our community in a few simple steps.</p>
@@ -1433,10 +1466,7 @@ export default function OnboardAboutYou() {
                 </>
               )}
 
-              <div className="ay-actions">
-                <button type="button" className="ay-btn-outline" onClick={handleSaveExit}>
-                  <ArrowLeft size={16} /> Save & Exit
-                </button>
+              <div className="ay-actions ay-actions-end">
                 <button type="submit" className="ay-btn-solid">
                   Save & Next <ArrowRight size={16} />
                 </button>
@@ -1505,7 +1535,7 @@ export default function OnboardAboutYou() {
                             <span className="membership-card-desc">{tier.description}</span>
                             <span className="membership-card-price">
                               {form.paymentFrequency === 'monthly'
-                                ? `$${Math.round(tier.annualPrice / 12)} / month`
+                                ? `$${Math.floor(tier.annualPrice / 12)} / month`
                                 : `$${tier.annualPrice} / year`}
                             </span>
                           </div>
@@ -1541,7 +1571,7 @@ export default function OnboardAboutYou() {
                             <span className="membership-card-desc">{tier.description}</span>
                             <span className="membership-card-price">
                               {form.paymentFrequency === 'monthly'
-                                ? `$${Math.round(tier.annualPrice / 12)} / month`
+                                ? `$${Math.floor(tier.annualPrice / 12)} / month`
                                 : `$${tier.annualPrice} / year`}
                             </span>
                           </div>
@@ -1556,7 +1586,7 @@ export default function OnboardAboutYou() {
                 <button type="button" className="ay-btn-outline" onClick={handleBack} disabled={isSubmitting}>
                   <ArrowLeft size={16} /> Back
                 </button>
-                <button type="submit" className="ay-btn-solid" disabled={isSubmitting} style={{ background: 'var(--color-accent)' }}>
+                <button type="submit" className="ay-btn-solid" disabled={isSubmitting}>
                   {isSubmitting ? 'Submitting Registration...' : 'Complete Registration'} <CheckCircle size={18} />
                 </button>
               </div>
@@ -1655,45 +1685,26 @@ export default function OnboardAboutYou() {
                   )}
 
                   <div className="summary-card-sub">
-                    <h3>Payment Credentials</h3>
-                    {form.paymentType === 'card' ? (
-                      <>
-                        <div className="summary-row">
-                          <span>Payment Type:</span>
-                          <span>Credit Card</span>
-                        </div>
-                        <div className="summary-row">
-                          <span>Cardholder:</span>
-                          <span>{form.cardName}</span>
-                        </div>
-                        <div className="summary-row">
-                          <span>Card Number:</span>
-                          <span>•••• •••• •••• {form.cardNumber.slice(-4)}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="summary-row">
-                          <span>Payment Type:</span>
-                          <span>Bank ACH</span>
-                        </div>
-                        <div className="summary-row">
-                          <span>Bank Name:</span>
-                          <span>{form.bankName}</span>
-                        </div>
-                        <div className="summary-row">
-                          <span>Account Type:</span>
-                          <span style={{ textTransform: 'capitalize' }}>{form.bankType}</span>
-                        </div>
-                        <div className="summary-row">
-                          <span>Account Number:</span>
-                          <span>••••••••{form.bankAccount.slice(-4)}</span>
-                        </div>
-                      </>
-                    )}
+                    <h3>Membership Selection details</h3>
+                    <div className="summary-row">
+                      <span>Membership:</span>
+                      <span>{selectedTierObj.name}</span>
+                    </div>
+                    <div className="summary-row">
+                      <span>Category:</span>
+                      <span>{selectedTierObj.category || 'General'}</span>
+                    </div>
+                    <div className="summary-row">
+                      <span>Billing Frequency:</span>
+                      <span>{form.paymentFrequency === 'monthly' ? 'Monthly' : 'Annually'}</span>
+                    </div>
+                    <div className="summary-row">
+                      <span>Commitment Amount:</span>
+                      <span>${calculatedPrice}</span>
+                    </div>
                     <div className="summary-row" style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border-color)' }}>
-                      <span>Billing Address:</span>
-                      <span>{form.sameAsPrimaryAddress ? 'Same as Primary Member' : form.billingAddress}</span>
+                      <span>Annual Commitment:</span>
+                      <span>${selectedTierObj.annualPrice}</span>
                     </div>
                   </div>
                 </div>

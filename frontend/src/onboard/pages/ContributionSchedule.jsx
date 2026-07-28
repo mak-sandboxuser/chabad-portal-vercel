@@ -56,7 +56,7 @@ function buildScheduleOptions(annualPrice) {
       subtitle: '12 Monthly Payments',
       icon: Calendar,
       accent: 'green',
-      amountLabel: `$${formatCurrency(annualPrice / 12)}`,
+      amountLabel: `$${formatCurrency(Math.floor(annualPrice / 12))}`,
       amountSuffix: '/ month',
       billingLines: ['12 monthly payments', 'First payment today'],
     },

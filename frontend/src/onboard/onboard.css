@@ -853,17 +853,17 @@
 }
 
 .onboard-stepper-connector {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  color: var(--onboard-border);
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 2px;
+  background: var(--onboard-border);
   margin-top: 21px;
   flex-shrink: 0;
 }
 
 .onboard-stepper-connector-reached {
-  color: var(--onboard-gold-soft);
+  background: var(--onboard-gold-soft);
 }
 
 .onboard-stepper-item {
@@ -1525,7 +1525,7 @@
   }
 
   .onboard-stepper-connector {
-    width: 28px;
+    width: 34px;
   }
 
   .onboard-question-item {
