@@ -1,11 +1,10 @@
-import { readDraft } from './onboardingCookies';
+import { readDraft, clearDraft } from './onboardingCookies';
+import { FIRST_FORM_STEP } from '../data/onboardingSteps';
 import {
-  FIRST_FORM_STEP,
-  getStepById,
-  PROCESSING_STEP_ID,
-  REVIEW_STEP_ID,
-  SPOUSE_INFORMATION_STEP_ID,
-} from '../data/onboardingSteps';
+  DEFAULT_HOUSEHOLD_PREFERENCES,
+  getFirstPreferencePath,
+  getHouseholdPreferences,
+} from './householdPreferences';
 
 const PENDING_POST_LOGIN_STEPPER_KEY = 'pending_post_login_membership_stepper';
 const COMPLETED_POST_LOGIN_STEPPER_KEY = 'completed_post_login_membership_stepper';
@@ -36,15 +35,29 @@ export function isPostLoginStepperPending() {
   }
 }
 
-/** Resume path for the post-login zip stepper (skips Welcome + Primary). */
+/**
+ * New-member post-login entry based on Help Us Know You Better defaults:
+ * Spouse Yes → Spouse Information; Spouse+Children No → Membership; etc.
+ */
 export function getPostLoginStepperEntryPath() {
   const draft = readDraft();
-  if (!draft?.currentStep) return FIRST_FORM_STEP.path;
+  const prefs = draft ? getHouseholdPreferences(draft) : DEFAULT_HOUSEHOLD_PREFERENCES;
+  return getFirstPreferencePath(prefs) || FIRST_FORM_STEP.path;
+}
 
-  let stepId = Number(draft.currentStep) || SPOUSE_INFORMATION_STEP_ID;
-  if (stepId < SPOUSE_INFORMATION_STEP_ID) stepId = SPOUSE_INFORMATION_STEP_ID;
-  if (stepId > PROCESSING_STEP_ID) stepId = PROCESSING_STEP_ID;
-  if (stepId === REVIEW_STEP_ID) stepId = PROCESSING_STEP_ID;
-
-  return getStepById(stepId)?.path || FIRST_FORM_STEP.path;
+/**
+ * Sign out from the first onboarding form and return to the login screen.
+ * The draft is cleared too, so the next login starts from the Help Us Know You
+ * Better defaults (Spouse Yes, Children No, Yahrzeit No) instead of inheriting
+ * the previous applicant's toggles.
+ */
+export function signOutFromOnboarding() {
+  try {
+    localStorage.removeItem('sf_user_session');
+    localStorage.removeItem(PENDING_POST_LOGIN_STEPPER_KEY);
+  } catch {
+    // ignore storage failures
+  }
+  clearDraft();
+  window.location.replace('/');
 }

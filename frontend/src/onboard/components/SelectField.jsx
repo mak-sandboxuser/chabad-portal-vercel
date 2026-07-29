@@ -1,4 +1,4 @@
-function SelectShell({ id, label, value, onChange, options, icon: Icon, error, ariaDescribedBy }) {
+function SelectShell({ id, label, value, onChange, options, icon: Icon, error, ariaDescribedBy, placeholder }) {
   return (
     <div className={`onboard-select-shell ${error ? 'onboard-input-shell-error' : ''}`}>
       {Icon && <Icon size={16} className="onboard-input-icon" aria-hidden="true" />}
@@ -12,7 +12,7 @@ function SelectShell({ id, label, value, onChange, options, icon: Icon, error, a
         aria-describedby={ariaDescribedBy}
       >
         <option value="" disabled>
-          {label}
+          {placeholder || label}
         </option>
         {options.map((option) => (
           <option key={option.value} value={option.value}>

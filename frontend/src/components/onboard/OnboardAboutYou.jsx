@@ -153,6 +153,8 @@ export default function OnboardAboutYou() {
   
   const [form, setForm] = useState({
     // Step 1: About You
+    salutation: '',
+    gender: '',
     firstName: '',
     lastName: '',
     email: '',
@@ -231,10 +233,11 @@ export default function OnboardAboutYou() {
     }
 
     setForm((f) => ({ ...f, [field]: val }));
-    if (errors[field]) {
+    if (errors[field] || (['birthMonth', 'birthDay', 'birthYear'].includes(field) && errors.birthDate)) {
       setErrors((errs) => {
         const copy = { ...errs };
         delete copy[field];
+        if (['birthMonth', 'birthDay', 'birthYear'].includes(field)) delete copy.birthDate;
         return copy;
       });
     }
@@ -319,8 +322,14 @@ export default function OnboardAboutYou() {
       } else if (!/\S+@\S+\.\S+/.test(form.email)) {
         nextErrors.email = 'Please enter a valid email address';
       }
-      if (!form.birthMonth || !form.birthDay || !form.birthYear) {
-        nextErrors.birthDate = 'Complete Birth Date is required';
+      if (!form.mobilePhone.trim()) {
+        nextErrors.mobilePhone = 'Mobile Phone is required';
+      }
+      // Birth Date is optional — only validate if any part is filled in.
+      if (form.birthMonth || form.birthDay || form.birthYear) {
+        if (!form.birthMonth || !form.birthDay || !form.birthYear) {
+          nextErrors.birthDate = 'Complete Birth Date or leave all fields blank';
+        }
       }
       
       // Spouse Validation
@@ -406,10 +415,10 @@ export default function OnboardAboutYou() {
           email: form.email,
           mode: 'create',
           isOnboarding: true,
-          salutation: '',
+          salutation: form.salutation,
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
-          gender: '',
+          gender: form.gender,
           contactEmail: form.email.trim(),
           mobilePhone: form.mobilePhone.trim(),
           memberType: 'primary',
@@ -764,9 +773,15 @@ export default function OnboardAboutYou() {
           font-weight: 600;
           color: var(--text-primary);
         }
-        .ay-label span {
+        .ay-label span:not(.ay-optional-label) {
           color: var(--color-danger, #ef4444);
           margin-left: 2px;
+        }
+        .ay-optional-label {
+          margin-left: 6px;
+          font-size: 11.5px;
+          font-weight: 500;
+          color: var(--text-secondary);
         }
         .ay-input-error {
           font-size: 11.5px;
@@ -1220,6 +1235,27 @@ export default function OnboardAboutYou() {
 
               <div className="ay-row">
                 <div className="ay-field">
+                  <label className="ay-label">Salutation</label>
+                  <div className="ay-input-wrap">
+                    <select value={form.salutation} onChange={update('salutation')}>
+                      <option value="">-- Select --</option>
+                      {SALUTATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="ay-field">
+                  <label className="ay-label">Gender</label>
+                  <div className="ay-input-wrap">
+                    <select value={form.gender} onChange={update('gender')}>
+                      <option value="">--None--</option>
+                      {GENDER_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="ay-row">
+                <div className="ay-field">
                   <label className="ay-label">First Name<span>*</span></label>
                   <div className={`ay-input-wrap ${errors.firstName ? 'has-error' : ''}`}>
                     <User size={16} />
@@ -1237,21 +1273,31 @@ export default function OnboardAboutYou() {
                 </div>
               </div>
 
-              <div className="ay-field" style={{ marginBottom: 18 }}>
-                <label className="ay-label">Email Address<span>*</span></label>
-                <div className={`ay-input-wrap ${errors.email ? 'has-error' : ''}`}>
-                  {checkingEmail ? (
-                    <div className="spinner-mini" style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'var(--color-accent)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                  ) : (
-                    <Mail size={16} />
-                  )}
-                  <input type="text" placeholder="you@example.com" value={form.email} onChange={update('email')} onBlur={handleEmailBlur} />
+              <div className="ay-row">
+                <div className="ay-field">
+                  <label className="ay-label">Email<span>*</span></label>
+                  <div className={`ay-input-wrap ${errors.email ? 'has-error' : ''}`}>
+                    {checkingEmail ? (
+                      <div className="spinner-mini" style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'var(--color-accent)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    ) : (
+                      <Mail size={16} />
+                    )}
+                    <input type="text" placeholder="you@example.com" value={form.email} onChange={update('email')} onBlur={handleEmailBlur} />
+                  </div>
+                  {errors.email && <span className="ay-input-error">{errors.email}</span>}
                 </div>
-                {errors.email && <span className="ay-input-error">{errors.email}</span>}
+                <div className="ay-field">
+                  <label className="ay-label">Mobile Phone<span>*</span></label>
+                  <div className={`ay-input-wrap ${errors.mobilePhone ? 'has-error' : ''}`}>
+                    <Phone size={16} />
+                    <input type="text" placeholder="(123) 456-7890" value={form.mobilePhone} onChange={update('mobilePhone')} />
+                  </div>
+                  {errors.mobilePhone && <span className="ay-input-error">{errors.mobilePhone}</span>}
+                </div>
               </div>
 
               <div className="ay-field" style={{ marginBottom: 18 }}>
-                <label className="ay-label">Birth Date<span>*</span></label>
+                <label className="ay-label">Birth Date <span className="ay-optional-label">(Optional)</span></label>
                 <div className="ay-birth-row">
                   <div className={`ay-input-wrap ${errors.birthDate ? 'has-error' : ''}`}>
                     <Calendar size={16} />
@@ -1276,6 +1322,8 @@ export default function OnboardAboutYou() {
                 {errors.birthDate && <span className="ay-input-error">{errors.birthDate}</span>}
               </div>
 
+              {/* HIDDEN — About You shows only Salutation, Gender, Name, Email, Mobile, optional Birth Date */}
+              {false && (
               <div className="ay-section-head" onClick={() => setCommunityOpen((v) => !v)}>
                 <div className="ay-section-head-text">
                   <h3>Community Information (Optional)</h3>
@@ -1283,8 +1331,9 @@ export default function OnboardAboutYou() {
                 </div>
                 {communityOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
               </div>
+              )}
 
-              {communityOpen && (
+              {false && communityOpen && (
                 <>
                   <div className="ay-row">
                     <div className="ay-field">

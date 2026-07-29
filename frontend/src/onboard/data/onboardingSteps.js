@@ -39,13 +39,17 @@ export const onboardingSteps = [
   { id: PROCESSING_STEP_ID, key: 'processing', label: 'Processing', path: '/onboard/processing', icon: LoaderCircle },
 ];
 
-/** Visible post-login stepper (Welcome, Primary, Household, Review removed). */
+/** Visible post-login stepper (Welcome, Primary, Household, Marital, Yahrzeit, Payment, Review, Processing removed). */
 export const stepperSteps = onboardingSteps.filter(
   (step) =>
     step.id !== WELCOME_STEP_ID &&
     step.id !== ABOUT_YOU_STEP_ID &&
     step.id !== HOUSEHOLD_STEP_ID &&
-    step.id !== REVIEW_STEP_ID,
+    step.id !== MARITAL_INFORMATION_STEP_ID &&
+    step.id !== YAHRZEIT_STEP_ID &&
+    step.id !== PAYMENT_METHOD_STEP_ID &&
+    step.id !== REVIEW_STEP_ID &&
+    step.id !== PROCESSING_STEP_ID,
 );
 
 export function getStepById(id) {
@@ -56,5 +60,5 @@ export function getStepByPath(path) {
   return onboardingSteps.find((step) => step.path === path);
 }
 
-/** First step of the post-login zip stepper. */
+/** First step of the post-login zip stepper (defaults to Spouse when preference is Yes). */
 export const FIRST_FORM_STEP = getStepById(SPOUSE_INFORMATION_STEP_ID);

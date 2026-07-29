@@ -49,7 +49,13 @@ export function createEmptyDraft() {
     lastUpdated: new Date().toISOString(),
     data: {
       primaryMember: {},
+      householdPreferences: {
+        hasSpouse: true,
+        hasChildren: false,
+        addYahrzeit: false,
+      },
       spouse: {},
+      spouseSyncFingerprint: '',
       household: {},
       marital: {},
       children: [],

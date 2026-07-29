@@ -11,13 +11,14 @@ import ToastHost from './components/shared/ToastHost';
 import OnboardWelcome, { ONBOARD_PATH } from './components/onboard/OnboardWelcome';
 import OnboardAboutYou, { ONBOARD_ABOUT_YOU_PATH } from './components/onboard/OnboardAboutYou';
 import SpouseInformation from './onboard/pages/SpouseInformation';
-import MaritalInformation from './onboard/pages/MaritalInformation';
+// HIDDEN forms (code kept): MaritalInformation, PaymentMethod, ProcessingApplication
 import ChildrenInformation from './onboard/pages/ChildrenInformation';
-import YahrzeitInformation from './onboard/pages/YahrzeitInformation';
+// HIDDEN — Yahrzeit is toggle-only (no form). Code kept in YahrzeitInformation.jsx.
+// import YahrzeitInformation from './onboard/pages/YahrzeitInformation';
 import MembershipSelection from './onboard/pages/MembershipSelection';
 import ContributionSchedule from './onboard/pages/ContributionSchedule';
-import PaymentMethod from './onboard/pages/PaymentMethod';
-import ProcessingApplication from './onboard/pages/ProcessingApplication';
+// import PaymentMethod from './onboard/pages/PaymentMethod';
+// import ProcessingApplication from './onboard/pages/ProcessingApplication';
 import {
   getStepById,
   SPOUSE_INFORMATION_STEP_ID,
@@ -31,6 +32,8 @@ import {
   REVIEW_STEP_ID,
   PROCESSING_STEP_ID,
 } from './onboard/data/onboardingSteps';
+import { getHouseholdPreferences, getRedirectPathIfStepDisallowed } from './onboard/utils/householdPreferences';
+import { readDraft } from './onboard/utils/onboardingCookies';
 
 const ONBOARD_SPOUSE_INFORMATION_PATH = getStepById(SPOUSE_INFORMATION_STEP_ID).path;
 const ONBOARD_HOUSEHOLD_PATH = getStepById(HOUSEHOLD_STEP_ID).path;
@@ -256,6 +259,16 @@ export default function App() {
 
   // Post-login zip stepper (Welcome + Primary Member removed from UI).
   if (window.location.pathname === ONBOARD_SPOUSE_INFORMATION_PATH) {
+    const prefs = getHouseholdPreferences(readDraft());
+    const redirect = getRedirectPathIfStepDisallowed(SPOUSE_INFORMATION_STEP_ID, prefs);
+    if (redirect) {
+      return (
+        <>
+          <ToastHost />
+          <RedirectToPath path={redirect} />
+        </>
+      );
+    }
     return (
       <>
         <ToastHost />
@@ -268,21 +281,32 @@ export default function App() {
     return (
       <>
         <ToastHost />
-        <RedirectToPath path={ONBOARD_MARITAL_INFORMATION_PATH} />
+        <RedirectToPath path={ONBOARD_CHILDREN_PATH} />
       </>
     );
   }
 
+  // Marital Information form hidden — skip to Children.
   if (window.location.pathname === ONBOARD_MARITAL_INFORMATION_PATH) {
     return (
       <>
         <ToastHost />
-        <MaritalInformation />
+        <RedirectToPath path={ONBOARD_CHILDREN_PATH} />
       </>
     );
   }
 
   if (window.location.pathname === ONBOARD_CHILDREN_PATH) {
+    const prefs = getHouseholdPreferences(readDraft());
+    const redirect = getRedirectPathIfStepDisallowed(CHILDREN_STEP_ID, prefs);
+    if (redirect) {
+      return (
+        <>
+          <ToastHost />
+          <RedirectToPath path={redirect} />
+        </>
+      );
+    }
     return (
       <>
         <ToastHost />
@@ -291,11 +315,12 @@ export default function App() {
     );
   }
 
+  // Yahrzeit form hidden — preference toggle only; always skip to Membership.
   if (window.location.pathname === ONBOARD_YAHRZEIT_PATH) {
     return (
       <>
         <ToastHost />
-        <YahrzeitInformation />
+        <RedirectToPath path={ONBOARD_MEMBERSHIP_PATH} />
       </>
     );
   }
@@ -318,11 +343,12 @@ export default function App() {
     );
   }
 
+  // Payment Method form hidden — return to portal.
   if (window.location.pathname === ONBOARD_PAYMENT_METHOD_PATH) {
     return (
       <>
         <ToastHost />
-        <PaymentMethod />
+        <RedirectToPath path="/" />
       </>
     );
   }
@@ -331,16 +357,17 @@ export default function App() {
     return (
       <>
         <ToastHost />
-        <RedirectToPath path={ONBOARD_PROCESSING_PATH} />
+        <RedirectToPath path="/" />
       </>
     );
   }
 
+  // Processing form hidden — return to portal.
   if (window.location.pathname === ONBOARD_PROCESSING_PATH) {
     return (
       <>
         <ToastHost />
-        <ProcessingApplication />
+        <RedirectToPath path="/" />
       </>
     );
   }

@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react';
-import { stepperSteps } from '../data/onboardingSteps';
+import { stepperSteps as defaultStepperSteps, getStepById } from '../data/onboardingSteps';
+import { getPreferenceDrivenStepIds, getHouseholdPreferences } from '../utils/householdPreferences';
 
 function stepStatus(stepId, currentStepId) {
   if (stepId === currentStepId) return 'active';
@@ -8,14 +9,19 @@ function stepStatus(stepId, currentStepId) {
 }
 
 /**
- * About You–style horizontal stepper: equal-width steps, connector lines
- * that stop at circle edges, numbered badges under icons.
+ * About You–style horizontal stepper. When draft preferences are provided,
+ * Spouse / Children / Yahrzeit only appear when their Yes toggle is on.
  */
-export default function OnboardStepper({ currentStepId }) {
+export default function OnboardStepper({ currentStepId, draft }) {
+  const prefs = draft ? getHouseholdPreferences(draft) : null;
+  const steps = prefs
+    ? getPreferenceDrivenStepIds(prefs).map((id) => getStepById(id)).filter(Boolean)
+    : defaultStepperSteps;
+
   return (
     <nav className="onboard-stepper" aria-label="Onboarding progress">
       <div className="onboard-stepper-list" role="list">
-        {stepperSteps.map((step, index) => {
+        {steps.map((step, index) => {
           const status = stepStatus(step.id, currentStepId);
           const StepIcon = step.icon;
           const displayNumber = index + 1;

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Users, Heart, ArrowLeft } from 'lucide-react';
+import { Users, Heart, ArrowLeft, LogOut } from 'lucide-react';
 import OnboardHeader from '../components/OnboardHeader';
 import OnboardStepper from '../components/OnboardStepper';
 import OnboardFooter from '../components/OnboardFooter';
+import KnowYouBetterPanel from '../components/KnowYouBetterPanel';
 import PrimaryButton from '../components/PrimaryButton';
 import SecondaryButton from '../components/SecondaryButton';
 import useOnboardingTheme from '../hooks/useOnboardingTheme';
@@ -10,16 +11,19 @@ import useOnboardingDraft from '../hooks/useOnboardingDraft';
 import {
   getStepById,
   MEMBERSHIP_STEP_ID,
-  YAHRZEIT_STEP_ID,
-  CONTRIBUTION_SCHEDULE_STEP_ID,
 } from '../data/onboardingSteps';
 import { GENERAL_TIERS, CHAI_TIERS, formatCurrency } from '../data/membershipTiers';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
+import {
+  getHouseholdPreferences,
+  getNextPreferenceStepId,
+  getPreviousPreferenceStepId,
+  isFirstPreferenceStep,
+} from '../utils/householdPreferences';
+import { signOutFromOnboarding } from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = MEMBERSHIP_STEP_ID;
-const PREVIOUS_STEP_ID = YAHRZEIT_STEP_ID;
-const NEXT_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
 
 function TierRow({ tier, selected, onChange }) {
   const Icon = tier.icon;
@@ -68,6 +72,8 @@ export default function MembershipSelection() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const prefs = getHouseholdPreferences(draft);
+  const isFirstForm = isFirstPreferenceStep(THIS_STEP_ID, prefs);
   const selectedTier = draft.data.membership?.tier || '';
 
   const handleSelectTier = (tierId) => {
@@ -80,11 +86,16 @@ export default function MembershipSelection() {
   };
 
   const handleBack = () => {
+    if (isFirstForm) {
+      signOutFromOnboarding();
+      return;
+    }
+    const previousStepId = getPreviousPreferenceStepId(THIS_STEP_ID, prefs);
     persistNow({
       ...draft,
-      currentStep: PREVIOUS_STEP_ID,
+      currentStep: previousStepId,
     });
-    goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
+    goToOnboardingPath(getStepById(previousStepId).path);
   };
 
   const handleSubmit = (event) => {
@@ -96,12 +107,13 @@ export default function MembershipSelection() {
       return;
     }
 
+    const nextStepId = getNextPreferenceStepId(THIS_STEP_ID, prefs);
     setIsSubmitting(true);
     persistNow({
       ...draft,
-      currentStep: NEXT_STEP_ID,
+      currentStep: nextStepId,
     });
-    goToOnboardingPath(getStepById(NEXT_STEP_ID).path);
+    goToOnboardingPath(getStepById(nextStepId).path);
   };
 
   return (
@@ -116,7 +128,14 @@ export default function MembershipSelection() {
           subtitle="Join our community in a few simple steps."
         />
 
-        <OnboardStepper currentStepId={THIS_STEP_ID} />
+        <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
+
+        <KnowYouBetterPanel
+          draft={draft}
+          updateDraft={updateDraft}
+          persistNow={persistNow}
+          currentStepId={THIS_STEP_ID}
+        />
 
         <main>
           <form className="onboard-about-card" onSubmit={handleSubmit} noValidate>
@@ -173,11 +192,15 @@ export default function MembershipSelection() {
             )}
 
             <div className="onboard-form-actions">
-              <SecondaryButton variant="navy" icon={ArrowLeft} onClick={handleBack}>
-                Back
+              <SecondaryButton
+                variant="navy"
+                icon={isFirstForm ? LogOut : ArrowLeft}
+                onClick={handleBack}
+              >
+                {isFirstForm ? 'Sign Out' : 'Back'}
               </SecondaryButton>
               <PrimaryButton type="submit" loading={isSubmitting}>
-                Select Membership
+                Save &amp; Continue
               </PrimaryButton>
             </div>
           </form>

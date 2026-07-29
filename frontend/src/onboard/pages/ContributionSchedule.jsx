@@ -12,15 +12,17 @@ import {
   getStepById,
   CONTRIBUTION_SCHEDULE_STEP_ID,
   MEMBERSHIP_STEP_ID,
-  PAYMENT_METHOD_STEP_ID,
 } from '../data/onboardingSteps';
 import { getMembershipTierById, formatCurrency } from '../data/membershipTiers';
-import { goToOnboardingPath } from '../utils/onboardingRoutes';
+import { ONBOARD_EXIT_PATH, goToOnboardingPath } from '../utils/onboardingRoutes';
+import { clearDraft } from '../utils/onboardingCookies';
+import { clearPostLoginStepperPending } from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
 const PREVIOUS_STEP_ID = MEMBERSHIP_STEP_ID;
-const NEXT_STEP_ID = PAYMENT_METHOD_STEP_ID;
+// Payment Method + Processing forms are hidden — finish onboarding after this step.
+const NEXT_PATH = ONBOARD_EXIT_PATH;
 const FALLBACK_ANNUAL_PRICE = 1800;
 
 function buildScheduleOptions(annualPrice) {
@@ -100,13 +102,17 @@ export default function ContributionSchedule() {
     setIsSubmitting(true);
     persistNow({
       ...draft,
-      currentStep: NEXT_STEP_ID,
+      currentStep: THIS_STEP_ID,
       data: {
         ...draft.data,
         contributionSchedule: { ...draft.data.contributionSchedule, option: selectedOption },
       },
     });
-    goToOnboardingPath(getStepById(NEXT_STEP_ID).path);
+    // Payment Method + Processing hidden — complete stepper and return to portal.
+    clearDraft();
+    clearPostLoginStepperPending();
+    sessionStorage.setItem('show_onboarding_complete', '1');
+    goToOnboardingPath(NEXT_PATH);
   };
 
   return (
@@ -121,7 +127,7 @@ export default function ContributionSchedule() {
           subtitle="Join our community in a few simple steps."
         />
 
-        <OnboardStepper currentStepId={THIS_STEP_ID} />
+        <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
 
         <main>
           <form className="onboard-about-card" onSubmit={handleSubmit} noValidate>
@@ -201,7 +207,7 @@ export default function ContributionSchedule() {
                 Back
               </SecondaryButton>
               <PrimaryButton type="submit" loading={isSubmitting}>
-                Continue
+                Save &amp; Continue
               </PrimaryButton>
             </div>
           </form>

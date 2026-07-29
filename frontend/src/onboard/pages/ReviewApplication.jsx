@@ -155,21 +155,21 @@ export default function ReviewApplication() {
             </div>
 
             <ReviewSection icon={Users} title="Spouse Information" accent="blue">
+              <ReviewItem label="Salutation" value={spouse.salutation} />
+              <ReviewItem label="Gender" value={spouse.gender} />
               <ReviewItem label="First Name" value={spouse.firstName} />
               <ReviewItem label="Last Name" value={spouse.lastName} />
-              <ReviewItem label="Hebrew Name" value={spouse.hebrewName} />
-              <ReviewItem label="Father's Hebrew Name" value={spouse.fathersHebrewName} />
-              <ReviewItem label="Mother's Hebrew Name" value={spouse.mothersHebrewName} />
-              <ReviewItem label="Occupation" value={spouse.occupation} />
               <ReviewItem label="Email Address" value={spouse.email} />
               <ReviewItem label="Mobile Number" value={displayPhone(spouse.phone)} />
-              <ReviewItem label="Birth Date" value={spouse.birthDate} />
             </ReviewSection>
 
+            {/* HIDDEN — Marital Information form removed from onboarding flow */}
+            {false && (
             <ReviewSection icon={Heart} title="Marital Information" accent="gold">
               <ReviewItem label="Marital Status" value={marital.maritalStatus} />
               <ReviewItem label="Anniversary Date" value={marital.anniversaryDate} />
             </ReviewSection>
+            )}
 
             <ReviewSection icon={Baby} title="Children" accent="green">
               {children.length === 0 ? (
@@ -179,12 +179,16 @@ export default function ReviewApplication() {
                   <div key={child.id || `child-${index}`} className="onboard-review-child-block">
                     <p className="onboard-review-child-heading">Child {index + 1}</p>
                     <div className="onboard-review-grid">
-                      <ReviewItem label="Name" value={child.name || child.firstName} />
-                      <ReviewItem label="Birth Date" value={child.birthDate} />
+                      <ReviewItem label="Salutation" value={child.salutation} />
+                      <ReviewItem label="Gender" value={child.gender} />
+                      <ReviewItem label="First Name" value={child.firstName || child.name} />
+                      <ReviewItem label="Last Name" value={child.lastName} />
                     </div>
                   </div>
                 ))
               )}
+              {/* HIDDEN — Additional Information (college) removed */}
+              {false && (
               <ReviewItem
                 label="Children in College"
                 value={
@@ -195,6 +199,7 @@ export default function ReviewApplication() {
                       : '—'
                 }
               />
+              )}
             </ReviewSection>
 
             <ReviewSection icon={Flame} title="Yahrzeit Information" accent="orange">

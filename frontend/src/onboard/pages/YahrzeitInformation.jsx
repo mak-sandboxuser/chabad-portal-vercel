@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowLeft, Trash2 } from 'lucide-react';
 import OnboardHeader from '../components/OnboardHeader';
 import OnboardStepper from '../components/OnboardStepper';
 import OnboardFooter from '../components/OnboardFooter';
+import KnowYouBetterPanel from '../components/KnowYouBetterPanel';
 import FormField from '../components/FormField';
 import DateField from '../components/DateField';
 import InfoPanel from '../components/InfoPanel';
@@ -14,16 +15,18 @@ import useOnboardingDraft from '../hooks/useOnboardingDraft';
 import {
   getStepById,
   YAHRZEIT_STEP_ID,
-  CHILDREN_STEP_ID,
-  MEMBERSHIP_STEP_ID,
 } from '../data/onboardingSteps';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
+import {
+  getHouseholdPreferences,
+  getNextPreferenceStepId,
+  getPreviousPreferenceStepId,
+  getRedirectPathIfStepDisallowed,
+} from '../utils/householdPreferences';
 import { isBlank, validateDateString } from '../utils/onboardingValidation';
 import '../onboard.css';
 
 const THIS_STEP_ID = YAHRZEIT_STEP_ID;
-const PREVIOUS_STEP_ID = CHILDREN_STEP_ID;
-const NEXT_STEP_ID = MEMBERSHIP_STEP_ID;
 const MAX_RECORDS = 4;
 const PASSING_DATE_LABEL = 'date of passing';
 
@@ -58,7 +61,15 @@ export default function YahrzeitInformation() {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const prefs = getHouseholdPreferences(draft);
   const records = draft.data.yahrzeitRecords || [];
+
+  useEffect(() => {
+    const redirect = getRedirectPathIfStepDisallowed(THIS_STEP_ID, prefs);
+    if (redirect && redirect !== window.location.pathname) {
+      goToOnboardingPath(redirect);
+    }
+  }, [prefs.hasSpouse, prefs.hasChildren, prefs.addYahrzeit]);
 
   const updateRecords = (nextRecords) => {
     updateDraft((prev) => ({
@@ -115,17 +126,19 @@ export default function YahrzeitInformation() {
   };
 
   const handleBack = () => {
+    const previousStepId = getPreviousPreferenceStepId(THIS_STEP_ID, prefs);
     persistNow({
       ...draft,
-      currentStep: PREVIOUS_STEP_ID,
+      currentStep: previousStepId,
       data: { ...draft.data, yahrzeitRecords: records },
     });
-    goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
+    goToOnboardingPath(getStepById(previousStepId).path);
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
     if (isSubmitting) return;
+    if (!prefs.addYahrzeit) return;
 
     const nextErrors = validateRecords(records);
     setErrors(nextErrors);
@@ -139,13 +152,14 @@ export default function YahrzeitInformation() {
       return;
     }
 
+    const nextStepId = getNextPreferenceStepId(THIS_STEP_ID, prefs);
     setIsSubmitting(true);
     persistNow({
       ...draft,
-      currentStep: NEXT_STEP_ID,
+      currentStep: nextStepId,
       data: { ...draft.data, yahrzeitRecords: records },
     });
-    goToOnboardingPath(getStepById(NEXT_STEP_ID).path);
+    goToOnboardingPath(getStepById(nextStepId).path);
   };
 
   return (
@@ -160,9 +174,17 @@ export default function YahrzeitInformation() {
           subtitle="Join our community in a few simple steps."
         />
 
-        <OnboardStepper currentStepId={THIS_STEP_ID} />
+        <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
+
+        <KnowYouBetterPanel
+          draft={draft}
+          updateDraft={updateDraft}
+          persistNow={persistNow}
+          currentStepId={THIS_STEP_ID}
+        />
 
         <main>
+          {prefs.addYahrzeit && (
           <form className="onboard-about-card" onSubmit={handleSubmit} noValidate>
             <div className="onboard-about-header">
               <div>
@@ -243,6 +265,7 @@ export default function YahrzeitInformation() {
               </PrimaryButton>
             </div>
           </form>
+          )}
         </main>
 
         <OnboardFooter securityNote="Your information is secure and will only be used for membership purposes." />

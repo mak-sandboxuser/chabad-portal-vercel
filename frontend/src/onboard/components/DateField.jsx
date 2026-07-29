@@ -6,7 +6,16 @@ import { Calendar } from 'lucide-react';
  * separate month/day/year selects) — auto-inserts the slashes as the
  * applicant types digits.
  */
-export default function DateField({ id, label, required = false, value, onChange, error, placeholder = 'MM/DD/YYYY' }) {
+export default function DateField({
+  id,
+  label,
+  required = false,
+  optional = false,
+  value,
+  onChange,
+  error,
+  placeholder = 'MM/DD/YYYY',
+}) {
   const generatedId = useId();
   const fieldId = id || generatedId;
   const errorId = error ? `${fieldId}-error` : undefined;
@@ -28,6 +37,7 @@ export default function DateField({ id, label, required = false, value, onChange
             *
           </span>
         )}
+        {optional && <span className="onboard-optional-label">(Optional)</span>}
       </label>
 
       <div className={`onboard-input-shell ${error ? 'onboard-input-shell-error' : ''}`}>
