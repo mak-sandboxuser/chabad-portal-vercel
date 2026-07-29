@@ -6,7 +6,9 @@ import OnboardFooter from '../components/OnboardFooter';
 import useOnboardingTheme from '../hooks/useOnboardingTheme';
 import useOnboardingDraft from '../hooks/useOnboardingDraft';
 import { PROCESSING_STEP_ID } from '../data/onboardingSteps';
-import { ONBOARD_CONFIRMATION_PATH, goToOnboardingPath } from '../utils/onboardingRoutes';
+import { ONBOARD_EXIT_PATH, goToOnboardingPath } from '../utils/onboardingRoutes';
+import { clearDraft } from '../utils/onboardingCookies';
+import { clearPostLoginStepperPending } from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = PROCESSING_STEP_ID;
@@ -70,7 +72,10 @@ export default function ProcessingApplication() {
   useEffect(() => {
     if (completedCount < PROCESSING_STEPS.length) return undefined;
     const timer = setTimeout(() => {
-      goToOnboardingPath(ONBOARD_CONFIRMATION_PATH);
+      clearDraft();
+      clearPostLoginStepperPending();
+      sessionStorage.setItem('show_onboarding_complete', '1');
+      goToOnboardingPath(ONBOARD_EXIT_PATH);
     }, REDIRECT_DELAY_MS);
     return () => clearTimeout(timer);
   }, [completedCount]);

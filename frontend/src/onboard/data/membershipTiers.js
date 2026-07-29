@@ -26,7 +26,7 @@ export const GENERAL_TIERS = [
   },
   {
     id: 'single-parent',
-    name: 'Single Parent Family',
+    name: 'Single Parent Membership',
     description: 'Supporting single parents and their children in our community.',
     annualPrice: 1560,
     icon: Users2,
@@ -42,7 +42,7 @@ export const GENERAL_TIERS = [
   },
   {
     id: 'senior',
-    name: 'Senior Citizen Membership',
+    name: 'Senior Membership (65+)',
     description: 'Special rate for seniors (65+) to stay engaged and inspired.',
     annualPrice: 1800,
     icon: MenorahIcon,

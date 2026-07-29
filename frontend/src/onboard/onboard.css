@@ -833,10 +833,10 @@
   z-index: 1;
 }
 
-/* Stepper */
+/* Stepper — About You style (equal-width steps, edge-stopped connectors) */
 
 .onboard-stepper {
-  margin-bottom: 28px;
+  margin-bottom: 36px;
   overflow-x: auto;
   padding-bottom: 6px;
 }
@@ -844,40 +844,47 @@
 .onboard-stepper-list {
   display: flex;
   align-items: flex-start;
-  min-width: max-content;
-}
-
-.onboard-stepper-row {
-  display: flex;
-  align-items: flex-start;
-}
-
-.onboard-stepper-connector {
+  justify-content: space-between;
   position: relative;
-  display: inline-block;
-  width: 52px;
-  height: 2px;
-  background: var(--onboard-border);
-  margin-top: 21px;
-  flex-shrink: 0;
-}
-
-.onboard-stepper-connector-reached {
-  background: var(--onboard-gold-soft);
+  width: 100%;
+  min-width: 720px;
 }
 
 .onboard-stepper-item {
+  position: relative;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  width: 90px;
-  flex-shrink: 0;
-  gap: 6px;
+  gap: 8px;
+  z-index: 1;
+}
+
+.onboard-stepper-item::before {
+  content: '';
+  position: absolute;
+  left: calc(-50% + 28px);
+  right: calc(50% + 28px);
+  top: 21px;
+  height: 2px;
+  background: var(--onboard-border);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.onboard-stepper-item:first-child::before {
+  display: none;
+}
+
+.onboard-stepper-item-active::before,
+.onboard-stepper-item-completed::before {
+  background: var(--onboard-gold);
 }
 
 .onboard-stepper-icon-circle {
   position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -887,86 +894,74 @@
   border: 2px solid var(--onboard-border);
   background: var(--onboard-surface);
   color: var(--onboard-text-secondary);
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
-/* Active (step 2+): solid navy fill, matching the app's primary-action
-   color (swaps to gold in dark theme, same as buttons). */
 .onboard-stepper-item-active .onboard-stepper-icon-circle {
-  border-color: transparent;
-  background: var(--onboard-button-bg);
-  color: var(--onboard-button-text);
-}
-
-/* Active + first step only: the flow's entry point keeps the gold
-   "Start Here" ring instead of the solid navy fill. */
-.onboard-stepper-item-start .onboard-stepper-icon-circle {
-  background: var(--onboard-surface);
   border-color: var(--onboard-gold);
   color: var(--onboard-gold);
-  box-shadow: 0 0 0 4px var(--onboard-badge-bg);
+  background: var(--onboard-badge-bg);
+  transform: scale(1.08);
 }
 
-/* Completed: solid gold fill with a white checkmark (the step's own icon
-   is replaced by the checkmark once it's done). */
 .onboard-stepper-item-completed .onboard-stepper-icon-circle {
+  border-color: var(--onboard-gold);
   background: var(--onboard-gold);
-  border-color: transparent;
   color: #ffffff;
 }
 
 .onboard-stepper-badge {
   position: absolute;
-  bottom: -6px;
+  bottom: -10px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   font-size: 10px;
   font-weight: 700;
-  background: var(--onboard-step-badge-bg);
-  color: var(--onboard-step-badge-text);
+  background: var(--onboard-border);
+  color: var(--onboard-text-secondary);
   border: 2px solid var(--onboard-surface);
+  z-index: 2;
 }
 
-/* Any step that's been reached (completed or active, including the gold
-   "start" state) gets the gold badge; only untouched upcoming steps keep
-   the neutral navy badge. */
-.onboard-stepper-item-active .onboard-stepper-badge,
-.onboard-stepper-item-completed .onboard-stepper-badge {
+.onboard-stepper-item-active .onboard-stepper-badge {
   background: var(--onboard-gold);
   color: #ffffff;
 }
 
-.onboard-stepper-tag {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--onboard-gold);
-  border: 1px solid var(--onboard-gold-soft);
-  border-radius: 999px;
-  padding: 2px 8px;
-  margin-top: 6px;
+.onboard-stepper-item-completed .onboard-stepper-badge {
+  background: var(--onboard-navy);
+  color: #ffffff;
 }
 
 .onboard-stepper-label {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.3;
   color: var(--onboard-text-secondary);
-  margin-top: 2px;
+  margin-top: 4px;
+  max-width: 110px;
 }
 
 .onboard-stepper-item-active .onboard-stepper-label {
   color: var(--onboard-gold);
+  font-weight: 700;
 }
 
 .onboard-stepper-item-completed .onboard-stepper-label {
   color: var(--onboard-navy);
+}
+
+/* Legacy connector/tag (no longer rendered) */
+.onboard-stepper-row,
+.onboard-stepper-connector,
+.onboard-stepper-tag {
+  display: none;
 }
 
 /* Form card */
@@ -992,7 +987,7 @@
   font-family: var(--onboard-font-serif);
   font-size: 24px;
   font-weight: 700;
-  color: var(--onboard-navy);
+  color: var(--onboard-button-bg);
   margin: 0 0 4px;
 }
 
@@ -1036,6 +1031,14 @@
 
 .onboard-form-grid-thirds {
   grid-template-columns: 1fr 1fr 1fr;
+}
+
+.onboard-form-grid-city-state-zip {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 0.9fr;
+  gap: 18px 16px;
+  margin-bottom: 18px;
+  align-items: start;
 }
 
 .onboard-field {
@@ -1095,12 +1098,34 @@
 
 .onboard-input {
   flex: 1;
-  border: none;
-  outline: none;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
   font-size: 14px;
   color: var(--onboard-text);
   min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.onboard-input-shell input,
+.onboard-select-shell select,
+.onboard-phone-field input {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.onboard-input-shell input:-webkit-autofill,
+.onboard-input-shell input:-webkit-autofill:hover,
+.onboard-input-shell input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 40px var(--onboard-surface) inset !important;
+  box-shadow: 0 0 0 40px var(--onboard-surface) inset !important;
+  border: none !important;
 }
 
 .onboard-input::placeholder {
@@ -1302,6 +1327,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.onboard-form-actions-end {
+  justify-content: flex-end;
 }
 
 .onboard-secondary-button {
@@ -1521,6 +1550,7 @@
   }
 
   .onboard-stepper-item {
+    flex: 0 0 auto;
     width: 96px;
   }
 
@@ -1741,19 +1771,19 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 18px 9px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--onboard-info-border);
-  background: var(--onboard-surface);
-  color: var(--onboard-info-icon-color);
+  padding: 10px 18px 10px 12px;
+  border-radius: var(--onboard-button-radius);
+  border: none;
+  background: var(--onboard-button-bg);
+  color: var(--onboard-button-text);
   font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: filter 0.15s ease;
 }
 
 .onboard-add-item-button:hover:not(:disabled) {
-  background: var(--onboard-info-bg);
+  filter: brightness(1.08);
 }
 
 .onboard-add-item-button:disabled {
@@ -1768,8 +1798,8 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--onboard-info-icon-color);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--onboard-button-text);
   flex-shrink: 0;
 }
 
@@ -2329,6 +2359,10 @@
     grid-template-columns: 1fr;
   }
 
+  .onboard-form-grid-city-state-zip {
+    grid-template-columns: 1fr;
+  }
+
   .onboard-card-brands {
     display: none;
   }
@@ -2369,7 +2403,7 @@
   font-family: var(--onboard-font-serif);
   font-size: clamp(22px, 2.6vw, 28px);
   font-weight: 700;
-  color: var(--onboard-navy);
+  color: var(--onboard-button-bg);
   margin: 0 0 12px;
 }
 
@@ -2514,5 +2548,119 @@
   .onboard-processing-icon {
     width: 46px;
     height: 46px;
+  }
+}
+
+/* Payment column dimming when the other method is selected */
+.onboard-payment-column.is-dimmed {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Review redesign */
+.onboard-review-summary-banner {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(15, 40, 80, 0.06), rgba(196, 154, 74, 0.12));
+  border: 1px solid var(--onboard-border);
+}
+
+.onboard-review-summary-label {
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--onboard-text-secondary);
+}
+
+.onboard-review-summary-value {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--onboard-navy);
+}
+
+.onboard-review-summary-monthly {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--onboard-gold);
+}
+
+.onboard-review-card {
+  margin-bottom: 18px;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--onboard-border);
+  border-radius: 14px;
+  background: var(--onboard-surface);
+  box-shadow: 0 1px 2px rgba(15, 40, 80, 0.04);
+}
+
+.onboard-review-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--onboard-border);
+}
+
+.onboard-review-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(15, 40, 80, 0.08);
+  color: var(--onboard-navy);
+  flex-shrink: 0;
+}
+
+.onboard-review-card-blue .onboard-review-card-icon {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+.onboard-review-card-gold .onboard-review-card-icon {
+  background: rgba(196, 154, 74, 0.16);
+  color: var(--onboard-gold);
+}
+
+.onboard-review-card-green .onboard-review-card-icon {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+
+.onboard-review-card-orange .onboard-review-card-icon {
+  background: rgba(249, 115, 22, 0.12);
+  color: #ea580c;
+}
+
+.onboard-review-card-purple .onboard-review-card-icon {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+}
+
+.onboard-review-card-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--onboard-navy);
+}
+
+.onboard-review-item-full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 860px) {
+  .onboard-review-summary-banner {
+    grid-template-columns: 1fr;
   }
 }

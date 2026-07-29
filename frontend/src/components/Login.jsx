@@ -5,6 +5,7 @@ import { Mail, ArrowRight, ShieldAlert, Shield, CheckCircle, HelpCircle, Moon, S
 import BuildingSketch from './shared/BuildingSketch';
 import ChabadLogo from './shared/ChabadLogo';
 import { ONBOARD_PATH } from './onboard/OnboardWelcome';
+import { getPostLoginStepperEntryPath, isPostLoginStepperPending } from '../onboard/utils/postLoginStepper';
 import { apiUrl } from '../config/api';
 import { authTrace } from '../utils/authTrace';
 import {
@@ -101,7 +102,9 @@ export default function Login({ initialError = '' }) {
       showToast({ message: `Welcome back, ${userSession.name}!`, type: 'success' });
 
       setTimeout(() => {
-        window.location.replace('/');
+        window.location.replace(
+          isPostLoginStepperPending() ? getPostLoginStepperEntryPath() : '/',
+        );
       }, 300);
 
       /* ==========================================================================

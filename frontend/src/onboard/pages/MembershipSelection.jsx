@@ -23,7 +23,10 @@ const NEXT_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
 
 function TierRow({ tier, selected, onChange }) {
   const Icon = tier.icon;
-  const monthly = tier.isOpenEnded ? tier.tagline : `$${Math.floor(tier.annualPrice / 12)} / month`;
+  const monthlyAmount = Math.floor(tier.annualPrice / 12);
+  const monthly = tier.isOpenEnded
+    ? tier.tagline
+    : `$${formatCurrency(monthlyAmount)} / month`;
 
   return (
     <label className={`onboard-tier-row onboard-tier-accent-${tier.accent}`} htmlFor={`tier-${tier.id}`}>
@@ -173,7 +176,7 @@ export default function MembershipSelection() {
               <SecondaryButton variant="navy" icon={ArrowLeft} onClick={handleBack}>
                 Back
               </SecondaryButton>
-              <PrimaryButton type="submit" loading={isSubmitting} className="onboard-primary-button-blue">
+              <PrimaryButton type="submit" loading={isSubmitting}>
                 Select Membership
               </PrimaryButton>
             </div>

@@ -14,7 +14,7 @@ import {
   getStepById,
   PAYMENT_METHOD_STEP_ID,
   CONTRIBUTION_SCHEDULE_STEP_ID,
-  REVIEW_STEP_ID,
+  PROCESSING_STEP_ID,
 } from '../data/onboardingSteps';
 import { US_STATES } from '../data/usStates';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
@@ -31,11 +31,26 @@ import '../onboard.css';
 
 const THIS_STEP_ID = PAYMENT_METHOD_STEP_ID;
 const PREVIOUS_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
-const NEXT_STEP_ID = REVIEW_STEP_ID;
+const NEXT_STEP_ID = PROCESSING_STEP_ID;
 
 const CARD_BRANDS = ['VISA', 'Mastercard', 'AMEX', 'Discover'];
 
 const EMPTY_BILLING_ADDRESS = { line1: '', line2: '', city: '', state: '', zipCode: '' };
+
+function formatCardNumberInput(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 19);
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+}
+
+function formatExpirationInput(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)} / ${digits.slice(2)}`;
+}
+
+function formatCvcInput(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 4);
+}
 
 export default function PaymentMethod() {
   const [theme, toggleTheme] = useOnboardingTheme();
@@ -249,7 +264,12 @@ export default function PaymentMethod() {
                   inputMode="numeric"
                   autoComplete="cc-number"
                   value={cardNumber}
-                  onChange={(e) => { setCardNumber(e.target.value); clearError('cardNumber'); }}
+                  onChange={(e) => { setCardNumber(formatCardNumberInput(e.target.value)); clearError('cardNumber'); }}
+                  onBlur={() => {
+                    if (!isBlank(cardNumber) && !isValidCardNumber(cardNumber)) {
+                      setErrors((prev) => ({ ...prev, cardNumber: 'Enter a valid card number.' }));
+                    }
+                  }}
                   error={errors.cardNumber}
                   trailingContent={
                     <span className="onboard-card-brands" aria-hidden="true">
@@ -269,7 +289,13 @@ export default function PaymentMethod() {
                     inputMode="numeric"
                     autoComplete="cc-exp"
                     value={expirationDate}
-                    onChange={(e) => { setExpirationDate(e.target.value); clearError('expirationDate'); }}
+                    onChange={(e) => { setExpirationDate(formatExpirationInput(e.target.value)); clearError('expirationDate'); }}
+                    onBlur={() => {
+                      if (!isBlank(expirationDate)) {
+                        const expError = validateExpirationDate(expirationDate);
+                        if (expError) setErrors((prev) => ({ ...prev, expirationDate: expError }));
+                      }
+                    }}
                     error={errors.expirationDate}
                   />
                   <FormField
@@ -280,7 +306,12 @@ export default function PaymentMethod() {
                     inputMode="numeric"
                     autoComplete="cc-csc"
                     value={cvc}
-                    onChange={(e) => { setCvc(e.target.value); clearError('cvc'); }}
+                    onChange={(e) => { setCvc(formatCvcInput(e.target.value)); clearError('cvc'); }}
+                    onBlur={() => {
+                      if (!isBlank(cvc) && !isValidCvc(cvc)) {
+                        setErrors((prev) => ({ ...prev, cvc: 'Enter a valid CVC.' }));
+                      }
+                    }}
                     error={errors.cvc}
                     trailingContent={<HelpCircle size={16} className="onboard-input-tooltip-icon" title="3-4 digit security code on your card" />}
                   />
@@ -304,10 +335,11 @@ export default function PaymentMethod() {
                   onChange={handleBillingChange('line2')}
                 />
 
-                <div className="onboard-form-grid onboard-form-grid-thirds">
+                <div className="onboard-form-grid onboard-form-grid-city-state-zip">
                   <FormField
                     id="city"
-                    label=""
+                    label="City"
+                    required
                     placeholder="City"
                     value={billingAddress.city}
                     onChange={handleBillingChange('city')}
@@ -317,6 +349,7 @@ export default function PaymentMethod() {
                     standalone
                     id="state"
                     label="State"
+                    required
                     value={billingAddress.state}
                     onChange={handleBillingChange('state')}
                     options={US_STATES}
@@ -324,10 +357,16 @@ export default function PaymentMethod() {
                   />
                   <FormField
                     id="zipCode"
-                    label=""
+                    label="Zip Code"
+                    required
                     placeholder="Zip Code"
                     value={billingAddress.zipCode}
                     onChange={handleBillingChange('zipCode')}
+                    onBlur={() => {
+                      if (!isBlank(billingAddress.zipCode) && !isValidPostalCode(billingAddress.zipCode)) {
+                        setErrors((prev) => ({ ...prev, zipCode: 'Enter a valid ZIP code.' }));
+                      }
+                    }}
                     error={errors.zipCode}
                   />
                 </div>
@@ -359,7 +398,7 @@ export default function PaymentMethod() {
                     placeholder="021000021"
                     inputMode="numeric"
                     value={routingNumber}
-                    onChange={(e) => { setRoutingNumber(e.target.value); clearError('routingNumber'); }}
+                    onChange={(e) => { setRoutingNumber(String(e.target.value || '').replace(/\D/g, '').slice(0, 9)); clearError('routingNumber'); }}
                     error={errors.routingNumber}
                     trailingContent={<HelpCircle size={16} className="onboard-input-tooltip-icon" title="9-digit number on your check" />}
                   />
@@ -370,7 +409,7 @@ export default function PaymentMethod() {
                     placeholder="1234567890"
                     inputMode="numeric"
                     value={accountNumber}
-                    onChange={(e) => { setAccountNumber(e.target.value); clearError('accountNumber'); }}
+                    onChange={(e) => { setAccountNumber(String(e.target.value || '').replace(/\D/g, '').slice(0, 17)); clearError('accountNumber'); }}
                     error={errors.accountNumber}
                     trailingContent={<HelpCircle size={16} className="onboard-input-tooltip-icon" title="Your bank account number" />}
                   />

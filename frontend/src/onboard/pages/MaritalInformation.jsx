@@ -12,7 +12,7 @@ import useOnboardingDraft from '../hooks/useOnboardingDraft';
 import {
   getStepById,
   MARITAL_INFORMATION_STEP_ID,
-  HOUSEHOLD_STEP_ID,
+  SPOUSE_INFORMATION_STEP_ID,
   CHILDREN_STEP_ID,
 } from '../data/onboardingSteps';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
@@ -20,7 +20,7 @@ import { isBlank, validateDateString } from '../utils/onboardingValidation';
 import '../onboard.css';
 
 const THIS_STEP_ID = MARITAL_INFORMATION_STEP_ID;
-const PREVIOUS_STEP_ID = HOUSEHOLD_STEP_ID;
+const PREVIOUS_STEP_ID = SPOUSE_INFORMATION_STEP_ID;
 const NEXT_STEP_ID = CHILDREN_STEP_ID;
 
 const MARITAL_STATUS_OPTIONS = [

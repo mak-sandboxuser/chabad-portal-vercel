@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Mail, Briefcase, Lock, ArrowLeft } from 'lucide-react';
+import { Mail, Briefcase, Lock } from 'lucide-react';
 import OnboardHeader from '../components/OnboardHeader';
 import OnboardStepper from '../components/OnboardStepper';
 import OnboardFooter from '../components/OnboardFooter';
@@ -8,17 +8,15 @@ import DateField from '../components/DateField';
 import PhoneField from '../components/PhoneField';
 import InfoPanel from '../components/InfoPanel';
 import PrimaryButton from '../components/PrimaryButton';
-import SecondaryButton from '../components/SecondaryButton';
 import useOnboardingTheme from '../hooks/useOnboardingTheme';
 import useOnboardingDraft from '../hooks/useOnboardingDraft';
-import { getStepById, SPOUSE_INFORMATION_STEP_ID, ABOUT_YOU_STEP_ID, HOUSEHOLD_STEP_ID } from '../data/onboardingSteps';
+import { getStepById, SPOUSE_INFORMATION_STEP_ID, MARITAL_INFORMATION_STEP_ID } from '../data/onboardingSteps';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
 import { isBlank, isValidPersonName, isValidEmail, isValidPhoneNumber, validateDateString } from '../utils/onboardingValidation';
 import '../onboard.css';
 
 const THIS_STEP_ID = SPOUSE_INFORMATION_STEP_ID;
-const PREVIOUS_STEP_ID = ABOUT_YOU_STEP_ID;
-const NEXT_STEP_ID = HOUSEHOLD_STEP_ID;
+const NEXT_STEP_ID = MARITAL_INFORMATION_STEP_ID;
 
 const EMPTY_SPOUSE = {
   firstName: '',
@@ -106,15 +104,6 @@ export default function SpouseInformation() {
   const focusFirstInvalidField = (fieldErrors) => {
     const firstInvalid = FIELD_ORDER.find((field) => fieldErrors[field]);
     if (firstInvalid) document.getElementById(firstInvalid)?.focus();
-  };
-
-  const handleBack = () => {
-    persistNow({
-      ...draft,
-      currentStep: PREVIOUS_STEP_ID,
-      data: { ...draft.data, spouse },
-    });
-    goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
   };
 
   const handleSubmit = (event) => {
@@ -232,6 +221,7 @@ export default function SpouseInformation() {
                 value={spouse.email}
                 onChange={handleTextChange('email', isValidEmail)}
                 error={errors.email}
+                autoComplete="email"
               />
               <PhoneField
                 id="phone"
@@ -259,10 +249,7 @@ export default function SpouseInformation() {
               description="This helps us create a complete household record and provide the best experience for your family."
             />
 
-            <div className="onboard-form-actions">
-              <SecondaryButton variant="navy" icon={ArrowLeft} onClick={handleBack}>
-                Back
-              </SecondaryButton>
+            <div className="onboard-form-actions onboard-form-actions-end">
               <PrimaryButton type="submit" loading={isSubmitting}>
                 Continue
               </PrimaryButton>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Trash2, Info } from 'lucide-react';
+import { ArrowLeft, Trash2 } from 'lucide-react';
 import OnboardHeader from '../components/OnboardHeader';
 import OnboardStepper from '../components/OnboardStepper';
 import OnboardFooter from '../components/OnboardFooter';
@@ -7,7 +7,6 @@ import FormField from '../components/FormField';
 import DateField from '../components/DateField';
 import InfoPanel from '../components/InfoPanel';
 import AddItemButton from '../components/AddItemButton';
-import YesNoRadioGroup from '../components/YesNoRadioGroup';
 import PrimaryButton from '../components/PrimaryButton';
 import SecondaryButton from '../components/SecondaryButton';
 import useOnboardingTheme from '../hooks/useOnboardingTheme';
@@ -60,24 +59,12 @@ export default function ChildrenInformation() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const children = draft.data.children || [];
-  const additionalInfo = { childrenInCollege: null, ...draft.data.childrenAdditionalInfo };
 
   const updateChildren = (nextChildren) => {
     updateDraft((prev) => ({
       ...prev,
       currentStep: THIS_STEP_ID,
       data: { ...prev.data, children: nextChildren },
-    }));
-  };
-
-  const updateAdditionalInfo = (patch) => {
-    updateDraft((prev) => ({
-      ...prev,
-      currentStep: THIS_STEP_ID,
-      data: {
-        ...prev.data,
-        childrenAdditionalInfo: { ...prev.data.childrenAdditionalInfo, ...patch },
-      },
     }));
   };
 
@@ -133,7 +120,7 @@ export default function ChildrenInformation() {
     persistNow({
       ...draft,
       currentStep: PREVIOUS_STEP_ID,
-      data: { ...draft.data, children, childrenAdditionalInfo: additionalInfo },
+      data: { ...draft.data, children },
     });
     goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
   };
@@ -158,7 +145,7 @@ export default function ChildrenInformation() {
     persistNow({
       ...draft,
       currentStep: NEXT_STEP_ID,
-      data: { ...draft.data, children, childrenAdditionalInfo: additionalInfo },
+      data: { ...draft.data, children },
     });
     goToOnboardingPath(getStepById(NEXT_STEP_ID).path);
   };
@@ -233,27 +220,6 @@ export default function ChildrenInformation() {
               <span className="onboard-add-child-count">
                 {children.length} of {MAX_CHILDREN} children added
               </span>
-            </div>
-
-            <div className="onboard-additional-info-section">
-              <h3 className="onboard-section-heading">Additional Information</h3>
-
-              <div className="onboard-additional-info-row">
-                <span className="onboard-additional-info-label">
-                  Children / Grandchildren in College
-                  <Info
-                    size={14}
-                    className="onboard-additional-info-icon"
-                    aria-hidden="true"
-                  />
-                </span>
-                <YesNoRadioGroup
-                  name="childrenInCollege"
-                  label="Children or grandchildren in college"
-                  value={additionalInfo.childrenInCollege}
-                  onChange={(value) => updateAdditionalInfo({ childrenInCollege: value })}
-                />
-              </div>
             </div>
 
             <div className="onboard-form-actions">

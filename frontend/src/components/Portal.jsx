@@ -250,6 +250,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {/* HIDDEN: Notifications header bell (kept for later)
             <button
               type="button"
               className="portal-header-bell"
@@ -258,6 +259,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
             >
               <Bell size={20} />
             </button>
+            */}
             <button
               type="button"
               className="theme-toggle-btn portal-header-theme"
@@ -416,7 +418,8 @@ export default function Portal({ user, getAuthToken, onLogout }) {
             />
           )}
 
-          {activeTab === 'notifications' && (
+          {/* HIDDEN: Notifications page (kept for later) */}
+          {false && activeTab === 'notifications' && (
             <div className="portal-page-shell">
               <div className="portal-page-intro glass-panel">
                 <h2>Notifications</h2>
@@ -429,7 +432,8 @@ export default function Portal({ user, getAuthToken, onLogout }) {
             </div>
           )}
 
-          {activeTab === 'settings' && (
+          {/* HIDDEN: Settings page (kept for later) */}
+          {false && activeTab === 'settings' && (
             <div className="portal-page-shell">
               <div className="portal-page-intro glass-panel">
                 <h2>Settings</h2>

@@ -20,10 +20,9 @@ export const REVIEW_STEP_ID = 11;
 export const PROCESSING_STEP_ID = 12;
 
 /**
- * The approved onboarding stepper. Welcome is included as step 1 even
- * though it's a lighter pre-flow landing screen with its own custom layout
- * (it doesn't render OnboardStepper itself) — later pages' steppers show it
- * as the first (quickly-completed) step.
+ * Full catalog for path lookups. Welcome + Primary Member stay listed for
+ * legacy draft compatibility, but are excluded from the visible post-login
+ * stepper (those screens live in the separate /onboard + /onboard/about-you flow).
  */
 export const onboardingSteps = [
   { id: WELCOME_STEP_ID, key: 'welcome', label: 'Welcome', path: '/onboard', icon: Heart },
@@ -40,6 +39,15 @@ export const onboardingSteps = [
   { id: PROCESSING_STEP_ID, key: 'processing', label: 'Processing', path: '/onboard/processing', icon: LoaderCircle },
 ];
 
+/** Visible post-login stepper (Welcome, Primary, Household, Review removed). */
+export const stepperSteps = onboardingSteps.filter(
+  (step) =>
+    step.id !== WELCOME_STEP_ID &&
+    step.id !== ABOUT_YOU_STEP_ID &&
+    step.id !== HOUSEHOLD_STEP_ID &&
+    step.id !== REVIEW_STEP_ID,
+);
+
 export function getStepById(id) {
   return onboardingSteps.find((step) => step.id === id);
 }
@@ -48,4 +56,5 @@ export function getStepByPath(path) {
   return onboardingSteps.find((step) => step.path === path);
 }
 
-export const FIRST_FORM_STEP = getStepById(ABOUT_YOU_STEP_ID);
+/** First step of the post-login zip stepper. */
+export const FIRST_FORM_STEP = getStepById(SPOUSE_INFORMATION_STEP_ID);

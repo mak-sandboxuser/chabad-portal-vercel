@@ -1,10 +1,7 @@
 import { Plus } from 'lucide-react';
 
 /**
- * Blue "+ Add X" button used to append a new record to a dynamic list
- * (children, Yahrzeit records, etc). Reuses the same blue accent as
- * InfoPanel rather than the navy/gold brand buttons, matching the
- * reference design's distinct "add" affordance.
+ * Navy "+ Add X" button matching the Continue / primary CTA color.
  */
 export default function AddItemButton({ onClick, disabled = false, children }) {
   return (

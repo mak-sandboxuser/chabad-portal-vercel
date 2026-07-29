@@ -476,6 +476,12 @@ export default function OnboardAboutYou() {
     
     try {
       await submitOnboardingApplication();
+      try {
+        localStorage.setItem('pending_post_login_membership_stepper', '1');
+        localStorage.removeItem('completed_post_login_membership_stepper');
+      } catch {
+        // ignore storage failures
+      }
       showToast({ message: 'Registration & Membership assigned successfully! Redirecting to login...', type: 'success' });
       setTimeout(() => {
         window.location.href = '/';

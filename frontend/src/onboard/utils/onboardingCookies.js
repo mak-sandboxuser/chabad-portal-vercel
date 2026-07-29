@@ -45,7 +45,7 @@ export function deleteCookie(name) {
 export function createEmptyDraft() {
   return {
     version: DRAFT_VERSION,
-    currentStep: 1,
+    currentStep: 3,
     lastUpdated: new Date().toISOString(),
     data: {
       primaryMember: {},

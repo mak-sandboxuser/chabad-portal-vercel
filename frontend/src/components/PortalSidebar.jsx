@@ -38,9 +38,11 @@ const NAV_SECTIONS = [
   {
     label: 'ACCOUNT',
     items: [
-      { id: 'notifications', label: 'Notifications', icon: Bell },
+      // HIDDEN: Notifications (kept for later)
+      // { id: 'notifications', label: 'Notifications', icon: Bell },
       { id: 'profile', label: 'My Profile', icon: User },
-      { id: 'settings', label: 'Settings', icon: Settings },
+      // HIDDEN: Settings (kept for later)
+      // { id: 'settings', label: 'Settings', icon: Settings },
       { id: 'help', label: 'Help & Support', icon: HelpCircle },
     ],
   },
