@@ -30,6 +30,7 @@ import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '../../constants/supportCon
 import { showToast } from '../../utils/toast';
 import { fetchPortalApi } from '../../utils/portalApi';
 import { SALUTATIONS, GENDER_OPTIONS } from '../../constants/householdMembers';
+import { apiUrl } from '../../config/api';
 
 export const ONBOARD_ABOUT_YOU_PATH = '/onboard/about-you';
 
@@ -148,6 +149,7 @@ export default function OnboardAboutYou() {
   const [currentStep, setCurrentStep] = useState(0); // 0: About You, 1: Membership, 2: Payment, 3: Confirm, 4: Success
   const [communityOpen, setCommunityOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
   
   const [form, setForm] = useState({
     // Step 1: About You
@@ -238,6 +240,33 @@ export default function OnboardAboutYou() {
     }
   };
 
+  const handleEmailBlur = async () => {
+    const emailVal = form.email.trim().toLowerCase();
+    if (!emailVal || !/\S+@\S+\.\S+/.test(emailVal)) {
+      return;
+    }
+
+    setCheckingEmail(true);
+    try {
+      const response = await fetch(apiUrl('/api/auth/check-member'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailVal }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.allowed) {
+          setErrors((prev) => ({ ...prev, email: 'This email is already registered. Please log in.' }));
+          showToast({ message: 'This email is already registered. Please log in.', type: 'warning' });
+        }
+      }
+    } catch (err) {
+      console.error('Error checking email registration:', err);
+    } finally {
+      setCheckingEmail(false);
+    }
+  };
+
   const addChild = () => {
     setForm((f) => ({
       ...f,
@@ -290,9 +319,6 @@ export default function OnboardAboutYou() {
       } else if (!/\S+@\S+\.\S+/.test(form.email)) {
         nextErrors.email = 'Please enter a valid email address';
       }
-      if (!form.mobilePhone.trim()) {
-        nextErrors.mobilePhone = 'Phone Number is required';
-      }
       if (!form.birthMonth || !form.birthDay || !form.birthYear) {
         nextErrors.birthDate = 'Complete Birth Date is required';
       }
@@ -302,7 +328,6 @@ export default function OnboardAboutYou() {
         if (!form.spouseFirstName.trim()) nextErrors.spouseFirstName = 'Spouse First Name is required';
         if (!form.spouseLastName.trim()) nextErrors.spouseLastName = 'Spouse Last Name is required';
         if (!form.spouseEmail.trim()) nextErrors.spouseEmail = 'Email is required';
-        if (!form.spousePhone.trim()) nextErrors.spousePhone = 'Mobile Phone is required';
       }
 
       // Children Validation
@@ -314,7 +339,6 @@ export default function OnboardAboutYou() {
             if (!child.firstName.trim()) nextErrors[`child_${index}_firstName`] = 'First Name is required';
             if (!child.lastName.trim()) nextErrors[`child_${index}_lastName`] = 'Last Name is required';
             if (!child.email.trim()) nextErrors[`child_${index}_email`] = 'Email is required';
-            if (!child.phone.trim()) nextErrors[`child_${index}_phone`] = 'Mobile Phone is required';
           });
         }
       }
@@ -473,6 +497,25 @@ export default function OnboardAboutYou() {
       return;
     }
     setIsSubmitting(true);
+    
+    try {
+      const checkRes = await fetch(apiUrl('/api/auth/check-member'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email.trim().toLowerCase() }),
+      });
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        if (checkData.allowed) {
+          setErrors((prev) => ({ ...prev, email: 'This email is already registered. Please log in.' }));
+          showToast({ message: 'This email is already registered. Please log in.', type: 'error' });
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    } catch (checkErr) {
+      console.error('Error checking email registration status:', checkErr);
+    }
     
     try {
       await submitOnboardingApplication();
@@ -1048,6 +1091,9 @@ export default function OnboardAboutYou() {
           from { transform: scale(0.6); opacity: 0; }
           to { transform: scale(1); opacity: 1; }
         }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
 
         .ay-actions {
           display: flex;
@@ -1191,23 +1237,17 @@ export default function OnboardAboutYou() {
                 </div>
               </div>
 
-              <div className="ay-row">
-                <div className="ay-field">
-                  <label className="ay-label">Email Address<span>*</span></label>
-                  <div className={`ay-input-wrap ${errors.email ? 'has-error' : ''}`}>
+              <div className="ay-field" style={{ marginBottom: 18 }}>
+                <label className="ay-label">Email Address<span>*</span></label>
+                <div className={`ay-input-wrap ${errors.email ? 'has-error' : ''}`}>
+                  {checkingEmail ? (
+                    <div className="spinner-mini" style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'var(--color-accent)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  ) : (
                     <Mail size={16} />
-                    <input type="text" placeholder="you@example.com" value={form.email} onChange={update('email')} />
-                  </div>
-                  {errors.email && <span className="ay-input-error">{errors.email}</span>}
+                  )}
+                  <input type="text" placeholder="you@example.com" value={form.email} onChange={update('email')} onBlur={handleEmailBlur} />
                 </div>
-                <div className="ay-field">
-                  <label className="ay-label">Mobile Phone<span>*</span></label>
-                  <div className={`ay-input-wrap ${errors.mobilePhone ? 'has-error' : ''}`}>
-                    <Phone size={16} />
-                    <input type="text" placeholder="(123) 456-7890" value={form.mobilePhone} onChange={update('mobilePhone')} />
-                  </div>
-                  {errors.mobilePhone && <span className="ay-input-error">{errors.mobilePhone}</span>}
-                </div>
+                {errors.email && <span className="ay-input-error">{errors.email}</span>}
               </div>
 
               <div className="ay-field" style={{ marginBottom: 18 }}>
@@ -1339,23 +1379,13 @@ export default function OnboardAboutYou() {
                           {errors.spouseLastName && <span className="ay-input-error">{errors.spouseLastName}</span>}
                         </div>
                       </div>
-                      <div className="ay-row">
-                        <div className="ay-field">
-                          <label className="ay-label">Email<span>*</span></label>
-                          <div className={`ay-input-wrap ${errors.spouseEmail ? 'has-error' : ''}`}>
-                            <Mail size={16} />
-                            <input type="text" placeholder="spouse@example.com" value={form.spouseEmail} onChange={update('spouseEmail')} />
-                          </div>
-                          {errors.spouseEmail && <span className="ay-input-error">{errors.spouseEmail}</span>}
+                      <div className="ay-field" style={{ marginBottom: 18 }}>
+                        <label className="ay-label">Email<span>*</span></label>
+                        <div className={`ay-input-wrap ${errors.spouseEmail ? 'has-error' : ''}`}>
+                          <Mail size={16} />
+                          <input type="text" placeholder="spouse@example.com" value={form.spouseEmail} onChange={update('spouseEmail')} />
                         </div>
-                        <div className="ay-field">
-                          <label className="ay-label">Mobile Phone<span>*</span></label>
-                          <div className={`ay-input-wrap ${errors.spousePhone ? 'has-error' : ''}`}>
-                            <Phone size={16} />
-                            <input type="text" placeholder="(123) 456-7890" value={form.spousePhone} onChange={update('spousePhone')} />
-                          </div>
-                          {errors.spousePhone && <span className="ay-input-error">{errors.spousePhone}</span>}
-                        </div>
+                        {errors.spouseEmail && <span className="ay-input-error">{errors.spouseEmail}</span>}
                       </div>
                     </div>
                   )}
@@ -1425,23 +1455,13 @@ export default function OnboardAboutYou() {
                             </div>
                           </div>
 
-                          <div className="ay-row">
-                            <div className="ay-field">
-                              <label className="ay-label">Email<span>*</span></label>
-                              <div className={`ay-input-wrap ${errors[`child_${index}_email`] ? 'has-error' : ''}`}>
-                                <Mail size={16} />
-                                <input type="text" placeholder="child@example.com" value={child.email} onChange={(e) => updateChild(index, 'email', e.target.value)} />
-                              </div>
-                              {errors[`child_${index}_email`] && <span className="ay-input-error">{errors[`child_${index}_email`]}</span>}
+                          <div className="ay-field" style={{ marginBottom: 18 }}>
+                            <label className="ay-label">Email<span>*</span></label>
+                            <div className={`ay-input-wrap ${errors[`child_${index}_email`] ? 'has-error' : ''}`}>
+                              <Mail size={16} />
+                              <input type="text" placeholder="child@example.com" value={child.email} onChange={(e) => updateChild(index, 'email', e.target.value)} />
                             </div>
-                            <div className="ay-field">
-                              <label className="ay-label">Mobile Phone<span>*</span></label>
-                              <div className={`ay-input-wrap ${errors[`child_${index}_phone`] ? 'has-error' : ''}`}>
-                                <Phone size={16} />
-                                <input type="text" placeholder="(123) 456-7890" value={child.phone} onChange={(e) => updateChild(index, 'phone', e.target.value)} />
-                              </div>
-                              {errors[`child_${index}_phone`] && <span className="ay-input-error">{errors[`child_${index}_phone`]}</span>}
-                            </div>
+                            {errors[`child_${index}_email`] && <span className="ay-input-error">{errors[`child_${index}_email`]}</span>}
                           </div>
                         </div>
                       ))}
@@ -1614,10 +1634,7 @@ export default function OnboardAboutYou() {
                       <span>Email:</span>
                       <span>{form.email}</span>
                     </div>
-                    <div className="summary-row">
-                      <span>Phone:</span>
-                      <span>{form.mobilePhone}</span>
-                    </div>
+
                     <div className="summary-row">
                       <span>Birth Date:</span>
                       <span>{form.birthMonth} {form.birthDay}, {form.birthYear}</span>
@@ -1643,12 +1660,7 @@ export default function OnboardAboutYou() {
                           <span>{form.spouseEmail}</span>
                         </div>
                       )}
-                      {form.spousePhone && (
-                        <div className="summary-row">
-                          <span>Phone:</span>
-                          <span>{form.spousePhone}</span>
-                        </div>
-                      )}
+
                     </div>
                   )}
 

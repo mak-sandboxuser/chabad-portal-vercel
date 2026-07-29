@@ -7,27 +7,27 @@ import { showToast } from '../../utils/toast';
 
 const TYPE_OPTIONS = [
   { id: 'Donation', label: 'Donation' },
-  { id: 'Payment', label: 'Payment' },
-  { id: 'Pledge', label: 'Pledge' },
+  // { id: 'Payment', label: 'Payment' },
+  // { id: 'Pledge', label: 'Pledge' },
 ];
 
 const SUB_TYPES = {
   Donation: [
     { id: 'General Donation', label: 'General Donation' },
     { id: 'Holiday Contribution', label: 'Holiday Contribution' },
-    { id: 'Yizkor', label: 'Yizkor' },
-    { id: 'Chai Club', label: 'Chai Club' },
+    // { id: 'Yizkor', label: 'Yizkor' },
+    // { id: 'Chai Club', label: 'Chai Club' },
   ],
-  Payment: [
-    { id: 'Hebrew School Tuition', label: 'Hebrew School Tuition' },
-    { id: 'Event Registration', label: 'Event Registration' },
-    { id: 'Camp Bedford', label: 'Camp Bedford' },
-  ],
-  Pledge: [
-    { id: 'Annual Membership', label: 'Annual Membership' },
-    { id: 'Building Campaign', label: 'Building Campaign' },
-    { id: 'Capital Campaign', label: 'Capital Campaign' },
-  ],
+  //   Payment: [
+  //   { id: 'Hebrew School Tuition', label: 'Hebrew School Tuition' },
+  //   { id: 'Event Registration', label: 'Event Registration' },
+  //   { id: 'Camp Bedford', label: 'Camp Bedford' },
+  // ],
+  //   Pledge: [
+  //   { id: 'Annual Membership', label: 'Annual Membership' },
+  //   { id: 'Building Campaign', label: 'Building Campaign' },
+  //   { id: 'Capital Campaign', label: 'Capital Campaign' },
+  // ],
 };
 
 const DEDICATION_TYPES = [
