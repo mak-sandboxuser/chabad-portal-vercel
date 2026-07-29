@@ -18,7 +18,6 @@ import MembershipSelection from './onboard/pages/MembershipSelection';
 import ContributionSchedule from './onboard/pages/ContributionSchedule';
 import PaymentMethod from './onboard/pages/PaymentMethod';
 import ProcessingApplication from './onboard/pages/ProcessingApplication';
-import { getPostLoginStepperEntryPath, isPostLoginStepperPending } from './onboard/utils/postLoginStepper';
 import {
   getStepById,
   SPOUSE_INFORMATION_STEP_ID,
@@ -65,27 +64,13 @@ function RedirectToPath({ path }) {
   return <LoadingScreen message="Redirecting..." />;
 }
 
-function usePostLoginStepperRedirect() {
-  useEffect(() => {
-    if (!isPostLoginStepperPending()) return;
-    if (window.location.pathname.startsWith('/onboard/')) return;
-    window.location.replace(getPostLoginStepperEntryPath());
-  }, []);
-}
-
 function SfPortal({ sfUser, onLogout }) {
-  usePostLoginStepperRedirect();
-
   useEffect(() => {
     if (sessionStorage.getItem(ONBOARDING_COMPLETE_FLAG)) {
       sessionStorage.removeItem(ONBOARDING_COMPLETE_FLAG);
       showToast({ message: 'Membership application submitted successfully.', type: 'success' });
     }
   }, []);
-
-  if (isPostLoginStepperPending() && !window.location.pathname.startsWith('/onboard/')) {
-    return <LoadingScreen message="Opening membership steps..." />;
-  }
 
   return (
     <Portal
@@ -120,8 +105,6 @@ function AuthenticatedPortal({ onLogout, resolvedUserId }) {
     [],
   );
 
-  usePostLoginStepperRedirect();
-
   useEffect(() => {
     let cancelled = false;
 
@@ -153,10 +136,6 @@ function AuthenticatedPortal({ onLogout, resolvedUserId }) {
       clearInterval(keepAlive);
     };
   }, [activeUserId, getAuthToken]);
-
-  if (isPostLoginStepperPending() && !window.location.pathname.startsWith('/onboard/')) {
-    return <LoadingScreen message="Opening membership steps..." />;
-  }
 
   if (!activeUserId || !user || !authReady) {
     return <LoadingScreen message="Loading your portal..." />;
@@ -194,6 +173,11 @@ export default function App() {
 
   const handleSfLogout = () => {
     localStorage.removeItem('sf_user_session');
+    try {
+      localStorage.removeItem('pending_post_login_membership_stepper');
+    } catch {
+      // ignore
+    }
     setSfUser(null);
     window.location.replace('/');
   };
@@ -218,7 +202,7 @@ export default function App() {
     });
   }, [isLoaded, isSignedIn, userId, restoringSession, clerk, auth.authenticated, auth.clerkUserId, auth.effectiveUserId, sfUser]);
 
-  // Existing pre-login onboarding — unchanged.
+  // Existing pre-login onboarding — unchanged (public).
   if (window.location.pathname === ONBOARD_PATH) {
     return (
       <>
@@ -233,6 +217,39 @@ export default function App() {
       <>
         <ToastHost />
         <OnboardAboutYou />
+      </>
+    );
+  }
+
+  const isPostLoginStepperPath = [
+    ONBOARD_SPOUSE_INFORMATION_PATH,
+    ONBOARD_HOUSEHOLD_PATH,
+    ONBOARD_MARITAL_INFORMATION_PATH,
+    ONBOARD_CHILDREN_PATH,
+    ONBOARD_YAHRZEIT_PATH,
+    ONBOARD_MEMBERSHIP_PATH,
+    ONBOARD_CONTRIBUTION_SCHEDULE_PATH,
+    ONBOARD_PAYMENT_METHOD_PATH,
+    ONBOARD_REVIEW_PATH,
+    ONBOARD_PROCESSING_PATH,
+  ].includes(window.location.pathname);
+
+  // Zip stepper requires login — send unauthenticated visitors to the login page.
+  const isLoggedInForStepper = Boolean(sfUser) || auth.authenticated;
+  if (isPostLoginStepperPath && !isLoggedInForStepper) {
+    // Wait for Clerk to finish loading before deciding auth for stepper routes.
+    if (!isLoaded) {
+      return (
+        <>
+          <ToastHost />
+          <LoadingScreen message="Loading authentication state..." />
+        </>
+      );
+    }
+    return (
+      <>
+        <ToastHost />
+        <RedirectToPath path="/" />
       </>
     );
   }

@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 import PortalPageLayout from '../shared/PortalPageLayout';
 import ChabadLogo from '../shared/ChabadLogo';
-import { ONBOARD_PATH } from '../onboard/OnboardWelcome';
+import { ONBOARD_FIRST_FORM_PATH } from '../../onboard/utils/onboardingRoutes';
+import { markPostLoginStepperPending } from '../../onboard/utils/postLoginStepper';
 
 const MEMBERSHIP_BENEFITS = [
   {
@@ -43,7 +44,8 @@ export default function GuestMembershipPage({ theme, onNavigate, user, sfData })
   const benefitsRef = useRef(null);
 
   const handleBecomeMember = () => {
-    window.location.assign(ONBOARD_PATH);
+    markPostLoginStepperPending();
+    window.location.assign(ONBOARD_FIRST_FORM_PATH);
   };
 
   const handleLearnMore = () => {
