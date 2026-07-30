@@ -36,6 +36,14 @@ export function formatDisplayDate(value) {
   return normalized;
 }
 
+/** Display labels for CRM frequency values (Semi-Annual → Half Yearly). */
+export function formatFrequencyLabel(frequency) {
+  const value = String(frequency || '').trim();
+  if (!value) return '—';
+  if (/^semi[-\s]?annual$/i.test(value)) return 'Half Yearly';
+  return value;
+}
+
 export function getContacts(sfData) {
   if (sfData?.contacts?.length) {
     return sfData.contacts.map((contact) => ({

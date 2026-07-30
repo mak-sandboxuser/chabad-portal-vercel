@@ -8,10 +8,6 @@ export function PortalPageFooter({ onContactSupport }) {
     <footer className="portal-page-footer">
       <span>© {new Date().getFullYear()} Chabad Bedford. All rights reserved.</span>
       <div className="portal-page-footer-links">
-        <a href="#">Privacy Policy</a>
-        <span>|</span>
-        <a href="#">Terms of Service</a>
-        <span>|</span>
         <button
           type="button"
           onClick={onContactSupport}

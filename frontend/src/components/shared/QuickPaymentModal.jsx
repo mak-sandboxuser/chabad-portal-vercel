@@ -109,53 +109,86 @@ export default function QuickPaymentModal({
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    const parsedAmount = parseFloat(amount) || 0;
+    if (loading) return;
+
+    const parsedAmount = Math.round((parseFloat(amount) || 0) * 100) / 100;
     if (parsedAmount <= 0) {
       showToast({ message: 'Please enter a valid amount greater than 0.', type: 'error' });
       return;
     }
 
     setLoading(true);
+    // Same Stripe checkout path as Membership → Contribution Schedule → Continue.
+    showToast({ message: 'Redirecting to secure Stripe checkout...', type: 'success' });
+
     try {
-      const data = await fetchPortalApi('/api/payments/quick-payment', {
+      let sfUser = {};
+      try {
+        const stored = localStorage.getItem('sf_user_session');
+        if (stored) sfUser = JSON.parse(stored) || {};
+      } catch {
+        // ignore
+      }
+
+      const member = sfUser.memberDetails || {};
+      const email = String(user?.email || sfUser.email || sfData?.email || '').trim().toLowerCase();
+      const contactId =
+        sfData?.contactId ||
+        member.contactId ||
+        member.id ||
+        '';
+      const accountId =
+        sfData?.accountId ||
+        sfData?.account?.id ||
+        member.accountId ||
+        member.householdAccountId ||
+        sfUser.householdAccountId ||
+        '';
+
+      // Align frequency labels with Stripe / CRM values used by Contribution Schedule.
+      const frequencyMap = {
+        Monthly: 'Monthly',
+        Weekly: 'Weekly',
+        Annually: 'Annual',
+        Annual: 'Annual',
+        Yearly: 'Yearly',
+        'Half Yearly': 'Half Yearly',
+        'Semi-Annual': 'Half Yearly',
+      };
+      const normalizedFrequency = frequencyMap[frequency] || frequency || 'Monthly';
+
+      const response = await fetchPortalApi('/api/payments/quick-payment', {
         getAuthToken,
         method: 'POST',
         body: {
-          email: user?.email,
-          contactId: sfData?.contactId || '',
-          accountId: sfData?.accountId || sfData?.account?.id || '',
-          purpose: subType,
-          paymentType: paymentType,
-          subType: subType,
-          memo: note || dedicationName ? `${dedicationType}: ${dedicationName}. Note: ${note}` : '',
+          email,
+          contactId,
+          accountId,
+          purpose: subType || paymentType || 'portal_payment',
+          paymentType,
+          subType,
+          memo: (note || dedicationName)
+            ? `${dedicationType}: ${dedicationName}. Note: ${note}`
+            : '',
           pledgeAmount: 0,
           paymentAmount: parsedAmount,
           billingMode: billingMode === 'recurring' ? 'recurring' : 'regular',
-          frequency: frequency,
-          paymentDate: startDate,
-          paymentMethodType: paymentMethodType,
+          frequency: normalizedFrequency,
+          paymentDate: startDate || todayIsoDate(),
+          paymentMethodType,
+          groups: subType || '',
+          source: 'member_portal',
         },
       });
 
-      if (data.url) {
-        showToast({ message: 'Redirecting to secure Stripe checkout...', type: 'success', duration: 2500 });
-        window.location.href = data.url;
+      if (response.url) {
+        window.location.href = response.url;
         return;
       }
 
-      if (data.success) {
-        showToast({
-          message: data.message || 'Saved to ChabadOne CRM successfully.',
-          type: 'success',
-        });
-        if (onSuccess) {
-          await onSuccess();
-        }
-        onClose();
-      }
+      throw new Error('No checkout URL returned from payment server.');
     } catch (err) {
-      showToast({ message: err.message, type: 'error' });
-    } finally {
+      showToast({ message: err.message || 'Failed to initiate payment.', type: 'error' });
       setLoading(false);
     }
   };

@@ -5,6 +5,7 @@ import SectionTabs from '../shared/SectionTabs';
 import DataTable, { StatusIcon } from '../shared/DataTable';
 import {
   formatDisplayDate,
+  formatFrequencyLabel,
   getAccount,
   getPayments,
   getPledges,
@@ -14,7 +15,7 @@ import {
 
 const TABS = [
   { id: 'payments', label: 'Payments', icon: Wallet },
-  { id: 'pledges', label: 'Outstanding Amount', icon: Wallet },
+  { id: 'pledges', label: 'Outstanding Balance', icon: Wallet },
   { id: 'recurring', label: 'Recurring Billing', icon: RefreshCw },
 ];
 
@@ -63,7 +64,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
             <div>
               <h3>
                 {activeTab === 'payments' && 'All Payments'}
-                {activeTab === 'pledges' && 'Outstanding Amount'}
+                {activeTab === 'pledges' && 'Outstanding Balance'}
                 {activeTab === 'recurring' && 'Recurring Billing'}
               </h3>
               {activeTab === 'payments' && (
@@ -91,7 +92,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
 
           {activeTab === 'pledges' && (
             <DataTable
-              emptyMessage="No outstanding amount records found."
+              emptyMessage="No outstanding balance records found."
               rows={pledges}
               columns={[
                 { key: 'status', label: '', render: (row) => <StatusIcon status={row.status} /> },
@@ -186,7 +187,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
               columns={[
                 { key: 'status', label: 'Status', render: (row) => <span className="badge badge-active">{row.status}</span> },
                 { key: 'amount', label: 'Amount' },
-                { key: 'frequency', label: 'Frequency' },
+                { key: 'frequency', label: 'Frequency', render: (row) => formatFrequencyLabel(row.frequency) },
                 { key: 'nextDate', label: 'Next Charge', render: (row) => formatDisplayDate(row.nextDate) },
                 { key: 'method', label: 'Payment Method' },
                 { key: 'cardExpiry', label: 'Expires' },

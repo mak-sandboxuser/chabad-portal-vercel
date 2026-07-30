@@ -324,10 +324,6 @@ export default function Portal({ user, getAuthToken, onLogout }) {
               />
               <footer className="portal-page-footer">
                 <span>© {new Date().getFullYear()} Chabad Bedford. All rights reserved.</span>
-                <div style={{ display: 'flex', gap: '16px' }}>
-                  <a href="#">Privacy Policy</a>
-                  <a href="#">Terms of Service</a>
-                </div>
               </footer>
             </>
           )}

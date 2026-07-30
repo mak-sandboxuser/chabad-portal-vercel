@@ -4,6 +4,7 @@ import PaymentActionButton from './shared/PaymentActionButton';
 import BuildingSketch from './shared/BuildingSketch';
 import {
   formatDisplayDate,
+  formatFrequencyLabel,
   formatMoney,
   getAccount,
   getContacts,
@@ -159,7 +160,7 @@ export default function DashboardHome({
               </div>
               {activeRecurring?.frequency && (
                 <span className="dash-pill-badge blue">
-                  {activeRecurring.frequency}
+                  {formatFrequencyLabel(activeRecurring.frequency)}
                 </span>
               )}
             </div>

@@ -1302,28 +1302,33 @@ function toSalesforceDateIso(dateStr = '') {
 function stripeRecurringInterval(frequency = 'Monthly') {
   const map = {
     Monthly: 'month',
+    Weekly: 'week',
     Quarterly: 'month',
     'Semi-Annual': 'month',
+    'Half Yearly': 'month',
     Yearly: 'year',
     Annual: 'year',
+    Annually: 'year',
   };
   return map[frequency] || 'month';
 }
 
 function stripeRecurringIntervalCount(frequency = 'Monthly') {
   if (frequency === 'Quarterly') return 3;
-  if (frequency === 'Semi-Annual') return 6;
+  if (frequency === 'Semi-Annual' || frequency === 'Half Yearly') return 6;
   return 1;
 }
 
 function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
   const base = (dateStr || new Date().toISOString().split('T')[0]).slice(0, 10);
   const date = new Date(`${base}T12:00:00`);
-  if (frequency === 'Quarterly') {
+  if (frequency === 'Weekly') {
+    date.setDate(date.getDate() + 7);
+  } else if (frequency === 'Quarterly') {
     date.setMonth(date.getMonth() + 3);
-  } else if (frequency === 'Semi-Annual') {
+  } else if (frequency === 'Semi-Annual' || frequency === 'Half Yearly') {
     date.setMonth(date.getMonth() + 6);
-  } else if (frequency === 'Yearly' || frequency === 'Annual') {
+  } else if (frequency === 'Yearly' || frequency === 'Annual' || frequency === 'Annually') {
     date.setFullYear(date.getFullYear() + 1);
   } else {
     date.setMonth(date.getMonth() + 1);

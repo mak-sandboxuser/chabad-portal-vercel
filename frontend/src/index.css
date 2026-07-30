@@ -4477,7 +4477,7 @@ h1, h2, h3, h4, h5, h6 {
   padding: 0 0 20px 0;
   margin-bottom: 24px;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--border-color);
+  border: none !important;
   background: none !important;
   box-shadow: none !important;
   backdrop-filter: none !important;

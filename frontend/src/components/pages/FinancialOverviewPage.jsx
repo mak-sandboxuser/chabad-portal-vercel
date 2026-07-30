@@ -7,6 +7,7 @@ import PortalPageLayout from '../shared/PortalPageLayout';
 import {
   formatAddress,
   formatDisplayDate,
+  formatFrequencyLabel,
   formatMoney,
   getAccount,
   getFinancialSummary,
@@ -141,7 +142,7 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
             <RefreshCw size={20} className="text-purple" />
             <div>
               <h3>{recurring?.type || 'Recurring Contribution'}</h3>
-              <strong className="recurring-amount">{recurring ? `${recurring.amount} / ${(recurring.frequency || 'month').toLowerCase()}` : 'Not configured'}</strong>
+              <strong className="recurring-amount">{recurring ? `${recurring.amount} / ${formatFrequencyLabel(recurring.frequency).toLowerCase()}` : 'Not configured'}</strong>
             </div>
           </div>
           <div className="financial-info-row"><span>Next Charge</span><strong>{formatDisplayDate(recurring?.nextDate)}</strong></div>

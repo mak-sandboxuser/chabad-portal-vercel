@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CreditCard, PieChart, Calendar, Check, ArrowLeft, Clock } from 'lucide-react';
+import { CreditCard, PieChart, Calendar, Check, ArrowLeft } from 'lucide-react';
 import OnboardHeader from '../components/OnboardHeader';
 import OnboardStepper from '../components/OnboardStepper';
 import OnboardFooter from '../components/OnboardFooter';
@@ -51,19 +51,8 @@ function buildScheduleOptions(annualPrice) {
       ],
     },
     {
-      id: 'quarterly',
-      number: 3,
-      title: 'Quarterly Contributions',
-      subtitle: '4 Quarterly Payments',
-      icon: Clock,
-      accent: 'orange',
-      amountLabel: `$${formatCurrency(annualPrice / 4)}`,
-      amountSuffix: ' / quarter',
-      billingLines: ['4 quarterly payments', 'First payment today'],
-    },
-    {
       id: 'monthly',
-      number: 4,
+      number: 3,
       title: 'Monthly Contributions',
       subtitle: '12 Monthly Payments',
       icon: Calendar,
@@ -88,7 +77,10 @@ export default function ContributionSchedule() {
   const annualPrice = selectedMembershipTier.annualPrice;
   const scheduleOptions = buildScheduleOptions(annualPrice);
 
-  const selectedOption = draft.data.contributionSchedule?.option || 'full';
+  const savedOption = draft.data.contributionSchedule?.option;
+  // Older drafts may still hold 'quarterly' — fall back to Full Payment.
+  const selectedOption =
+    savedOption && savedOption !== 'quarterly' ? savedOption : 'full';
 
   const handleSelectOption = (optionId) => {
     updateDraft((prev) => ({
@@ -127,11 +119,7 @@ export default function ContributionSchedule() {
     if (selectedOption === 'installments') {
       paymentAmount = annualPrice / 2;
       billingMode = 'recurring';
-      frequency = 'Semi-Annual';
-    } else if (selectedOption === 'quarterly') {
-      paymentAmount = annualPrice / 4;
-      billingMode = 'recurring';
-      frequency = 'Quarterly';
+      frequency = 'Half Yearly';
     } else if (selectedOption === 'monthly') {
       paymentAmount = annualPrice / 12;
       billingMode = 'recurring';
