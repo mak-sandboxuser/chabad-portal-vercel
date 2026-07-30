@@ -1303,6 +1303,7 @@ function stripeRecurringInterval(frequency = 'Monthly') {
   const map = {
     Monthly: 'month',
     Quarterly: 'month',
+    'Semi-Annual': 'month',
     Yearly: 'year',
     Annual: 'year',
   };
@@ -1311,6 +1312,7 @@ function stripeRecurringInterval(frequency = 'Monthly') {
 
 function stripeRecurringIntervalCount(frequency = 'Monthly') {
   if (frequency === 'Quarterly') return 3;
+  if (frequency === 'Semi-Annual') return 6;
   return 1;
 }
 
@@ -1319,6 +1321,8 @@ function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
   const date = new Date(`${base}T12:00:00`);
   if (frequency === 'Quarterly') {
     date.setMonth(date.getMonth() + 3);
+  } else if (frequency === 'Semi-Annual') {
+    date.setMonth(date.getMonth() + 6);
   } else if (frequency === 'Yearly' || frequency === 'Annual') {
     date.setFullYear(date.getFullYear() + 1);
   } else {

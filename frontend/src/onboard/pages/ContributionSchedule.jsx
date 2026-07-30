@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CreditCard, PieChart, Calendar, Check, ArrowLeft } from 'lucide-react';
+import { CreditCard, PieChart, Calendar, Check, ArrowLeft, Clock } from 'lucide-react';
 import OnboardHeader from '../components/OnboardHeader';
 import OnboardStepper from '../components/OnboardStepper';
 import OnboardFooter from '../components/OnboardFooter';
@@ -8,21 +8,19 @@ import PrimaryButton from '../components/PrimaryButton';
 import SecondaryButton from '../components/SecondaryButton';
 import useOnboardingTheme from '../hooks/useOnboardingTheme';
 import useOnboardingDraft from '../hooks/useOnboardingDraft';
+import { fetchPortalApi } from '../../utils/portalApi';
+import { showToast } from '../../utils/toast';
 import {
   getStepById,
   CONTRIBUTION_SCHEDULE_STEP_ID,
   MEMBERSHIP_STEP_ID,
 } from '../data/onboardingSteps';
 import { getMembershipTierById, formatCurrency } from '../data/membershipTiers';
-import { ONBOARD_EXIT_PATH, goToOnboardingPath } from '../utils/onboardingRoutes';
-import { clearDraft } from '../utils/onboardingCookies';
-import { clearPostLoginStepperPending } from '../utils/postLoginStepper';
+import { goToOnboardingPath } from '../utils/onboardingRoutes';
 import '../onboard.css';
 
 const THIS_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
 const PREVIOUS_STEP_ID = MEMBERSHIP_STEP_ID;
-// Payment Method + Processing forms are hidden — finish onboarding after this step.
-const NEXT_PATH = ONBOARD_EXIT_PATH;
 const FALLBACK_ANNUAL_PRICE = 1800;
 
 function buildScheduleOptions(annualPrice) {
@@ -44,22 +42,34 @@ function buildScheduleOptions(annualPrice) {
       subtitle: '50% + 50%',
       icon: PieChart,
       accent: 'purple',
-      amountLabel: `$${formatCurrency(annualPrice)}`,
+      amountLabel: `$${formatCurrency(annualPrice / 2)}`,
+      amountSuffix: ' / installment',
       billingLines: [
         '2 payments',
-        `1st payment today (50%)`,
-        `2nd payment in 6 months (50%)`,
+        '1st payment today (50%)',
+        '2nd payment in 6 months (50%)',
       ],
     },
     {
-      id: 'monthly',
+      id: 'quarterly',
       number: 3,
+      title: 'Quarterly Contributions',
+      subtitle: '4 Quarterly Payments',
+      icon: Clock,
+      accent: 'orange',
+      amountLabel: `$${formatCurrency(annualPrice / 4)}`,
+      amountSuffix: ' / quarter',
+      billingLines: ['4 quarterly payments', 'First payment today'],
+    },
+    {
+      id: 'monthly',
+      number: 4,
       title: 'Monthly Contributions',
       subtitle: '12 Monthly Payments',
       icon: Calendar,
       accent: 'green',
-      amountLabel: `$${formatCurrency(Math.floor(annualPrice / 12))}`,
-      amountSuffix: '/ month',
+      amountLabel: `$${formatCurrency(annualPrice / 12)}`,
+      amountSuffix: ' / month',
       billingLines: ['12 monthly payments', 'First payment today'],
     },
   ].map((option) => ({ ...option, totalCommitment: `$${formatCurrency(annualPrice)}` }));
@@ -69,9 +79,13 @@ export default function ContributionSchedule() {
   const [theme, toggleTheme] = useOnboardingTheme();
   const { draft, updateDraft, persistNow } = useOnboardingDraft();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const selectedMembershipTier = getMembershipTierById(draft.data.membership?.tier);
-  const annualPrice = selectedMembershipTier?.annualPrice ?? FALLBACK_ANNUAL_PRICE;
+  const selectedMembershipTier = getMembershipTierById(draft.data.membership?.tier) || {
+    name: 'Membership',
+    annualPrice: FALLBACK_ANNUAL_PRICE,
+  };
+  const annualPrice = selectedMembershipTier.annualPrice;
   const scheduleOptions = buildScheduleOptions(annualPrice);
 
   const selectedOption = draft.data.contributionSchedule?.option || 'full';
@@ -95,24 +109,94 @@ export default function ContributionSchedule() {
     goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
 
     setIsSubmitting(true);
-    persistNow({
-      ...draft,
-      currentStep: THIS_STEP_ID,
-      data: {
-        ...draft.data,
-        contributionSchedule: { ...draft.data.contributionSchedule, option: selectedOption },
-      },
-    });
-    // Payment Method + Processing hidden — complete stepper and return to portal.
-    clearDraft();
-    clearPostLoginStepperPending();
-    sessionStorage.setItem('show_onboarding_complete', '1');
-    goToOnboardingPath(NEXT_PATH);
+    setError('');
+    showToast({ message: 'Redirecting to secure Stripe checkout...', type: 'success' });
+
+    // Determine details of the selected option
+    const option = scheduleOptions.find((o) => o.id === selectedOption) || scheduleOptions[0];
+
+    let paymentAmount = annualPrice;
+    let billingMode = 'regular';
+    let frequency = 'Annual';
+
+    if (selectedOption === 'installments') {
+      paymentAmount = annualPrice / 2;
+      billingMode = 'recurring';
+      frequency = 'Semi-Annual';
+    } else if (selectedOption === 'quarterly') {
+      paymentAmount = annualPrice / 4;
+      billingMode = 'recurring';
+      frequency = 'Quarterly';
+    } else if (selectedOption === 'monthly') {
+      paymentAmount = annualPrice / 12;
+      billingMode = 'recurring';
+      frequency = 'Monthly';
+    }
+
+    // Round to 2 decimal places
+    paymentAmount = Math.round(paymentAmount * 100) / 100;
+
+    try {
+      const sfUserSession = localStorage.getItem('sf_user_session');
+      const sfUser = sfUserSession ? JSON.parse(sfUserSession) : {};
+      const email = sfUser.email || draft.email || '';
+
+      const primaryMember = draft.data.primaryMember || {};
+      const contactId = primaryMember.contactId || '';
+      const accountId = draft.data.household?.accountId || sfUser.householdAccountId || '';
+
+      // Update draft details
+      updateDraft((prev) => ({
+        ...prev,
+        currentStep: THIS_STEP_ID,
+        data: {
+          ...prev.data,
+          contributionSchedule: {
+            ...prev.data.contributionSchedule,
+            option: selectedOption,
+            amount: paymentAmount,
+            frequency,
+            billingMode,
+          },
+        },
+      }));
+
+      // Call checkout session creation API
+      const response = await fetchPortalApi('/api/payments/quick-payment', {
+        method: 'POST',
+        body: {
+          email,
+          contactId,
+          accountId,
+          purpose: `Membership — ${selectedMembershipTier.name}`,
+          paymentType: 'Membership',
+          subType: selectedMembershipTier.name,
+          memo: `Onboarding Membership Selection: ${selectedMembershipTier.name} (${option.title})`,
+          pledgeAmount: 0,
+          paymentAmount: paymentAmount,
+          billingMode: billingMode,
+          frequency: frequency,
+          paymentDate: new Date().toISOString().split('T')[0],
+          paymentMethodType: 'card',
+          groups: selectedMembershipTier.name,
+          source: 'onboarding',
+        },
+      });
+
+      if (response.url) {
+        window.location.href = response.url;
+      } else {
+        throw new Error('No checkout URL returned from payment server.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to initiate payment.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -177,7 +261,7 @@ export default function ContributionSchedule() {
                         <span className="onboard-schedule-detail-label">Contribution Amount</span>
                         <span className="onboard-schedule-detail-value">
                           {option.amountLabel}
-                          {option.amountSuffix && <span className="onboard-schedule-detail-suffix"> {option.amountSuffix}</span>}
+                          {option.amountSuffix && <span className="onboard-schedule-detail-suffix">{option.amountSuffix}</span>}
                         </span>
                       </span>
 
@@ -202,12 +286,18 @@ export default function ContributionSchedule() {
 
             <InfoPanel description="You can update your contribution schedule at any time." />
 
+            {error && (
+              <p className="onboard-error-message onboard-tier-error" role="alert" style={{ marginTop: '16px', marginBottom: '16px' }}>
+                {error}
+              </p>
+            )}
+
             <div className="onboard-form-actions">
               <SecondaryButton variant="navy" icon={ArrowLeft} onClick={handleBack}>
                 Back
               </SecondaryButton>
               <PrimaryButton type="submit" loading={isSubmitting}>
-                Save &amp; Continue
+                Continue
               </PrimaryButton>
             </div>
           </form>

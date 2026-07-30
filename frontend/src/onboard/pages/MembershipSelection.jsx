@@ -13,6 +13,7 @@ import useOnboardingDraft from '../hooks/useOnboardingDraft';
 import {
   getStepById,
   MEMBERSHIP_STEP_ID,
+  CONTRIBUTION_SCHEDULE_STEP_ID,
 } from '../data/onboardingSteps';
 import { GENERAL_TIERS, CHAI_TIERS, formatCurrency } from '../data/membershipTiers';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
@@ -158,57 +159,23 @@ export default function MembershipSelection() {
   const handleSelectTier = async (tier) => {
     setIsSubmitting(true);
     setError('');
-    showToast({ message: 'Redirecting to secure Stripe checkout...', type: 'success' });
 
     try {
-      const sfUserSession = localStorage.getItem('sf_user_session');
-      const sfUser = sfUserSession ? JSON.parse(sfUserSession) : {};
-      const email = sfUser.email || draft.email || '';
-      
-      const primaryMember = draft.data.primaryMember || {};
-      const contactId = primaryMember.contactId || '';
-      const accountId = draft.data.household?.accountId || sfUser.householdAccountId || '';
-
-      const response = await fetchPortalApi('/api/payments/quick-payment', {
-        method: 'POST',
-        body: {
-          email,
-          contactId,
-          accountId,
-          purpose: `Membership — ${tier.name}`,
-          paymentType: 'Membership',
-          subType: tier.name,
-          memo: `Onboarding Membership Selection: ${tier.name}`,
-          pledgeAmount: 0,
-          paymentAmount: tier.annualPrice,
-          billingMode: 'regular',
-          frequency: 'Annual',
-          paymentDate: new Date().toISOString().split('T')[0],
-          paymentMethodType: 'card',
-          groups: tier.name,
-          source: 'onboarding',
+      persistNow({
+        ...draft,
+        currentStep: CONTRIBUTION_SCHEDULE_STEP_ID,
+        data: {
+          ...draft.data,
+          membership: {
+            ...draft.data.membership,
+            tier: tier.id,
+          },
         },
       });
 
-      if (response.url) {
-        updateDraft((prev) => ({
-          ...prev,
-          currentStep: THIS_STEP_ID,
-          data: {
-            ...prev.data,
-            membership: {
-              ...prev.data.membership,
-              tier: tier.id,
-            },
-          },
-        }));
-
-        window.location.href = response.url;
-      } else {
-        throw new Error('No checkout URL returned from payment server.');
-      }
+      goToOnboardingPath(getStepById(CONTRIBUTION_SCHEDULE_STEP_ID).path);
     } catch (err) {
-      setError(err.message || 'Failed to initiate payment.');
+      setError(err.message || 'Failed to update selected membership tier.');
       setIsSubmitting(false);
     }
   };

@@ -353,7 +353,7 @@ export default function App() {
     return (
       <>
         <ToastHost />
-        <RedirectToPath path="/" />
+        <ContributionSchedule />
       </>
     );
   }
