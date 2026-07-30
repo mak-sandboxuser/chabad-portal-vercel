@@ -47,6 +47,7 @@ export const stepperSteps = onboardingSteps.filter(
     step.id !== HOUSEHOLD_STEP_ID &&
     step.id !== MARITAL_INFORMATION_STEP_ID &&
     step.id !== YAHRZEIT_STEP_ID &&
+    step.id !== CONTRIBUTION_SCHEDULE_STEP_ID &&
     step.id !== PAYMENT_METHOD_STEP_ID &&
     step.id !== REVIEW_STEP_ID &&
     step.id !== PROCESSING_STEP_ID,

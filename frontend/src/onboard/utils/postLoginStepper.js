@@ -1,7 +1,8 @@
-import { readDraft, clearDraft } from './onboardingCookies';
+import { readDraft, clearDraft, writeDraft, createEmptyDraft, bindDraftToUser } from './onboardingCookies';
 import { FIRST_FORM_STEP } from '../data/onboardingSteps';
 import {
   DEFAULT_HOUSEHOLD_PREFERENCES,
+  HOUSEHOLD_PREFERENCES_VERSION,
   getFirstPreferencePath,
   getHouseholdPreferences,
 } from './householdPreferences';
@@ -13,6 +14,18 @@ export function markPostLoginStepperPending() {
   try {
     localStorage.setItem(PENDING_POST_LOGIN_STEPPER_KEY, '1');
     localStorage.removeItem(COMPLETED_POST_LOGIN_STEPPER_KEY);
+
+    // Fresh membership onboarding — never carry over a previous applicant's
+    // spouse/children form data into the new run.
+    let ownerEmail = '';
+    try {
+      const stored = localStorage.getItem('sf_user_session');
+      if (stored) ownerEmail = JSON.parse(stored)?.email || '';
+    } catch {
+      // ignore
+    }
+    clearDraft();
+    writeDraft(createEmptyDraft(ownerEmail));
   } catch {
     // ignore storage failures
   }
@@ -43,6 +56,14 @@ export function getPostLoginStepperEntryPath() {
   const draft = readDraft();
   const prefs = draft ? getHouseholdPreferences(draft) : DEFAULT_HOUSEHOLD_PREFERENCES;
   return getFirstPreferencePath(prefs) || FIRST_FORM_STEP.path;
+}
+
+/**
+ * Call after a successful login. Clears any draft belonging to a different
+ * email so the stepper never shows the previous user's spouse/children.
+ */
+export function prepareOnboardingDraftForLogin(email) {
+  return bindDraftToUser(email);
 }
 
 /**

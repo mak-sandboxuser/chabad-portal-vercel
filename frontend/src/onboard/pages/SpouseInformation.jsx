@@ -26,7 +26,8 @@ import {
   fingerprintFamilyMember,
 } from '../utils/addFamilyMemberApi';
 import { showToast } from '../../utils/toast';
-import { isBlank, isValidPersonName, isValidEmail, isValidPhoneNumber } from '../utils/onboardingValidation';
+import { isBlank, isValidPersonName, isValidEmail, isValidPhoneForCountry } from '../utils/onboardingValidation';
+import { getPhoneLengthLabel } from '../data/phoneCountries';
 import { SALUTATIONS, GENDER_OPTIONS } from '../../constants/householdMembers';
 import '../onboard.css';
 
@@ -40,13 +41,8 @@ const EMPTY_SPOUSE = {
   gender: '',
   firstName: '',
   lastName: '',
-  hebrewName: '',
-  fathersHebrewName: '',
-  mothersHebrewName: '',
-  occupation: '',
   email: '',
   phone: { country: 'US', number: '' },
-  birthDate: '',
 };
 
 const FIELD_ORDER = ['firstName', 'lastName', 'email', 'phone'];
@@ -63,8 +59,8 @@ function validateAll(spouse) {
   if (isBlank(spouse.email) || !isValidEmail(spouse.email)) {
     errors.email = 'Enter a valid email address.';
   }
-  if (isBlank(spouse.phone.number) || !isValidPhoneNumber(spouse.phone.number)) {
-    errors.phone = 'Enter a valid 10-digit phone number.';
+  if (isBlank(spouse.phone.number) || !isValidPhoneForCountry(spouse.phone.number, spouse.phone.country)) {
+    errors.phone = `Enter a valid ${getPhoneLengthLabel(spouse.phone.country)} phone number.`;
   }
 
   return errors;
@@ -84,6 +80,14 @@ export default function SpouseInformation() {
     phone: { ...EMPTY_SPOUSE.phone, ...draft.data.spouse?.phone },
   };
 
+  const fingerprint = fingerprintFamilyMember({
+    ...spouse,
+    contactEmail: spouse.email,
+    mobilePhone: spouse.phone?.number,
+  });
+  const isSpouseSaved =
+    draft.data.spouseSyncFingerprint === fingerprint && Boolean(spouse.firstName || spouse.lastName);
+
   useEffect(() => {
     const redirect = getRedirectPathIfStepDisallowed(THIS_STEP_ID, prefs);
     if (redirect && redirect !== window.location.pathname) {
@@ -98,6 +102,7 @@ export default function SpouseInformation() {
       data: {
         ...prev.data,
         spouse: { ...prev.data.spouse, ...patch },
+        spouseSyncFingerprint: '', // edited fields require a re-save
       },
     }));
   };
@@ -119,12 +124,30 @@ export default function SpouseInformation() {
 
   const handlePhoneChange = (nextPhone) => {
     updateSpouse({ phone: nextPhone });
-    clearErrorIfValid('phone', isValidPhoneNumber(nextPhone.number));
+    clearErrorIfValid('phone', isValidPhoneForCountry(nextPhone.number, nextPhone.country));
+  };
+
+  const handleRemoveSpouse = () => {
+    persistNow({
+      ...draft,
+      currentStep: THIS_STEP_ID,
+      data: {
+        ...draft.data,
+        spouse: EMPTY_SPOUSE,
+        spouseSyncFingerprint: '',
+      },
+    });
+    setErrors({});
   };
 
   const focusFirstInvalidField = (fieldErrors) => {
     const firstInvalid = FIELD_ORDER.find((field) => fieldErrors[field]);
     if (firstInvalid) document.getElementById(firstInvalid)?.focus();
+  };
+
+  const goToNextStep = () => {
+    const nextStepId = getNextPreferenceStepId(THIS_STEP_ID, prefs);
+    goToOnboardingPath(getStepById(nextStepId).path);
   };
 
   const handleBack = () => {
@@ -141,6 +164,12 @@ export default function SpouseInformation() {
     goToOnboardingPath(getStepById(previousStepId).path);
   };
 
+  const handleContinue = () => {
+    const nextStepId = getNextPreferenceStepId(THIS_STEP_ID, prefs);
+    persistNow({ ...draft, currentStep: nextStepId });
+    goToOnboardingPath(getStepById(nextStepId).path);
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
@@ -155,18 +184,11 @@ export default function SpouseInformation() {
     }
 
     const nextStepId = getNextPreferenceStepId(THIS_STEP_ID, prefs);
-    const fingerprint = fingerprintFamilyMember({
-      ...spouse,
-      contactEmail: spouse.email,
-      mobilePhone: spouse.phone?.number,
-    });
-    const alreadySynced = draft.data.spouseSyncFingerprint === fingerprint;
-
     setIsSubmitting(true);
     try {
       // Same webhook as Household → Add Family Members → Save & Create Contact.
-      // Skip when user returned via Back without changing any fields.
-      if (!alreadySynced) {
+      // Skipped when the user returned via Back without changing any field.
+      if (!isSpouseSaved) {
         await createFamilyMemberViaWebhook({
           memberType: 'secondary',
           salutation: spouse.salutation,
@@ -176,7 +198,7 @@ export default function SpouseInformation() {
           contactEmail: spouse.email,
           mobilePhone: spouse.phone?.number || '',
         });
-        showToast({ message: 'Spouse contact created.', type: 'success' });
+        showToast({ message: 'Spouse contact created successfully.', type: 'success' });
       }
 
       persistNow({
@@ -190,7 +212,7 @@ export default function SpouseInformation() {
       });
       goToOnboardingPath(getStepById(nextStepId).path);
     } catch (err) {
-      showToast({ message: err.message || 'Failed to create spouse contact.', type: 'error' });
+      showToast({ message: err.message || 'Failed to save spouse contact.', type: 'error' });
       setIsSubmitting(false);
     }
   };
@@ -218,11 +240,15 @@ export default function SpouseInformation() {
 
         <main>
           {prefs.hasSpouse && (
-            <form className="onboard-about-card" onSubmit={handleSubmit} noValidate>
+            <div className="onboard-about-card">
               <div className="onboard-about-header">
                 <div>
                   <h2 className="onboard-about-title">Spouse Information</h2>
-                  <p className="onboard-about-subtitle">Please provide information about your spouse.</p>
+                  <p className="onboard-about-subtitle">
+                    {isSpouseSaved
+                      ? 'Your spouse has been successfully added to your household.'
+                      : 'Please provide information about your spouse.'}
+                  </p>
                 </div>
                 <span className="onboard-about-security-note">
                   <Lock size={14} aria-hidden="true" />
@@ -230,84 +256,121 @@ export default function SpouseInformation() {
                 </span>
               </div>
 
-              <div className="onboard-form-grid">
-                <SelectField
-                  standalone
-                  id="salutation"
-                  label="Salutation"
-                  placeholder="-- Select --"
-                  value={spouse.salutation}
-                  onChange={handleTextChange('salutation')}
-                  options={SALUTATION_OPTIONS}
-                />
-                <SelectField
-                  standalone
-                  id="gender"
-                  label="Gender"
-                  placeholder="--None--"
-                  value={spouse.gender}
-                  onChange={handleTextChange('gender')}
-                  options={GENDER_SELECT_OPTIONS}
-                />
-              </div>
+              {isSpouseSaved ? (
+                <>
+                  <div className="onboard-search-selected-card" style={{ marginBottom: '32px' }}>
+                    <div className="onboard-selected-meta">
+                      <span className="onboard-selected-tag">Added Spouse</span>
+                      <div className="onboard-selected-name">
+                        {spouse.firstName} {spouse.lastName}
+                      </div>
+                      <div className="onboard-selected-details">
+                        {spouse.email && <span>{spouse.email}</span>}
+                        {spouse.phone?.number && <span> • {spouse.phone.number}</span>}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="onboard-selected-change-btn"
+                      onClick={handleRemoveSpouse}
+                    >
+                      Remove
+                    </button>
+                  </div>
 
-              <div className="onboard-form-grid">
-                <FormField
-                  id="firstName"
-                  label="First Name"
-                  required
-                  placeholder="Enter first name"
-                  value={spouse.firstName}
-                  onChange={handleTextChange('firstName', isValidPersonName)}
-                  error={errors.firstName}
-                />
-                <FormField
-                  id="lastName"
-                  label="Last Name"
-                  required
-                  placeholder="Enter last name"
-                  value={spouse.lastName}
-                  onChange={handleTextChange('lastName', isValidPersonName)}
-                  error={errors.lastName}
-                />
-              </div>
+                  <div className="onboard-form-actions">
+                    <SecondaryButton
+                      variant="navy"
+                      icon={isFirstForm ? LogOut : ArrowLeft}
+                      onClick={handleBack}
+                    >
+                      {isFirstForm ? 'Sign Out' : 'Back'}
+                    </SecondaryButton>
+                    <PrimaryButton onClick={handleContinue}>Save &amp; Continue</PrimaryButton>
+                  </div>
+                </>
+              ) : (
+                <form onSubmit={handleSubmit} noValidate>
+                  <div className="onboard-form-grid">
+                    <SelectField
+                      standalone
+                      id="salutation"
+                      label="Salutation"
+                      placeholder="-- Select --"
+                      value={spouse.salutation}
+                      onChange={handleTextChange('salutation')}
+                      options={SALUTATION_OPTIONS}
+                    />
+                    <SelectField
+                      standalone
+                      id="gender"
+                      label="Gender"
+                      placeholder="--None--"
+                      value={spouse.gender}
+                      onChange={handleTextChange('gender')}
+                      options={GENDER_SELECT_OPTIONS}
+                    />
+                  </div>
 
-              <div className="onboard-form-grid">
-                <FormField
-                  id="email"
-                  label="Email"
-                  required
-                  type="email"
-                  icon={Mail}
-                  placeholder="Enter email address"
-                  value={spouse.email}
-                  onChange={handleTextChange('email', isValidEmail)}
-                  error={errors.email}
-                  autoComplete="email"
-                />
-                <PhoneField
-                  id="phone"
-                  label="Mobile Phone"
-                  required
-                  value={spouse.phone}
-                  onChange={handlePhoneChange}
-                  error={errors.phone}
-                />
-              </div>
+                  <div className="onboard-form-grid">
+                    <FormField
+                      id="firstName"
+                      label="First Name"
+                      required
+                      placeholder="Enter first name"
+                      value={spouse.firstName}
+                      onChange={handleTextChange('firstName', isValidPersonName)}
+                      error={errors.firstName}
+                    />
+                    <FormField
+                      id="lastName"
+                      label="Last Name"
+                      required
+                      placeholder="Enter last name"
+                      value={spouse.lastName}
+                      onChange={handleTextChange('lastName', isValidPersonName)}
+                      error={errors.lastName}
+                    />
+                  </div>
 
-              <div className="onboard-form-actions">
-                <SecondaryButton
-                  variant="navy"
-                  icon={isFirstForm ? LogOut : ArrowLeft}
-                  onClick={handleBack}
-                >
-                  {isFirstForm ? 'Sign Out' : 'Back'}
-                </SecondaryButton>
-                <PrimaryButton type="submit" loading={isSubmitting}>
-                  Save &amp; Continue
-                </PrimaryButton>
-              </div>
-            </form>
+                  <div className="onboard-form-grid">
+                    <FormField
+                      id="email"
+                      label="Email"
+                      required
+                      type="email"
+                      icon={Mail}
+                      placeholder="Enter email address"
+                      value={spouse.email}
+                      onChange={handleTextChange('email', isValidEmail)}
+                      error={errors.email}
+                      autoComplete="email"
+                    />
+                    <PhoneField
+                      id="phone"
+                      label="Mobile Phone"
+                      required
+                      value={spouse.phone}
+                      onChange={handlePhoneChange}
+                      error={errors.phone}
+                    />
+                  </div>
+
+                  <div className="onboard-form-actions">
+                    <SecondaryButton
+                      variant="navy"
+                      icon={isFirstForm ? LogOut : ArrowLeft}
+                      onClick={handleBack}
+                    >
+                      {isFirstForm ? 'Sign Out' : 'Back'}
+                    </SecondaryButton>
+                    <PrimaryButton type="submit" loading={isSubmitting}>
+                      Save &amp; Continue
+                    </PrimaryButton>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
         </main>
 

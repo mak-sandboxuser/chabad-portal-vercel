@@ -33,7 +33,7 @@ import {
   PROCESSING_STEP_ID,
 } from './onboard/data/onboardingSteps';
 import { getHouseholdPreferences, getRedirectPathIfStepDisallowed } from './onboard/utils/householdPreferences';
-import { readDraft } from './onboard/utils/onboardingCookies';
+import { readDraft, clearDraft } from './onboard/utils/onboardingCookies';
 
 const ONBOARD_SPOUSE_INFORMATION_PATH = getStepById(SPOUSE_INFORMATION_STEP_ID).path;
 const ONBOARD_HOUSEHOLD_PATH = getStepById(HOUSEHOLD_STEP_ID).path;
@@ -181,9 +181,24 @@ export default function App() {
     } catch {
       // ignore
     }
+    clearDraft();
     setSfUser(null);
     window.location.replace('/');
   };
+
+  // Redirect onboarding returns to the onboarding membership page if they hit the home page with payment params
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const payment = query.get('payment');
+    if (payment && (payment === 'success' || payment === 'cancel')) {
+      if (window.location.pathname !== '/onboard/membership') {
+        const draftData = readDraft();
+        if (draftData && draftData.currentStep) {
+          window.location.replace(`/onboard/membership${window.location.search}`);
+        }
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -338,7 +353,7 @@ export default function App() {
     return (
       <>
         <ToastHost />
-        <ContributionSchedule />
+        <RedirectToPath path="/" />
       </>
     );
   }

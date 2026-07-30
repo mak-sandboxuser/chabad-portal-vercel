@@ -1,16 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { readDraft, writeDraft, clearDraft, createEmptyDraft } from '../utils/onboardingCookies';
+import { readDraft, writeDraft, clearDraft, createEmptyDraft, bindDraftToUser } from '../utils/onboardingCookies';
 
 const SAVE_DEBOUNCE_MS = 400;
+
+function getSessionEmail() {
+  try {
+    const stored = localStorage.getItem('sf_user_session');
+    if (!stored) return '';
+    return String(JSON.parse(stored)?.email || '').trim().toLowerCase();
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Loads/persists the shared onboarding draft (cookie, overflowing to
  * localStorage for large payloads — see onboardingCookies.js). Changes are
  * saved on a ~400ms debounce, plus flushed immediately on tab-hide/unload so
  * nothing is lost mid-typing.
+ *
+ * The draft is scoped to the logged-in email via bindDraftToUser, so a new
+ * login never inherits the previous applicant's spouse/children/stepper data.
  */
 export default function useOnboardingDraft() {
-  const [draft, setDraft] = useState(() => readDraft() || createEmptyDraft());
+  const [draft, setDraft] = useState(() => {
+    const email = getSessionEmail();
+    if (email) return bindDraftToUser(email);
+    return readDraft() || createEmptyDraft();
+  });
   // Captured once at mount: was there a real draft in the cookie/localStorage
   // already, as opposed to one we just created empty? Pages use this to tell
   // "returning applicant" apart from "currentStep happens to be 1".
@@ -72,14 +89,18 @@ export default function useOnboardingDraft() {
    */
   const persistNow = useCallback((nextDraft) => {
     clearTimeout(debounceRef.current);
-    setDraft(nextDraft);
-    savedSerializedRef.current = JSON.stringify(nextDraft);
-    writeDraft(nextDraft);
+    const email = getSessionEmail();
+    const withOwner = email && !nextDraft.ownerEmail
+      ? { ...nextDraft, ownerEmail: email }
+      : nextDraft;
+    setDraft(withOwner);
+    savedSerializedRef.current = JSON.stringify(withOwner);
+    writeDraft(withOwner);
   }, []);
 
   const resetDraft = useCallback(() => {
     clearDraft();
-    const empty = createEmptyDraft();
+    const empty = createEmptyDraft(getSessionEmail());
     savedSerializedRef.current = JSON.stringify(empty);
     setDraft(empty);
   }, []);

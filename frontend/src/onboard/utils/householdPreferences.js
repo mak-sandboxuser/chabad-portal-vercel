@@ -13,11 +13,22 @@ export const DEFAULT_HOUSEHOLD_PREFERENCES = {
   addYahrzeit: false,
 };
 
+/**
+ * Bumped when the default preference set changes. Drafts without this version
+ * (or with an older one) are reset to DEFAULT_HOUSEHOLD_PREFERENCES so a stale
+ * Children=Yes from earlier testing cannot override the Children=No default.
+ */
+export const HOUSEHOLD_PREFERENCES_VERSION = 2;
+
 export function getHouseholdPreferences(draft) {
   const saved = draft?.data?.householdPreferences || {};
+  if (saved.version !== HOUSEHOLD_PREFERENCES_VERSION) {
+    return { ...DEFAULT_HOUSEHOLD_PREFERENCES, version: HOUSEHOLD_PREFERENCES_VERSION };
+  }
   return {
     ...DEFAULT_HOUSEHOLD_PREFERENCES,
     ...saved,
+    version: HOUSEHOLD_PREFERENCES_VERSION,
   };
 }
 
@@ -31,7 +42,6 @@ export function getPreferenceDrivenStepIds(prefs) {
   if (prefs.hasSpouse) ids.push(SPOUSE_INFORMATION_STEP_ID);
   if (prefs.hasChildren) ids.push(CHILDREN_STEP_ID);
   ids.push(MEMBERSHIP_STEP_ID);
-  ids.push(CONTRIBUTION_SCHEDULE_STEP_ID);
   return ids;
 }
 

@@ -1,12 +1,19 @@
 import { useId } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { PHONE_COUNTRIES, getPhoneCountry, normalizePhoneDigits } from '../data/phoneCountries';
 
-const COUNTRIES = [
-  { code: 'US', name: 'United States', dialCode: '+1', flag: '🇺🇸' },
-  { code: 'CA', name: 'Canada', dialCode: '+1', flag: '🇨🇦' },
-  { code: 'IL', name: 'Israel', dialCode: '+972', flag: '🇮🇱' },
-  { code: 'GB', name: 'United Kingdom', dialCode: '+44', flag: '🇬🇧' },
-];
+/**
+ * The draft stores digits only, so the CRM payload stays clean; the grouping
+ * below is display formatting applied as the applicant types.
+ */
+function formatPhoneDigits(digits, dialCode) {
+  if (dialCode !== '+1') {
+    return digits.replace(/(\d{3})(?=\d)/g, '$1 ').trim();
+  }
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
 
 export default function PhoneField({
   id,
@@ -15,20 +22,30 @@ export default function PhoneField({
   value,
   onChange,
   error,
-  placeholder = '(123) 456-7890',
+  placeholder,
 }) {
   const generatedId = useId();
   const fieldId = id || generatedId;
   const countryId = `${fieldId}-country`;
   const errorId = error ? `${fieldId}-error` : undefined;
-  const selectedCountry = COUNTRIES.find((c) => c.code === value.country) || COUNTRIES[0];
+  const selectedCountry = getPhoneCountry(value.country);
+
+  const digits = normalizePhoneDigits(value.number, selectedCountry.code);
 
   const handleCountryChange = (event) => {
-    onChange({ ...value, country: event.target.value });
+    const nextCountry = getPhoneCountry(event.target.value);
+    onChange({
+      ...value,
+      country: nextCountry.code,
+      number: normalizePhoneDigits(digits, nextCountry.code),
+    });
   };
 
   const handleNumberChange = (event) => {
-    onChange({ ...value, number: event.target.value });
+    onChange({
+      ...value,
+      number: normalizePhoneDigits(event.target.value, selectedCountry.code),
+    });
   };
 
   return (
@@ -52,7 +69,7 @@ export default function PhoneField({
             onChange={handleCountryChange}
             aria-label="Country"
           >
-            {COUNTRIES.map((country) => (
+            {PHONE_COUNTRIES.map((country) => (
               <option key={country.code} value={country.code}>
                 {country.flag} {country.dialCode}
               </option>
@@ -64,9 +81,11 @@ export default function PhoneField({
         <input
           id={fieldId}
           type="tel"
+          inputMode="tel"
+          autoComplete="tel-national"
           className="onboard-phone-number-input"
-          value={value.number}
-          placeholder={placeholder}
+          value={formatPhoneDigits(digits, selectedCountry.dialCode)}
+          placeholder={placeholder || selectedCountry.example}
           onChange={handleNumberChange}
           aria-invalid={Boolean(error)}
           aria-describedby={errorId}

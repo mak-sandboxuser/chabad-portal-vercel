@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { Heart, Users } from 'lucide-react';
 import YesNoToggle from './YesNoToggle';
 import StarOfDavidIcon from './icons/StarOfDavidIcon';
 import {
   getHouseholdPreferences,
   getRedirectPathIfStepDisallowed,
+  HOUSEHOLD_PREFERENCES_VERSION,
 } from '../utils/householdPreferences';
 import { getStepById, SPOUSE_INFORMATION_STEP_ID, CHILDREN_STEP_ID } from '../data/onboardingSteps';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
@@ -40,8 +42,33 @@ export default function KnowYouBetterPanel({
 }) {
   const prefs = getHouseholdPreferences(draft);
 
+  // One-time migration: older drafts without preference version 2 keep a stale
+  // Children=Yes from earlier testing. Rewrite them to the current defaults.
+  useEffect(() => {
+    if (draft?.data?.householdPreferences?.version === HOUSEHOLD_PREFERENCES_VERSION) return;
+    const migrated = {
+      ...draft,
+      data: {
+        ...draft.data,
+        householdPreferences: { ...prefs },
+      },
+    };
+    if (persistNow) persistNow(migrated);
+    else updateDraft(() => migrated);
+
+    const redirect = getRedirectPathIfStepDisallowed(currentStepId, prefs);
+    if (redirect && redirect !== window.location.pathname) {
+      goToOnboardingPath(redirect);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount for draft migration
+  }, []);
+
   const commitPreferences = (key, value) => {
-    const nextPrefs = { ...prefs, [key]: value };
+    const nextPrefs = {
+      ...prefs,
+      [key]: value,
+      version: HOUSEHOLD_PREFERENCES_VERSION,
+    };
     const nextData = {
       ...draft.data,
       householdPreferences: nextPrefs,

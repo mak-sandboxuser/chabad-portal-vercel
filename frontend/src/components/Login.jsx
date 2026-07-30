@@ -5,7 +5,7 @@ import { Mail, ArrowRight, ShieldAlert, Shield, CheckCircle, HelpCircle, Moon, S
 import BuildingSketch from './shared/BuildingSketch';
 import ChabadLogo from './shared/ChabadLogo';
 import { ONBOARD_PATH } from './onboard/OnboardWelcome';
-import { getPostLoginStepperEntryPath, isPostLoginStepperPending } from '../onboard/utils/postLoginStepper';
+import { getPostLoginStepperEntryPath, isPostLoginStepperPending, prepareOnboardingDraftForLogin } from '../onboard/utils/postLoginStepper';
 import { apiUrl } from '../config/api';
 import { authTrace } from '../utils/authTrace';
 import {
@@ -99,6 +99,8 @@ export default function Login({ initialError = '' }) {
       };
 
       localStorage.setItem('sf_user_session', JSON.stringify(userSession));
+      // Drop any previous applicant's onboarding draft before entering the stepper.
+      prepareOnboardingDraftForLogin(cleanEmail);
       showToast({ message: `Welcome back, ${userSession.name}!`, type: 'success' });
 
       setTimeout(() => {

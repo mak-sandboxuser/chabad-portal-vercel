@@ -31,6 +31,8 @@ export function fingerprintFamilyMember(person = {}) {
     lastName: String(person.lastName || '').trim().toLowerCase(),
     email: String(person.email || person.contactEmail || '').trim().toLowerCase(),
     phone: String(phoneRaw).replace(/\D/g, ''),
+    contactId: person.contactId || '',
+    isLinked: Boolean(person.isLinked),
   });
 }
 
@@ -73,3 +75,52 @@ export async function createFamilyMemberViaWebhook({
     },
   });
 }
+
+/**
+ * Search existing ChabadOne contacts via Make.com.
+ */
+export async function searchContactsViaWebhook(query) {
+  const session = getOnboardingSfSession();
+  if (!session?.email) {
+    throw new Error('Session expired. Please log in again.');
+  }
+
+  return fetchPortalApi('/api/household/search-contacts', {
+    method: 'POST',
+    body: {
+      email: session.email,
+      query: String(query || '').trim(),
+      limit: 50,
+    },
+  });
+}
+
+/**
+ * Link an existing contact to the household.
+ */
+export async function linkFamilyMemberViaWebhook({
+  memberType,
+  contactIds = [],
+  contactMeta = [],
+}) {
+  const session = getOnboardingSfSession();
+  if (!session?.email) {
+    throw new Error('Session expired. Please log in again.');
+  }
+
+  const householdAccountId = session.householdAccountId || '';
+
+  return fetchPortalApi('/api/household/add-family-member', {
+    method: 'POST',
+    body: {
+      email: session.email,
+      mode: 'link',
+      contactIds,
+      contactMeta,
+      memberType,
+      householdAccountId,
+      accountId: householdAccountId,
+    },
+  });
+}
+

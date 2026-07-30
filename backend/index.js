@@ -1402,6 +1402,7 @@ function buildStripeCheckoutMetadata(payload, contactId, email) {
     paymentOnly: enriched.paymentOnly ? 'true' : 'false',
     isRecurring: isRecurring ? 'true' : 'false',
     paymentMethodType: payload.paymentMethodType || 'card',
+    groups: payload.groups || '',
   };
 }
 
@@ -1422,8 +1423,9 @@ function buildQuickPaymentPayload(body, contactId) {
     billingMode,
     frequency: body.frequency || 'Monthly',
     paymentDate: body.paymentDate || new Date().toISOString().split('T')[0],
-    source: 'member_portal',
+    source: body.source || 'member_portal',
     paymentMethodType: body.paymentMethodType || 'card',
+    groups: body.groups || '',
   });
 }
 
@@ -1449,6 +1451,14 @@ async function createStripeCheckoutSession(payload, contactId, email) {
   const paymentMethodTypes = paymentMethodType === 'us_bank_account' ? ['us_bank_account'] : ['card'];
   const customerId = await getOrCreateStripeCustomer(email);
 
+  const isOnboarding = payload.source === 'onboarding';
+  const successUrl = isOnboarding
+    ? `${FRONTEND_URL}/onboard/membership?payment=success&session_id={CHECKOUT_SESSION_ID}`
+    : CHECKOUT_SUCCESS_URL;
+  const cancelUrl = isOnboarding
+    ? `${FRONTEND_URL}/onboard/membership?payment=cancel`
+    : CHECKOUT_CANCEL_URL;
+
   if (isRecurring && paymentAmount > 0) {
     return stripe.checkout.sessions.create({
       payment_method_types: paymentMethodTypes,
@@ -1472,8 +1482,8 @@ async function createStripeCheckoutSession(payload, contactId, email) {
       client_reference_id: buildCheckoutClientReferenceId({ ...payload, contactId }),
       metadata,
       subscription_data: { metadata },
-      success_url: CHECKOUT_SUCCESS_URL,
-      cancel_url: CHECKOUT_CANCEL_URL,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
     });
   }
 
@@ -1494,8 +1504,8 @@ async function createStripeCheckoutSession(payload, contactId, email) {
     }],
     client_reference_id: buildCheckoutClientReferenceId({ ...payload, contactId }),
     metadata,
-    success_url: CHECKOUT_SUCCESS_URL,
-    cancel_url: CHECKOUT_CANCEL_URL,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
   });
 }
 
@@ -1610,6 +1620,7 @@ function buildPayloadFromCheckoutSession(session) {
       ? session.payment_intent
       : session.payment_intent?.id || '',
     paymentMethodType: metadata.paymentMethodType || 'card',
+    groups: metadata.groups || '',
   });
 }
 
@@ -1810,6 +1821,32 @@ app.post('/api/payments/confirm-checkout', async (req, res) => {
     processingCheckoutSessions.add(sessionId);
     try {
       await triggerFinancialWebhook(payload, authHeader);
+      
+      // Auto-assign group if present in checkout session metadata
+      const assignedGroup = payload.groups;
+      if (assignedGroup) {
+        console.log(`[PAYMENT] Auto-assigning group "${assignedGroup}" to account ${payload.accountId} after checkout session ${sessionId}`);
+        const assignWebhookUrl = process.env.MAKE_ASSIGN_GROUP_WEBHOOK_URL;
+        if (assignWebhookUrl) {
+          try {
+            await fetch(assignWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'assign_group',
+                accountId: payload.accountId,
+                accountName: payload.accountName || 'Household Account',
+                contactId: payload.contactId,
+                email: payload.email,
+                groups: assignedGroup,
+              }),
+            });
+          } catch (groupErr) {
+            console.error('[PAYMENT] Error auto-assigning group:', groupErr);
+          }
+        }
+      }
+
       processedCheckoutSessions.add(sessionId);
     } finally {
       processingCheckoutSessions.delete(sessionId);

@@ -1,3 +1,5 @@
+import { getPhoneCountry, normalizePhoneDigits } from '../data/phoneCountries';
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isBlank(value) {
@@ -43,6 +45,16 @@ export function isValidPhoneNumber(value) {
   if (digits.length === 10) return true;
   if (digits.length === 11 && digits.startsWith('1')) return true;
   return false;
+}
+
+/**
+ * Country-aware length check, so Israel (9 digits) isn't rejected by the
+ * US 10-digit rule. Formatting characters are ignored.
+ */
+export function isValidPhoneForCountry(value, countryCode = 'US') {
+  const country = getPhoneCountry(countryCode);
+  const digits = normalizePhoneDigits(value, countryCode);
+  return country.digitLengths.includes(digits.length);
 }
 
 function daysInMonth(month, year) {

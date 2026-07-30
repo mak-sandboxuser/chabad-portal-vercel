@@ -52,9 +52,6 @@ function createEmptyChild() {
     lastName: '',
     name: '',
     birthDate: '',
-    // Fingerprint of the values last sent to the CRM, stored on the record
-    // itself (same idea as draft.data.spouseSyncFingerprint) so it survives
-    // reloads and can't be orphaned by an id change.
     syncFingerprint: '',
   };
 }
@@ -226,10 +223,10 @@ export default function ChildrenInformation() {
       const result = await syncUnsavedChildren(children);
       synced = result.nextList;
       if (result.created > 0) {
-        showToast({ message: 'Child contact created.', type: 'success' });
+        showToast({ message: 'Child contact created/linked.', type: 'success' });
       }
     } catch (err) {
-      showToast({ message: err.message || 'Failed to create child contact.', type: 'error' });
+      showToast({ message: err.message || 'Failed to sync child contact.', type: 'error' });
       setIsSubmitting(false);
       return;
     }
@@ -371,63 +368,95 @@ export default function ChildrenInformation() {
 
               <h3 className="onboard-section-heading">Children</h3>
 
-              {children.map((child, index) => (
-                <div className="onboard-child-card" key={child.id}>
-                  <div className="onboard-child-card-header">
-                    <h4 className="onboard-child-card-title">Child {index + 1}</h4>
-                    <button
-                      type="button"
-                      className="onboard-child-remove-button"
-                      onClick={() => handleRemoveChild(child.id)}
-                      aria-label={`Remove Child ${index + 1}`}
-                    >
-                      <Trash2 size={18} aria-hidden="true" />
-                    </button>
-                  </div>
+              {children.map((child, index) => {
+                const childFingerprint = fingerprintFamilyMember(child);
+                const isSynced = child.syncFingerprint && child.syncFingerprint === childFingerprint;
 
-                  <div className="onboard-form-grid">
-                    <SelectField
-                      standalone
-                      id={`child-${child.id}-salutation`}
-                      label="Salutation"
-                      placeholder="-- Select --"
-                      value={child.salutation}
-                      onChange={handleChildChange(child.id, 'salutation')}
-                      options={SALUTATION_OPTIONS}
-                    />
-                    <SelectField
-                      standalone
-                      id={`child-${child.id}-gender`}
-                      label="Gender"
-                      placeholder="--None--"
-                      value={child.gender}
-                      onChange={handleChildChange(child.id, 'gender')}
-                      options={GENDER_SELECT_OPTIONS}
-                    />
-                  </div>
+                if (isSynced) {
+                  return (
+                    <div className="onboard-child-card synced" key={child.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'rgba(196, 132, 31, 0.03)', border: '1px solid var(--onboard-border)', borderRadius: '14px', marginBottom: '16px' }}>
+                      <div>
+                        <span className="onboard-selected-tag">Added Child {index + 1}</span>
+                        <div className="onboard-selected-name" style={{ fontSize: '15px', fontWeight: '700', color: 'var(--onboard-navy)' }}>
+                          {child.salutation && `${child.salutation} `}{child.firstName} {child.lastName}
+                        </div>
+                        {child.gender && (
+                          <div style={{ fontSize: '12px', color: 'var(--onboard-text-secondary)' }}>
+                            Gender: {child.gender}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="onboard-child-remove-button"
+                        onClick={() => handleRemoveChild(child.id)}
+                        aria-label={`Remove Child ${index + 1}`}
+                        style={{ border: 'none', background: 'none', color: '#d92d20', cursor: 'pointer' }}
+                      >
+                        <Trash2 size={18} aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                }
 
-                  <div className="onboard-form-grid">
-                    <FormField
-                      id={`child-${child.id}-firstName`}
-                      label="First Name"
-                      required
-                      placeholder="First Name"
-                      value={child.firstName}
-                      onChange={handleChildChange(child.id, 'firstName', isValidPersonName)}
-                      error={errors[child.id]?.firstName}
-                    />
-                    <FormField
-                      id={`child-${child.id}-lastName`}
-                      label="Last Name"
-                      required
-                      placeholder="Last Name"
-                      value={child.lastName}
-                      onChange={handleChildChange(child.id, 'lastName', isValidPersonName)}
-                      error={errors[child.id]?.lastName}
-                    />
+                return (
+                  <div className="onboard-child-card" key={child.id}>
+                    <div className="onboard-child-card-header">
+                      <h4 className="onboard-child-card-title">Child {index + 1} (Unsaved)</h4>
+                      <button
+                        type="button"
+                        className="onboard-child-remove-button"
+                        onClick={() => handleRemoveChild(child.id)}
+                        aria-label={`Remove Child ${index + 1}`}
+                      >
+                        <Trash2 size={18} aria-hidden="true" />
+                      </button>
+                    </div>
+
+                    <div className="onboard-form-grid">
+                      <SelectField
+                        standalone
+                        id={`child-${child.id}-salutation`}
+                        label="Salutation"
+                        placeholder="-- Select --"
+                        value={child.salutation}
+                        onChange={handleChildChange(child.id, 'salutation')}
+                        options={SALUTATION_OPTIONS}
+                      />
+                      <SelectField
+                        standalone
+                        id={`child-${child.id}-gender`}
+                        label="Gender"
+                        placeholder="--None--"
+                        value={child.gender}
+                        onChange={handleChildChange(child.id, 'gender')}
+                        options={GENDER_SELECT_OPTIONS}
+                      />
+                    </div>
+
+                    <div className="onboard-form-grid">
+                      <FormField
+                        id={`child-${child.id}-firstName`}
+                        label="First Name"
+                        required
+                        placeholder="First Name"
+                        value={child.firstName}
+                        onChange={handleChildChange(child.id, 'firstName', isValidPersonName)}
+                        error={errors[child.id]?.firstName}
+                      />
+                      <FormField
+                        id={`child-${child.id}-lastName`}
+                        label="Last Name"
+                        required
+                        placeholder="Last Name"
+                        value={child.lastName}
+                        onChange={handleChildChange(child.id, 'lastName', isValidPersonName)}
+                        error={errors[child.id]?.lastName}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               <div className="onboard-add-child-row">
                 <AddItemButton

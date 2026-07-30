@@ -42,14 +42,18 @@ export function deleteCookie(name) {
   document.cookie = `${name}=; path=/; SameSite=Lax; max-age=0`;
 }
 
-export function createEmptyDraft() {
+export function createEmptyDraft(ownerEmail = '') {
   return {
     version: DRAFT_VERSION,
     currentStep: 3,
     lastUpdated: new Date().toISOString(),
+    // Ties the draft to the logged-in applicant so a new login never inherits
+    // the previous user's spouse/children/stepper state.
+    ownerEmail: String(ownerEmail || '').trim().toLowerCase(),
     data: {
       primaryMember: {},
       householdPreferences: {
+        version: 2,
         hasSpouse: true,
         hasChildren: false,
         addYahrzeit: false,
@@ -66,6 +70,27 @@ export function createEmptyDraft() {
       payment: {},
     },
   };
+}
+
+/**
+ * If a draft exists for a different user (or no owner), wipe it and start fresh
+ * for `email`. Same-user drafts are kept so refresh mid-flow still works.
+ */
+export function bindDraftToUser(email) {
+  const nextEmail = String(email || '').trim().toLowerCase();
+  if (!nextEmail) {
+    clearDraft();
+    return createEmptyDraft();
+  }
+
+  const existing = readDraft();
+  const owner = String(existing?.ownerEmail || '').trim().toLowerCase();
+  if (existing && owner === nextEmail) {
+    return existing;
+  }
+
+  clearDraft();
+  return writeDraft(createEmptyDraft(nextEmail));
 }
 
 function isValidDraftShape(candidate) {
