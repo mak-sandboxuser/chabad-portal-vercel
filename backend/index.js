@@ -1365,6 +1365,11 @@ function enrichFinancialPayload(payload = {}) {
 
   const method = payload.method || (payload.paymentMethodType === 'us_bank_account' ? 'Bank Transfer' : 'Stripe');
 
+  // A Stripe subscription collects its first installment immediately, so that
+  // charge needs a Payment record too — otherwise the portal shows the
+  // recurring plan but $0.00 contributed and an empty Recent Payments list.
+  const createsInitialPayment = isRecurring && recurringAmount > 0 && stripePaid;
+
   return {
     ...payload,
     ...recurringFields,
@@ -1372,8 +1377,9 @@ function enrichFinancialPayload(payload = {}) {
     method,
     pledgeAmount: pledgeAmount > 0 ? pledgeAmount : 0,
     createPledge: pledgeAmount > 0 && !isRecurring,
-    createPayment: paymentAmount > 0 && !isRecurring,
+    createPayment: paymentAmount > 0 && (!isRecurring || createsInitialPayment),
     createRecurring: isRecurring && recurringAmount > 0,
+    createInitialPayment: createsInitialPayment,
     paymentOnly: pledgeAmount <= 0 && paymentAmount > 0 && !isRecurring,
     recurringAmount,
     frequency,
@@ -1408,6 +1414,7 @@ function buildStripeCheckoutMetadata(payload, contactId, email) {
     createPledge: enriched.createPledge ? 'true' : 'false',
     createPayment: enriched.createPayment ? 'true' : 'false',
     createRecurring: enriched.createRecurring ? 'true' : 'false',
+    createInitialPayment: enriched.createInitialPayment ? 'true' : 'false',
     paymentOnly: enriched.paymentOnly ? 'true' : 'false',
     isRecurring: isRecurring ? 'true' : 'false',
     paymentMethodType: payload.paymentMethodType || 'card',
