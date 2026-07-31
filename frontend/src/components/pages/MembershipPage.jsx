@@ -49,7 +49,7 @@ export default function MembershipPage({
     return () => {
       cancelled = true;
     };
-  }, [getAuthToken, onHouseholdUpdated, sfData]);
+  }, [getAuthToken]);
 
   if (isGuestUser(sfData)) {
     return (

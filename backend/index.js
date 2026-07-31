@@ -91,8 +91,25 @@ function sanitizeAccountId(value) {
   return normalized.startsWith('001') ? normalized : '';
 }
 
+const MEMBER_LOOKUP_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+const memberLookupCache = new Map(); // email -> { data, timestamp }
+
+function clearMemberLookupCache(email) {
+  if (!email) return;
+  const emailLower = email.toLowerCase();
+  console.log(`[Cache Invalidation] Clearing cached Salesforce member lookup for ${emailLower}`);
+  memberLookupCache.delete(emailLower);
+}
+
 async function lookupSalesforceMember(email) {
   const emailLower = email.toLowerCase();
+
+  const cached = memberLookupCache.get(emailLower);
+  if (cached && (Date.now() - cached.timestamp < MEMBER_LOOKUP_CACHE_TTL)) {
+    console.log(`[Cache Hit] Returning cached Salesforce member lookup for ${emailLower}`);
+    return cached.data;
+  }
+
   const webhookUrl = process.env.MAKE_WEBHOOK_URL;
 
   const sanitizeName = (value) => {
@@ -246,10 +263,12 @@ async function lookupSalesforceMember(email) {
       }
     }
 
-    return {
+    const result = {
       found: true,
       memberDetails,
     };
+    memberLookupCache.set(emailLower, { data: result, timestamp: Date.now() });
+    return result;
   } catch (err) {
     console.error('Error calling Make.com webhook:', err);
     return { found: false, error: 'membership_check_failed' };
@@ -2438,6 +2457,8 @@ app.post('/api/household/assign-group', async (req, res) => {
     const responseText = await makeRes.text();
     console.log(`[ASSIGN-GROUP] Make webhook response for ${auth.email} (AccountId: ${auth.accountId}):`, responseText);
 
+    clearMemberLookupCache(auth.email);
+
     return res.json({
       success: true,
       message: `Group "${groups}" assigned to household account ${auth.accountName} (${auth.accountId}) successfully!`,
@@ -2549,6 +2570,7 @@ app.post('/api/household/add-family-member', async (req, res) => {
         memberType,
       });
       userSalesforceData[auth.email.toLowerCase()] = sfData;
+      clearMemberLookupCache(auth.email);
 
       return res.json({
         success: true,
@@ -2619,6 +2641,7 @@ app.post('/api/household/add-family-member', async (req, res) => {
       })
       : refreshed.sfData;
     userSalesforceData[auth.email.toLowerCase()] = sfData;
+    clearMemberLookupCache(auth.email);
 
     return res.json({
       success: true,
@@ -2733,6 +2756,7 @@ app.post('/api/portal/update-profile', async (req, res) => {
     }
 
     userSalesforceData[email] = refreshed.sfData;
+    clearMemberLookupCache(email);
 
     res.json({
       success: true,
@@ -2882,6 +2906,7 @@ app.post('/api/household/update-member', async (req, res) => {
   }
 
   userSalesforceData[auth.email.toLowerCase()] = refreshed.sfData;
+  clearMemberLookupCache(auth.email);
 
   res.json({
     success: true,
