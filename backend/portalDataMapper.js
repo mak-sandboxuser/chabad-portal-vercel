@@ -413,9 +413,7 @@ function filterNormalizedPledges(pledges = []) {
     .filter((pledge) => {
       const amount = parseMoneyValue(pledge.amount) || parseMoneyValue(pledge.total);
       if (amount <= 0) return false;
-      const key = pledge.id && !String(pledge.id).startsWith('pledge_')
-        ? pledge.id
-        : `${pledge.date}|${pledge.amount}|${pledge.paid}|${pledge.outstanding}`;
+      const key = `${pledge.date || ''}|${amount.toFixed(2)}|${parseMoneyValue(pledge.paid).toFixed(2)}|${parseMoneyValue(pledge.outstanding).toFixed(2)}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

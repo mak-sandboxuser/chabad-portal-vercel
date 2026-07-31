@@ -12,6 +12,7 @@ import {
   profileFormToPayload,
   sfDataToProfileForm,
 } from '../../utils/profileForm';
+import { getMembership } from '../../utils/portalData';
 
 const PROFILE_TABS = [
   { id: 'general', label: 'General Details', icon: User },
@@ -143,7 +144,7 @@ export default function ProfilePage({
     if (!editingTab) setDraft(next);
     // Also pull groups from sfData if backend returns it
     const sfGroup = sfData?.account?.groups || sfData?.groups || sfData?.profile?.groups || '';
-    if (sfGroup && !getStoredGroup()) {
+    if (sfGroup) {
       setAssignedGroup(sfGroup);
       if (localStorageKey) localStorage.setItem(localStorageKey, sfGroup);
     }
@@ -381,7 +382,8 @@ export default function ProfilePage({
       ...ADDITIONAL_FIELD_KEYS.map(renderAdditionalField),
     ],
     membership: (() => {
-      const activeGroup = assignedGroup || form.groups || sfData?.account?.groups || '';
+      const membership = getMembership(sfData);
+      const activeGroup = assignedGroup || sfData?.account?.groups || sfData?.groups || sfData?.profile?.groups || form.groups || membership.tier || 'Member';
       const hasActiveGroup = Boolean(activeGroup && activeGroup !== 'No Group Assigned Yet');
 
       return (

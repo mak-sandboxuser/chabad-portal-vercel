@@ -180,6 +180,7 @@ async function lookupSalesforceMember(email) {
     const birthdate = readField('birthdate');
     const age = readField('age');
     const gender = readField('gender');
+    const groups = readField('groups') || readField('group') || '';
 
     const lifecycle = {
       hebrewName,
@@ -212,6 +213,7 @@ async function lookupSalesforceMember(email) {
       country,
       nickname,
       title,
+      groups,
       ...lifecycle,
       ...additional,
       profile: {
@@ -225,6 +227,7 @@ async function lookupSalesforceMember(email) {
         country,
         nickname,
         title,
+        groups,
         accountName: readField('accountName') || name,
         lifecycle,
         ...lifecycle,
@@ -779,6 +782,12 @@ function mergeMemberProfile(sfDetails, portalData = null) {
     sfDetails.email?.split('@')[0],
   );
   const financials = buildFinancialsFromSources(effectivePortal);
+  const primaryContact = effectivePortal.contacts?.find((c) => c.isPrimary) || effectivePortal.contacts?.[0] || {};
+  const groups = sfDetails.groups
+    || primaryContact.groups
+    || effectivePortal.membership?.tier
+    || effectivePortal.groups
+    || '';
 
   return {
     contactId: pickFirstNonEmpty(sfDetails.contactId, effectivePortal.contacts?.[0]?.contactId),
@@ -788,6 +797,7 @@ function mergeMemberProfile(sfDetails, portalData = null) {
     name,
     email: sfDetails.email,
     role: pickFirstNonEmpty(sfDetails.role, 'Member'),
+    groups,
     account: {
       id: pickFirstNonEmpty(effectivePortal?.accountId, sfDetails.accountId),
       name: pickFirstNonEmpty(effectivePortal?.accountName, sfProfile.accountName, name),
@@ -798,9 +808,11 @@ function mergeMemberProfile(sfDetails, portalData = null) {
       state: pickFirstNonEmpty(effectivePortal?.state, sfProfile.state),
       postalCode: pickFirstNonEmpty(effectivePortal?.postalCode, sfProfile.postalCode),
       country: pickFirstNonEmpty(effectivePortal?.country, sfProfile.country),
+      groups,
     },
     profile: {
       ...sfProfile,
+      groups,
       accountName: pickFirstNonEmpty(effectivePortal?.accountName, sfProfile.accountName, name),
       phone: pickFirstNonEmpty(sfProfile.phone, sfProfile.mobile, effectivePortal?.phone),
       mobile: pickFirstNonEmpty(sfProfile.mobile, sfProfile.phone, effectivePortal?.phone),
@@ -1302,10 +1314,8 @@ function toSalesforceDateIso(dateStr = '') {
 function stripeRecurringInterval(frequency = 'Monthly') {
   const map = {
     Monthly: 'month',
-    Weekly: 'week',
     Quarterly: 'month',
     'Semi-Annual': 'month',
-    'Half Yearly': 'month',
     Yearly: 'year',
     Annual: 'year',
     Annually: 'year',
@@ -1315,20 +1325,18 @@ function stripeRecurringInterval(frequency = 'Monthly') {
 
 function stripeRecurringIntervalCount(frequency = 'Monthly') {
   if (frequency === 'Quarterly') return 3;
-  if (frequency === 'Semi-Annual' || frequency === 'Half Yearly') return 6;
+  if (frequency === 'Semi-Annual') return 6;
   return 1;
 }
 
 function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
   const base = (dateStr || new Date().toISOString().split('T')[0]).slice(0, 10);
   const date = new Date(`${base}T12:00:00`);
-  if (frequency === 'Weekly') {
-    date.setDate(date.getDate() + 7);
-  } else if (frequency === 'Quarterly') {
+  if (frequency === 'Quarterly') {
     date.setMonth(date.getMonth() + 3);
-  } else if (frequency === 'Semi-Annual' || frequency === 'Half Yearly') {
+  } else if (frequency === 'Semi-Annual') {
     date.setMonth(date.getMonth() + 6);
-  } else if (frequency === 'Yearly' || frequency === 'Annual' || frequency === 'Annually') {
+  } else if (frequency === 'Yearly' || frequency === 'Annual') {
     date.setFullYear(date.getFullYear() + 1);
   } else {
     date.setMonth(date.getMonth() + 1);
@@ -1365,21 +1373,15 @@ function enrichFinancialPayload(payload = {}) {
 
   const method = payload.method || (payload.paymentMethodType === 'us_bank_account' ? 'Bank Transfer' : 'Stripe');
 
-  // A Stripe subscription collects its first installment immediately, so that
-  // charge needs a Payment record too — otherwise the portal shows the
-  // recurring plan but $0.00 contributed and an empty Recent Payments list.
-  const createsInitialPayment = isRecurring && recurringAmount > 0 && stripePaid;
-
   return {
     ...payload,
     ...recurringFields,
     action,
     method,
     pledgeAmount: pledgeAmount > 0 ? pledgeAmount : 0,
-    createPledge: pledgeAmount > 0 && !isRecurring,
-    createPayment: paymentAmount > 0 && (!isRecurring || createsInitialPayment),
+    createPledge: pledgeAmount > 0,
+    createPayment: paymentAmount > 0,
     createRecurring: isRecurring && recurringAmount > 0,
-    createInitialPayment: createsInitialPayment,
     paymentOnly: pledgeAmount <= 0 && paymentAmount > 0 && !isRecurring,
     recurringAmount,
     frequency,
@@ -1414,7 +1416,6 @@ function buildStripeCheckoutMetadata(payload, contactId, email) {
     createPledge: enriched.createPledge ? 'true' : 'false',
     createPayment: enriched.createPayment ? 'true' : 'false',
     createRecurring: enriched.createRecurring ? 'true' : 'false',
-    createInitialPayment: enriched.createInitialPayment ? 'true' : 'false',
     paymentOnly: enriched.paymentOnly ? 'true' : 'false',
     isRecurring: isRecurring ? 'true' : 'false',
     paymentMethodType: payload.paymentMethodType || 'card',

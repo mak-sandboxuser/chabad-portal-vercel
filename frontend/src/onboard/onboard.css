@@ -1150,6 +1150,11 @@
   -webkit-appearance: none;
 }
 
+.onboard-select option {
+  background-color: var(--onboard-surface);
+  color: var(--onboard-text);
+}
+
 .onboard-select:invalid {
   color: var(--onboard-placeholder);
 }

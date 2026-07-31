@@ -234,10 +234,13 @@ export function getMembership(sfData) {
   const pledges = getPledges(sfData);
   const recurring = getRecurring(sfData);
   const activeRecurring = recurring.find((item) => (item.status || '').toLowerCase() === 'active') || recurring[0];
-  const annualCommitment = parseMoney(membership.annualCommitment)
-    || pledges.reduce((sum, item) => sum + parseMoney(item.total || item.amount), 0);
+
   const contributed = parseMoney(membership.contributedYtd)
     || pledges.reduce((sum, item) => sum + parseMoney(item.paid || item.amount), 0);
+  const outstanding = parseMoney(membership.outstanding)
+    || pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
+  const annualCommitment = parseMoney(membership.annualCommitment)
+    || (contributed + outstanding);
 
   return {
     tier: membership.tier || 'Member',
@@ -246,7 +249,7 @@ export function getMembership(sfData) {
     renewalDate: membership.renewalDate || activeRecurring?.nextDate || '',
     annualCommitment: membership.annualCommitment || (annualCommitment ? formatMoney(annualCommitment) : '$0.00'),
     contributedYtd: membership.contributedYtd || formatMoney(contributed),
-    outstanding: membership.outstanding || formatMoney(Math.max(annualCommitment - contributed, 0)),
+    outstanding: membership.outstanding || formatMoney(Math.max(outstanding, 0)),
     autoRenewal: membership.autoRenewal || (activeRecurring ? 'Enabled' : 'Disabled'),
     paymentMethod: membership.paymentMethod || activeRecurring?.method || '—',
     paymentMethodExpiry: membership.paymentMethodExpiry || activeRecurring?.cardExpiry || '',
@@ -261,7 +264,7 @@ export function getFinancialSummary(sfData) {
   const contributedYtd = sumPaymentsYtd(payments) || parseMoney(membership.contributedYtd);
   const annual = parseMoney(membership.annualCommitment);
   const contributed = contributedYtd || totalContributed || parseMoney(membership.contributedYtd);
-  const outstanding = Math.max(annual - contributed, 0);
+  const outstanding = parseMoney(membership.outstanding);
   const pct = annual > 0 ? Math.round((contributed / annual) * 100) : 0;
 
   return {

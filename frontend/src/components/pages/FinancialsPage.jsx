@@ -5,12 +5,12 @@ import SectionTabs from '../shared/SectionTabs';
 import DataTable, { StatusIcon } from '../shared/DataTable';
 import {
   formatDisplayDate,
-  formatFrequencyLabel,
   getAccount,
   getPayments,
   getPledges,
   getRecurring,
   getPortalFiscalYearLabel,
+  parseMoney,
 } from '../../utils/portalData';
 
 const TABS = [
@@ -29,10 +29,11 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
   const payments = getPayments(sfData);
   const pledges = getPledges(sfData);
   const recurring = getRecurring(sfData);
+  const outstandingPledges = pledges.filter((item) => parseMoney(item.outstanding) > 0);
 
   const counts = {
     payments: payments.length,
-    pledges: pledges.length,
+    pledges: outstandingPledges.length,
     recurring: recurring.length,
   };
 
@@ -92,8 +93,8 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
 
           {activeTab === 'pledges' && (
             <DataTable
-              emptyMessage="No outstanding balance records found."
-              rows={pledges}
+              emptyMessage="No Outstanding Balance records found."
+              rows={outstandingPledges}
               columns={[
                 { key: 'status', label: '', render: (row) => <StatusIcon status={row.status} /> },
                 { key: 'amount', label: 'Amount' },
@@ -187,7 +188,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
               columns={[
                 { key: 'status', label: 'Status', render: (row) => <span className="badge badge-active">{row.status}</span> },
                 { key: 'amount', label: 'Amount' },
-                { key: 'frequency', label: 'Frequency', render: (row) => formatFrequencyLabel(row.frequency) },
+                { key: 'frequency', label: 'Frequency' },
                 { key: 'nextDate', label: 'Next Charge', render: (row) => formatDisplayDate(row.nextDate) },
                 { key: 'method', label: 'Payment Method' },
                 { key: 'cardExpiry', label: 'Expires' },

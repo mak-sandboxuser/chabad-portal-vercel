@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CreditCard, PieChart, Calendar, Check, ArrowLeft } from 'lucide-react';
+import { CreditCard, PieChart, Calendar, Check, ArrowLeft, Clock } from 'lucide-react';
 import OnboardHeader from '../components/OnboardHeader';
 import OnboardStepper from '../components/OnboardStepper';
 import OnboardFooter from '../components/OnboardFooter';
@@ -10,6 +10,7 @@ import useOnboardingTheme from '../hooks/useOnboardingTheme';
 import useOnboardingDraft from '../hooks/useOnboardingDraft';
 import { fetchPortalApi } from '../../utils/portalApi';
 import { showToast } from '../../utils/toast';
+import QuickPaymentModal from '../../components/shared/QuickPaymentModal';
 import {
   getStepById,
   CONTRIBUTION_SCHEDULE_STEP_ID,
@@ -67,8 +68,8 @@ function buildScheduleOptions(annualPrice) {
 export default function ContributionSchedule() {
   const [theme, toggleTheme] = useOnboardingTheme();
   const { draft, updateDraft, persistNow } = useOnboardingDraft();
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   const selectedMembershipTier = getMembershipTierById(draft.data.membership?.tier) || {
     name: 'Membership',
@@ -77,10 +78,35 @@ export default function ContributionSchedule() {
   const annualPrice = selectedMembershipTier.annualPrice;
   const scheduleOptions = buildScheduleOptions(annualPrice);
 
-  const savedOption = draft.data.contributionSchedule?.option;
-  // Older drafts may still hold 'quarterly' — fall back to Full Payment.
-  const selectedOption =
-    savedOption && savedOption !== 'quarterly' ? savedOption : 'full';
+  const selectedOption = draft.data.contributionSchedule?.option || 'full';
+
+  const sfUserSession = localStorage.getItem('sf_user_session');
+  const sfUser = sfUserSession ? JSON.parse(sfUserSession) : {};
+  const email = sfUser.email || draft.email || '';
+
+  const primaryMember = draft.data.primaryMember || {};
+  const contactId = primaryMember.contactId || '';
+  const accountId = draft.data.household?.accountId || sfUser.householdAccountId || '';
+
+  // Determine details of the selected option
+  const option = scheduleOptions.find((o) => o.id === selectedOption) || scheduleOptions[0];
+
+  let paymentAmount = annualPrice;
+  let billingMode = 'regular';
+  let frequency = 'Annual';
+
+  if (selectedOption === 'installments') {
+    paymentAmount = annualPrice / 2;
+    billingMode = 'recurring';
+    frequency = 'Semi-Annual';
+  } else if (selectedOption === 'monthly') {
+    paymentAmount = annualPrice / 12;
+    billingMode = 'recurring';
+    frequency = 'Monthly';
+  }
+
+  // Round to 2 decimal places
+  paymentAmount = Math.round(paymentAmount * 100) / 100;
 
   const handleSelectOption = (optionId) => {
     updateDraft((prev) => ({
@@ -101,90 +127,23 @@ export default function ContributionSchedule() {
     goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
   };
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = (event) => {
     event.preventDefault();
-    if (isSubmitting) return;
-
-    setIsSubmitting(true);
-    setError('');
-    showToast({ message: 'Redirecting to secure Stripe checkout...', type: 'success' });
-
-    // Determine details of the selected option
-    const option = scheduleOptions.find((o) => o.id === selectedOption) || scheduleOptions[0];
-
-    let paymentAmount = annualPrice;
-    let billingMode = 'regular';
-    let frequency = 'Annual';
-
-    if (selectedOption === 'installments') {
-      paymentAmount = annualPrice / 2;
-      billingMode = 'recurring';
-      frequency = 'Half Yearly';
-    } else if (selectedOption === 'monthly') {
-      paymentAmount = annualPrice / 12;
-      billingMode = 'recurring';
-      frequency = 'Monthly';
-    }
-
-    // Round to 2 decimal places
-    paymentAmount = Math.round(paymentAmount * 100) / 100;
-
-    try {
-      const sfUserSession = localStorage.getItem('sf_user_session');
-      const sfUser = sfUserSession ? JSON.parse(sfUserSession) : {};
-      const email = sfUser.email || draft.email || '';
-
-      const primaryMember = draft.data.primaryMember || {};
-      const contactId = primaryMember.contactId || '';
-      const accountId = draft.data.household?.accountId || sfUser.householdAccountId || '';
-
-      // Update draft details
-      updateDraft((prev) => ({
-        ...prev,
-        currentStep: THIS_STEP_ID,
-        data: {
-          ...prev.data,
-          contributionSchedule: {
-            ...prev.data.contributionSchedule,
-            option: selectedOption,
-            amount: paymentAmount,
-            frequency,
-            billingMode,
-          },
+    updateDraft((prev) => ({
+      ...prev,
+      currentStep: THIS_STEP_ID,
+      data: {
+        ...prev.data,
+        contributionSchedule: {
+          ...prev.data.contributionSchedule,
+          option: selectedOption,
+          amount: paymentAmount,
+          frequency,
+          billingMode,
         },
-      }));
-
-      // Call checkout session creation API
-      const response = await fetchPortalApi('/api/payments/quick-payment', {
-        method: 'POST',
-        body: {
-          email,
-          contactId,
-          accountId,
-          purpose: `Membership — ${selectedMembershipTier.name}`,
-          paymentType: 'Membership',
-          subType: selectedMembershipTier.name,
-          memo: `Onboarding Membership Selection: ${selectedMembershipTier.name} (${option.title})`,
-          pledgeAmount: 0,
-          paymentAmount: paymentAmount,
-          billingMode: billingMode,
-          frequency: frequency,
-          paymentDate: new Date().toISOString().split('T')[0],
-          paymentMethodType: 'card',
-          groups: selectedMembershipTier.name,
-          source: 'onboarding',
-        },
-      });
-
-      if (response.url) {
-        window.location.href = response.url;
-      } else {
-        throw new Error('No checkout URL returned from payment server.');
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to initiate payment.');
-      setIsSubmitting(false);
-    }
+      },
+    }));
+    setShowPaymentModal(true);
   };
 
   return (
@@ -284,7 +243,7 @@ export default function ContributionSchedule() {
               <SecondaryButton variant="navy" icon={ArrowLeft} onClick={handleBack}>
                 Back
               </SecondaryButton>
-              <PrimaryButton type="submit" loading={isSubmitting}>
+              <PrimaryButton type="submit" loading={false}>
                 Continue
               </PrimaryButton>
             </div>
@@ -293,6 +252,26 @@ export default function ContributionSchedule() {
 
         <OnboardFooter securityNote="Your information is secure and will only be used for membership purposes." />
       </div>
+
+      {showPaymentModal && (
+        <QuickPaymentModal
+          open={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          user={{ email }}
+          getAuthToken={() => Promise.resolve(`dev:${email}`)}
+          sfData={{ contactId, accountId }}
+          pledgeAmount={selectedMembershipTier.annualPrice}
+          defaultAmount={paymentAmount.toFixed(2)}
+          defaultType="Membership"
+          defaultSubType={selectedMembershipTier.name}
+          defaultBillingMode={billingMode === 'recurring' ? 'recurring' : 'one-time'}
+          defaultFrequency={frequency === 'Annual' ? 'Annual' : frequency === 'Semi-Annual' ? 'Semi-Annual' : 'Monthly'}
+          defaultMemo={`Onboarding Membership Selection: ${selectedMembershipTier.name} (${option.title})`}
+          source="onboarding"
+          groups={selectedMembershipTier.name}
+          readOnly={true}
+        />
+      )}
     </div>
   );
 }

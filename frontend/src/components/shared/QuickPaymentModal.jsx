@@ -7,27 +7,25 @@ import { showToast } from '../../utils/toast';
 
 const TYPE_OPTIONS = [
   { id: 'Donation', label: 'Donation' },
-  // { id: 'Payment', label: 'Payment' },
-  // { id: 'Pledge', label: 'Pledge' },
+  { id: 'Membership', label: 'Membership' },
 ];
 
 const SUB_TYPES = {
   Donation: [
     { id: 'General Donation', label: 'General Donation' },
     { id: 'Holiday Contribution', label: 'Holiday Contribution' },
-    // { id: 'Yizkor', label: 'Yizkor' },
-    // { id: 'Chai Club', label: 'Chai Club' },
   ],
-  //   Payment: [
-  //   { id: 'Hebrew School Tuition', label: 'Hebrew School Tuition' },
-  //   { id: 'Event Registration', label: 'Event Registration' },
-  //   { id: 'Camp Bedford', label: 'Camp Bedford' },
-  // ],
-  //   Pledge: [
-  //   { id: 'Annual Membership', label: 'Annual Membership' },
-  //   { id: 'Building Campaign', label: 'Building Campaign' },
-  //   { id: 'Capital Campaign', label: 'Capital Campaign' },
-  // ],
+  Membership: [
+    { id: 'Family Membership', label: 'Family Membership' },
+    { id: 'Upgraded Membership', label: 'Upgraded Membership' },
+    { id: 'Single Parent Membership', label: 'Single Parent Membership' },
+    { id: 'Single Membership', label: 'Single Membership' },
+    { id: 'Senior Membership (65+)', label: 'Senior Membership (65+)' },
+    { id: 'Chai Donor', label: 'Chai Donor' },
+    { id: 'Chai Partner', label: 'Chai Partner' },
+    { id: "Chai Rabbi's Circle", label: "Chai Rabbi's Circle" },
+    { id: 'Chai Leadership Circle', label: 'Chai Leadership Circle' },
+  ],
 };
 
 const DEDICATION_TYPES = [
@@ -38,6 +36,8 @@ const DEDICATION_TYPES = [
 
 const FREQUENCIES = [
   { id: 'Monthly', label: 'Monthly' },
+  { id: 'Semi-Annual', label: 'Half Yearly' },
+  { id: 'Annual', label: 'Annual' },
   { id: 'Weekly', label: 'Weekly' },
   { id: 'Annually', label: 'Annually' },
 ];
@@ -57,6 +57,12 @@ export default function QuickPaymentModal({
   defaultType,
   defaultSubType,
   defaultBillingMode,
+  defaultFrequency,
+  source,
+  groups,
+  defaultMemo,
+  readOnly = false,
+  pledgeAmount = 0,
 }) {
   const [billingMode, setBillingMode] = useState('one-time'); // 'one-time' or 'recurring'
   const [paymentType, setPaymentType] = useState('Donation');
@@ -68,23 +74,23 @@ export default function QuickPaymentModal({
   const [dedicationName, setDedicationName] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
-  const [paymentMethodType, setPaymentMethodType] = useState('card'); // 'card' or 'us_bank_account'
+  const [paymentMethodType, setPaymentMethodType] = useState('us_bank_account'); // 'card' or 'us_bank_account'
   const amountInputRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
-    setBillingMode(defaultBillingMode || 'one-time');
+    setBillingMode(defaultBillingMode === 'recurring' ? 'recurring' : 'one-time');
     setPaymentType(defaultType || 'Donation');
     setSubType(defaultSubType || 'General Donation');
     setAmount(defaultAmount || '100.00');
-    setFrequency('Monthly');
+    setFrequency(defaultFrequency || 'Monthly');
     setStartDate(todayIsoDate());
-    setDedicationType('In Honor Of');
+    setDedicationType(readOnly ? 'None' : 'In Honor Of');
     setDedicationName('');
-    setNote('');
-    setPaymentMethodType('card');
+    setNote(defaultMemo || '');
+    setPaymentMethodType('us_bank_account');
     setLoading(false);
-  }, [open, defaultAmount, defaultType, defaultSubType, defaultBillingMode]);
+  }, [open, defaultAmount, defaultType, defaultSubType, defaultBillingMode, defaultFrequency, defaultMemo, readOnly]);
 
   if (!open) return null;
 
@@ -109,86 +115,55 @@ export default function QuickPaymentModal({
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (loading) return;
-
-    const parsedAmount = Math.round((parseFloat(amount) || 0) * 100) / 100;
+    const parsedAmount = parseFloat(amount) || 0;
     if (parsedAmount <= 0) {
       showToast({ message: 'Please enter a valid amount greater than 0.', type: 'error' });
       return;
     }
 
     setLoading(true);
-    // Same Stripe checkout path as Membership → Contribution Schedule → Continue.
-    showToast({ message: 'Redirecting to secure Stripe checkout...', type: 'success' });
-
     try {
-      let sfUser = {};
-      try {
-        const stored = localStorage.getItem('sf_user_session');
-        if (stored) sfUser = JSON.parse(stored) || {};
-      } catch {
-        // ignore
-      }
-
-      const member = sfUser.memberDetails || {};
-      const email = String(user?.email || sfUser.email || sfData?.email || '').trim().toLowerCase();
-      const contactId =
-        sfData?.contactId ||
-        member.contactId ||
-        member.id ||
-        '';
-      const accountId =
-        sfData?.accountId ||
-        sfData?.account?.id ||
-        member.accountId ||
-        member.householdAccountId ||
-        sfUser.householdAccountId ||
-        '';
-
-      // Align frequency labels with Stripe / CRM values used by Contribution Schedule.
-      const frequencyMap = {
-        Monthly: 'Monthly',
-        Weekly: 'Weekly',
-        Annually: 'Annual',
-        Annual: 'Annual',
-        Yearly: 'Yearly',
-        'Half Yearly': 'Half Yearly',
-        'Semi-Annual': 'Half Yearly',
-      };
-      const normalizedFrequency = frequencyMap[frequency] || frequency || 'Monthly';
-
-      const response = await fetchPortalApi('/api/payments/quick-payment', {
+      const data = await fetchPortalApi('/api/payments/quick-payment', {
         getAuthToken,
         method: 'POST',
         body: {
-          email,
-          contactId,
-          accountId,
-          purpose: subType || paymentType || 'portal_payment',
-          paymentType,
-          subType,
-          memo: (note || dedicationName)
-            ? `${dedicationType}: ${dedicationName}. Note: ${note}`
-            : '',
-          pledgeAmount: 0,
+          email: user?.email,
+          contactId: sfData?.contactId || '',
+          accountId: sfData?.accountId || sfData?.account?.id || '',
+          purpose: paymentType === 'Membership' ? `Membership — ${subType}` : subType,
+          paymentType: paymentType,
+          subType: subType,
+          memo: note || dedicationName ? `${dedicationType}: ${dedicationName}. Note: ${note}` : '',
+          pledgeAmount: pledgeAmount || 0,
           paymentAmount: parsedAmount,
           billingMode: billingMode === 'recurring' ? 'recurring' : 'regular',
-          frequency: normalizedFrequency,
-          paymentDate: startDate || todayIsoDate(),
-          paymentMethodType,
-          groups: subType || '',
-          source: 'member_portal',
+          frequency: frequency,
+          paymentDate: startDate,
+          paymentMethodType: paymentMethodType,
+          source: source || '',
+          groups: groups || '',
         },
       });
 
-      if (response.url) {
-        window.location.href = response.url;
+      if (data.url) {
+        showToast({ message: 'Redirecting to secure Stripe checkout...', type: 'success', duration: 2500 });
+        window.location.href = data.url;
         return;
       }
 
-      throw new Error('No checkout URL returned from payment server.');
+      if (data.success) {
+        showToast({
+          message: data.message || 'Saved to ChabadOne CRM successfully.',
+          type: 'success',
+        });
+        if (onSuccess) {
+          await onSuccess();
+        }
+        onClose();
+      }
     } catch (err) {
-      showToast({ message: err.message || 'Failed to initiate payment.', type: 'error' });
+      showToast({ message: err.message, type: 'error' });
+    } finally {
       setLoading(false);
     }
   };
@@ -536,7 +511,7 @@ export default function QuickPaymentModal({
         </div>
 
         <form onSubmit={handleSubmit} className="qc-form-body">
-          <div className="qc-toggle-group">
+          <div className="qc-toggle-group" style={readOnly ? { pointerEvents: 'none', opacity: 0.85 } : {}}>
             <button
               type="button"
               className={`qc-toggle-btn ${billingMode === 'one-time' ? 'active' : ''}`}
@@ -593,6 +568,7 @@ export default function QuickPaymentModal({
                   value={paymentType}
                   onChange={(e) => handleTypeChange(e.target.value)}
                   style={{ paddingLeft: '30px' }}
+                  disabled={readOnly}
                 >
                   {TYPE_OPTIONS.map((t) => (
                     <option key={t.id} value={t.id}>{t.label}</option>
@@ -611,6 +587,7 @@ export default function QuickPaymentModal({
                   value={subType}
                   onChange={(e) => setSubType(e.target.value)}
                   style={{ paddingLeft: '30px' }}
+                  disabled={readOnly}
                 >
                   {(SUB_TYPES[paymentType] || []).map((st) => (
                     <option key={st.id} value={st.id}>{st.label}</option>
@@ -623,7 +600,7 @@ export default function QuickPaymentModal({
 
           <div className="qc-field" style={{ marginTop: '10px' }}>
             <label className="qc-label">Amount (USD)</label>
-            <div className="qc-amount-input-box">
+            <div className="qc-amount-input-box" style={readOnly ? { backgroundColor: 'var(--bg-card-hover)', opacity: 0.8 } : {}}>
               <span className="qc-amount-symbol">$</span>
               <input
                 ref={amountInputRef}
@@ -635,31 +612,35 @@ export default function QuickPaymentModal({
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
                 required
+                disabled={readOnly}
+                readOnly={readOnly}
               />
             </div>
           </div>
 
-          <div style={{ marginBottom: '10px' }}>
-            <div className="qc-pills-row">
-              {['50', '100', '250'].map((val) => (
+          {!readOnly && (
+            <div style={{ marginBottom: '10px' }}>
+              <div className="qc-pills-row">
+                {['50', '100', '250'].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    className={`qc-pill ${parseFloat(amount) === Number(val) ? 'active' : ''}`}
+                    onClick={() => handleAmountPillClick(val)}
+                  >
+                    ${val}
+                  </button>
+                ))}
                 <button
-                  key={val}
                   type="button"
-                  className={`qc-pill ${parseFloat(amount) === Number(val) ? 'active' : ''}`}
-                  onClick={() => handleAmountPillClick(val)}
+                  className={`qc-pill ${!['50', '100', '250'].includes(parseFloat(amount).toString()) ? 'active' : ''}`}
+                  onClick={() => handleAmountPillClick('Other')}
                 >
-                  ${val}
+                  Other
                 </button>
-              ))}
-              <button
-                type="button"
-                className={`qc-pill ${!['50', '100', '250'].includes(parseFloat(amount).toString()) ? 'active' : ''}`}
-                onClick={() => handleAmountPillClick('Other')}
-              >
-                Other
-              </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {billingMode === 'recurring' && (
             <>
@@ -671,6 +652,7 @@ export default function QuickPaymentModal({
                     className="qc-select"
                     value={frequency}
                     onChange={(e) => setFrequency(e.target.value)}
+                    disabled={readOnly}
                   >
                     {FREQUENCIES.map((f) => (
                       <option key={f.id} value={f.id}>{f.label}</option>
@@ -691,52 +673,57 @@ export default function QuickPaymentModal({
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                     required
+                    disabled={readOnly}
                   />
                 </div>
               </div>
             </>
           )}
 
-          <div className="qc-field" style={{ marginTop: '10px' }}>
-            <label className="qc-label">Dedication (Optional)</label>
-            <div className="qc-input-box">
-              <Gift size={14} className="qc-input-icon" />
-              <select
-                className="qc-select"
-                value={dedicationType}
-                onChange={(e) => setDedicationType(e.target.value)}
-              >
-                {DEDICATION_TYPES.map((d) => (
-                  <option key={d.id} value={d.id}>{d.label}</option>
-                ))}
-              </select>
-              <span className="qc-select-arrow">▼</span>
-            </div>
-          </div>
-
-          {dedicationType !== 'None' && (
+          {!readOnly && (
             <>
               <div className="qc-field" style={{ marginTop: '10px' }}>
-                <label className="qc-label">Dedication Name</label>
-                <input
-                  type="text"
-                  className="qc-text-input"
-                  value={dedicationName}
-                  onChange={(e) => setDedicationName(e.target.value)}
-                  placeholder="Someone's Name"
-                />
+                <label className="qc-label">Dedication (Optional)</label>
+                <div className="qc-input-box">
+                  <Gift size={14} className="qc-input-icon" />
+                  <select
+                    className="qc-select"
+                    value={dedicationType}
+                    onChange={(e) => setDedicationType(e.target.value)}
+                  >
+                    {DEDICATION_TYPES.map((d) => (
+                      <option key={d.id} value={d.id}>{d.label}</option>
+                    ))}
+                  </select>
+                  <span className="qc-select-arrow">▼</span>
+                </div>
               </div>
 
-              <div style={{ marginTop: '10px', marginBottom: '10px' }}>
-                <textarea
-                  className="qc-textarea"
-                  maxLength={150}
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Add a note (optional)"
-                />
-                <div className="qc-char-counter">{note.length}/150</div>
-              </div>
+              {dedicationType !== 'None' && (
+                <>
+                  <div className="qc-field" style={{ marginTop: '10px' }}>
+                    <label className="qc-label">Dedication Name</label>
+                    <input
+                      type="text"
+                      className="qc-text-input"
+                      value={dedicationName}
+                      onChange={(e) => setDedicationName(e.target.value)}
+                      placeholder="Someone's Name"
+                    />
+                  </div>
+
+                  <div style={{ marginTop: '10px', marginBottom: '10px' }}>
+                    <textarea
+                      className="qc-textarea"
+                      maxLength={150}
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="Add a note (optional)"
+                    />
+                    <div className="qc-char-counter">{note.length}/150</div>
+                  </div>
+                </>
+              )}
             </>
           )}
 

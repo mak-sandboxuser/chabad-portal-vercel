@@ -51,6 +51,7 @@ export const EMPTY_PROFILE_FORM = {
   birthdate: '',
   age: '',
   gender: '',
+  groups: '',
 };
 
 function readLifecycleValues(sfData) {
@@ -103,6 +104,7 @@ export function sfDataToProfileForm(sfData, email = '') {
     nickname: profile.nickname || sfData.nickname || '',
     title: profile.title || sfData.title || '',
     email: sfData.email || email,
+    groups: sfData.groups || sfData.account?.groups || sfData.profile?.groups || '',
     ...readLifecycleValues(sfData),
   };
 }
@@ -120,6 +122,7 @@ export function profileFormToPayload(form) {
     country: form.country?.trim() || '',
     nickname: form.nickname?.trim() || '',
     title: form.title?.trim() || '',
+    groups: form.groups?.trim() || '',
   };
 
   for (const key of LIFECYCLE_FIELD_KEYS) {
