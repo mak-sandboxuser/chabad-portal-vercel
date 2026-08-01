@@ -1398,7 +1398,7 @@ function enrichFinancialPayload(payload = {}) {
     action,
     method,
     pledgeAmount: pledgeAmount > 0 ? pledgeAmount : 0,
-    createPledge: pledgeAmount > 0,
+    createPledge: pledgeAmount > 0 && pledgeAmount > paymentAmount,
     createPayment: paymentAmount > 0,
     createRecurring: isRecurring && recurringAmount > 0,
     paymentOnly: pledgeAmount <= 0 && paymentAmount > 0 && !isRecurring,

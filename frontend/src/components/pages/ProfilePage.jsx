@@ -393,9 +393,6 @@ export default function ProfilePage({
             <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#d4af37', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Star size={18} /> Current Assigned Group / Membership
             </h4>
-            <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: 'var(--text-secondary)' }}>
-              This group tag is directly synced with your Household Account record in Salesforce.
-            </p>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: '#d4af37', color: '#000', padding: '10px 20px', borderRadius: '24px', fontWeight: '800', fontSize: '16px' }}>
               <CheckCircle size={20} /> {activeGroup || 'No Group Assigned Yet'}
             </div>
@@ -540,23 +537,7 @@ export default function ProfilePage({
                 {currentTab?.label}
               </h3>
 
-              {!isEditing ? (
-                <button type="button" className="btn btn-primary profile-tab-edit-btn" onClick={startEdit}>
-                  <Pencil size={16} />
-                  Edit
-                </button>
-              ) : (
-                <div className="profile-tab-actions">
-                  <button type="button" className="btn btn-secondary" onClick={cancelEdit} disabled={saving}>
-                    <X size={16} />
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={saving}>
-                    <Save size={16} />
-                    {saving ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-              )}
+              {/* Edit actions removed */}
             </div>
 
             <div className="profile-tab-form-grid">

@@ -174,9 +174,80 @@ export function sumPaymentsYtd(payments = []) {
 
 export function getPledges(sfData) {
   const pledges = sfData?.financials?.pledges || [];
-  return sortFinancialRecordsByRecent(
-    pledges.filter((item) => parseMoney(item.amount || item.total) > 0),
+  const payments = sfData?.financials?.payments || [];
+
+  const validPledges = pledges.filter((item) => parseMoney(item.amount || item.total) > 0);
+  if (!validPledges.length) return [];
+
+  // Deduplicate pledges (same date, amount, and purpose/name), preferring paid records first
+  const seen = new Set();
+  const sortedForDedup = [...validPledges].sort((a, b) => {
+    const aPaid = parseMoney(a.paid || a.paidAmount || a.OneCRM__Paid__c || 0);
+    const bPaid = parseMoney(b.paid || b.paidAmount || b.OneCRM__Paid__c || 0);
+    return bPaid - aPaid;
+  });
+
+  const deduplicatedPledges = sortedForDedup.filter((pledge) => {
+    const amount = parseMoney(pledge.total || pledge.amount || pledge.OneCRM__Positive_Amount__c || 0);
+    const date = String(pledge.date || pledge.OneCRM__Date__c || '').slice(0, 10);
+    const name = String(pledge.name || pledge.purpose || pledge.OneCRM__Purpose__c || '').trim().toLowerCase();
+    const key = `${date}|${amount.toFixed(2)}|${name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Filter out installment pledges if there is a parent Membership pledge on the same day
+  const membershipPledge = deduplicatedPledges.find(
+    (p) => (p.type || '').toLowerCase() === 'membership' 
+      || (p.purpose || '').toLowerCase().includes('membership')
+      || (p.name || '').toLowerCase().includes('membership')
   );
+
+  const finalPledgesList = deduplicatedPledges.filter((pledge) => {
+    if (membershipPledge && pledge !== membershipPledge) {
+      const pledgeDate = String(pledge.date || pledge.OneCRM__Date__c || '').slice(0, 10);
+      const memDate = String(membershipPledge.date || membershipPledge.OneCRM__Date__c || '').slice(0, 10);
+      
+      if (pledgeDate === memDate) {
+        const pledgeAmt = parseMoney(pledge.total || pledge.amount || pledge.OneCRM__Positive_Amount__c || 0);
+        const memAmt = parseMoney(membershipPledge.total || membershipPledge.amount || membershipPledge.OneCRM__Positive_Amount__c || 0);
+        
+        const isMemRelated = !pledge.purpose 
+          || (pledge.purpose || '').toLowerCase().includes('membership') 
+          || (pledge.name || '').toLowerCase().includes('membership');
+
+        if (pledgeAmt <= memAmt && isMemRelated) {
+          return false;
+        }
+      }
+    }
+    return true;
+  });
+
+  // Sort pledges oldest first to apply payments chronologically
+  const sortedPledges = [...finalPledgesList].sort((a, b) => parseSortableDate(a.date) - parseSortableDate(b.date));
+  let unappliedPayments = payments.reduce((sum, item) => sum + parseMoney(item.amount || item.total), 0);
+
+  const adjustedPledges = sortedPledges.map((pledge) => {
+    const total = parseMoney(pledge.total || pledge.amount || 0);
+    const recordPaid = parseMoney(pledge.paid || 0);
+    const needed = Math.max(total - recordPaid, 0);
+    const apply = Math.min(unappliedPayments, needed);
+
+    unappliedPayments -= apply;
+
+    const finalPaid = recordPaid + apply;
+    const finalOutstanding = Math.max(total - finalPaid, 0);
+
+    return {
+      ...pledge,
+      paid: formatMoney(finalPaid),
+      outstanding: formatMoney(finalOutstanding),
+    };
+  });
+
+  return sortFinancialRecordsByRecent(adjustedPledges);
 }
 
 export function getRecurring(sfData) {
@@ -237,10 +308,9 @@ export function getMembership(sfData) {
 
   const contributed = parseMoney(membership.contributedYtd)
     || pledges.reduce((sum, item) => sum + parseMoney(item.paid || item.amount), 0);
-  const outstanding = parseMoney(membership.outstanding)
-    || pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
   const annualCommitment = parseMoney(membership.annualCommitment)
-    || (contributed + outstanding);
+    || pledges.reduce((sum, item) => sum + parseMoney(item.total || item.amount), 0);
+  const outstanding = pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
 
   return {
     tier: membership.tier || 'Member',
@@ -249,7 +319,7 @@ export function getMembership(sfData) {
     renewalDate: membership.renewalDate || activeRecurring?.nextDate || '',
     annualCommitment: membership.annualCommitment || (annualCommitment ? formatMoney(annualCommitment) : '$0.00'),
     contributedYtd: membership.contributedYtd || formatMoney(contributed),
-    outstanding: membership.outstanding || formatMoney(Math.max(outstanding, 0)),
+    outstanding: formatMoney(outstanding),
     autoRenewal: membership.autoRenewal || (activeRecurring ? 'Enabled' : 'Disabled'),
     paymentMethod: membership.paymentMethod || activeRecurring?.method || '—',
     paymentMethodExpiry: membership.paymentMethodExpiry || activeRecurring?.cardExpiry || '',
@@ -264,7 +334,10 @@ export function getFinancialSummary(sfData) {
   const contributedYtd = sumPaymentsYtd(payments) || parseMoney(membership.contributedYtd);
   const annual = parseMoney(membership.annualCommitment);
   const contributed = contributedYtd || totalContributed || parseMoney(membership.contributedYtd);
-  const outstanding = parseMoney(membership.outstanding);
+
+  const pledges = getPledges(sfData);
+  const outstanding = pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
+
   const pct = annual > 0 ? Math.round((contributed / annual) * 100) : 0;
 
   return {

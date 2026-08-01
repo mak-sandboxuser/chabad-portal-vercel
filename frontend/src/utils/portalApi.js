@@ -47,6 +47,13 @@ export async function fetchPortalApi(path, {
   }
 
   const data = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    localStorage.removeItem('sf_user_session');
+    sessionStorage.removeItem('login_success_flag');
+    window.location.replace('/');
+    throw new Error('Session expired or invalid. Please log in again.');
+  }
+
   if (!response.ok) {
     throw new Error(data.error || `Request failed (${response.status}).`);
   }

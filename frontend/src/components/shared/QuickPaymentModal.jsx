@@ -14,6 +14,9 @@ const SUB_TYPES = {
   Donation: [
     { id: 'General Donation', label: 'General Donation' },
     { id: 'Holiday Contribution', label: 'Holiday Contribution' },
+    { id: 'Event', label: 'Event' },
+    { id: 'Administration', label: 'Administration' },
+    { id: 'Miscellaneous', label: 'Miscellaneous' },
   ],
   Membership: [
     { id: 'Family Membership', label: 'Family Membership' },

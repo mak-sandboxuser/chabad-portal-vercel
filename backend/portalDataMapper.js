@@ -521,6 +521,12 @@ function normalizePledge(raw = {}, index = 0) {
   const rawDate = raw.date ?? raw.pledgeDate ?? raw.Date ?? raw['Pledge Date'] ?? raw.OneCRM__Date__c ?? '';
   const date = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
 
+  const purpose = raw.purpose || raw.Purpose || raw.OneCRM__Purpose__c
+    || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type'] || raw.OneCRM__Sub_Type__c
+    || raw.name || raw.pledgeName || raw.Name || raw['Pledge Name']
+    || raw.type || raw.Type || raw.OneCRM__Type__c
+    || 'Pledge';
+
   return {
     id: raw.id || raw.Id || raw.pledgeId || raw['Record ID'] || `pledge_${index}`,
     amount: formatMoneyField(amountValue),
@@ -528,6 +534,7 @@ function normalizePledge(raw = {}, index = 0) {
     total: formatMoneyField(total) || formatMoneyField(amountValue),
     paid: formatMoneyField(paid),
     name: raw.name || raw.pledgeName || raw.Name || raw['Pledge Name'] || raw.type || raw.Type || raw.OneCRM__Type__c || 'Pledge',
+    purpose,
     parent: raw.parent || raw.parentAccount || raw.accountName || raw['Parent Account'] || raw['Related Contact'] || '',
     type: raw.type || raw.Type || raw.OneCRM__Type__c || '',
     subType: raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type'] || raw.OneCRM__Sub_Type__c || '',

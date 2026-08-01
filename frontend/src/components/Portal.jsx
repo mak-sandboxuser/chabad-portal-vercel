@@ -111,6 +111,10 @@ export default function Portal({ user, getAuthToken, onLogout }) {
       setSfData(data.sfData);
       return data;
     } catch (err) {
+      if (err.message?.includes('Session expired') || err.message?.includes('expired or invalid')) {
+        onLogout();
+        return null;
+      }
       setError(err.message);
       return null;
     }

@@ -101,7 +101,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
                 { key: 'outstanding', label: 'Outstanding' },
                 { key: 'total', label: 'Total' },
                 { key: 'paid', label: 'Paid' },
-                { key: 'name', label: 'Pledge' },
+                { key: 'purpose', label: 'Purpose', render: (row) => row.purpose || row.name },
                 { key: 'date', label: 'Date', render: (row) => formatDisplayDate(row.date) },
                 {
                   key: 'action',
