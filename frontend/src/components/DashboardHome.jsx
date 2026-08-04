@@ -110,14 +110,14 @@ export default function DashboardHome({
             </div>
           </div>
 
-          {/* Card 2: Monthly Payments / Net Payment */}
+          {/* Card 2: Outstanding Balance */}
           <div className="dash-balance-card glass-panel dash-card-fancy" style={{ padding: '28px 30px', minHeight: '195px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div className="dash-icon-wrapper red-glow">
                   <DollarSign size={18} />
                 </div>
-                <span className="dash-card-title">{schedule.balanceLabel}</span>
+                <span className="dash-card-title">Outstanding Balance</span>
               </div>
               <span className="dash-pill-badge red">
                 {membership.annualCommitment ? `Commitment ${membership.annualCommitment}` : 'Due Balance'}
@@ -126,7 +126,7 @@ export default function DashboardHome({
 
             <div style={{ margin: '14px 0 6px 0' }}>
               <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: '#ef4444', letterSpacing: '-0.5px' }}>
-                {schedule.balanceAmountDisplay}
+                {formatMoney(summary.outstanding)}
               </div>
             </div>
 
