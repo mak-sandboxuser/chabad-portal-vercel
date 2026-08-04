@@ -312,11 +312,12 @@ function resolvePledgeAmount(raw = {}) {
   const positive = parseMoneyValue(raw.OneCRM__Positive_Amount__c ?? raw['Positive Amount']);
   const outstanding = parseMoneyValue(raw.OneCRM__Amount_Outstanding__c ?? raw['Outstanding Amount']);
   const paid = parseMoneyValue(raw.OneCRM__Paid__c ?? raw['Paid Amount'] ?? raw.paid);
-  const rawAmount = parseMoneyValue(raw.OneCRM__Amount__c ?? raw.amount ?? raw.Amount);
+  const rawAmount = parseMoneyValue(raw.OneCRM__Amount__c ?? raw.amount ?? raw.Amount ?? raw.pledgeAmount ?? raw.total ?? raw.Total);
 
-  if (positive > 0) return positive;
-  if (outstanding > 0) return outstanding + paid;
   if (rawAmount > 0) return rawAmount;
+  if (outstanding > 0 && paid > 0) return outstanding + paid;
+  if (positive > 0) return positive;
+  if (outstanding > 0) return outstanding;
   if (paid > 0) return paid;
   return 0;
 }
@@ -514,12 +515,9 @@ function normalizePayment(raw = {}, index = 0) {
 }
 
 function normalizePledge(raw = {}, index = 0) {
-  const amountValue = resolvePledgeAmount(raw);
-  const total = raw.total ?? raw.Total ?? amountValue;
-  const paid = raw.paid ?? raw.paidAmount ?? raw.Paid ?? raw.OneCRM__Paid__c ?? '';
-  const outstanding = raw.outstanding ?? raw.Outstanding ?? raw.OneCRM__Amount_Outstanding__c ?? 0;
-  const rawDate = raw.date ?? raw.pledgeDate ?? raw.Date ?? raw['Pledge Date'] ?? raw.OneCRM__Date__c ?? '';
-  const date = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
+  let amountValue = resolvePledgeAmount(raw);
+  const paidVal = parseMoneyValue(raw.paid ?? raw.paidAmount ?? raw.Paid ?? raw.OneCRM__Paid__c);
+  let outstandingVal = parseMoneyValue(raw.outstanding ?? raw.Outstanding ?? raw.OneCRM__Amount_Outstanding__c);
 
   const purpose = raw.OneCRM__Sub_Type__c || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type']
     || raw.purpose || raw.Purpose || raw.OneCRM__Purpose__c
@@ -527,12 +525,39 @@ function normalizePledge(raw = {}, index = 0) {
     || raw.OneCRM__Type__c || raw.type || raw.Type
     || 'Annual Membership';
 
+  const tierPriceMap = {
+    'family membership': 2244,
+    'upgraded membership': 3000,
+    'single parent family': 1560,
+    'single membership': 1128,
+    'senior citizen membership': 1800,
+    'chai donor': 5000,
+    'chai partner': 10000,
+    "chai rabbi's circle": 18000,
+    'chai leadership circle': 36000,
+  };
+
+  const lookupKey = purpose.toLowerCase().trim();
+  const matchedTierPrice = Object.entries(tierPriceMap).find(([key]) => lookupKey.includes(key))?.[1];
+
+  if (matchedTierPrice && amountValue < matchedTierPrice) {
+    amountValue = matchedTierPrice;
+  }
+
+  const calculatedOutstanding = Math.max(0, amountValue - paidVal);
+  if (outstandingVal <= 0 || (amountValue > (outstandingVal + paidVal))) {
+    outstandingVal = calculatedOutstanding;
+  }
+
+  const rawDate = raw.date ?? raw.pledgeDate ?? raw.Date ?? raw['Pledge Date'] ?? raw.OneCRM__Date__c ?? '';
+  const date = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
+
   return {
     id: raw.id || raw.Id || raw.pledgeId || raw['Record ID'] || `pledge_${index}`,
     amount: formatMoneyField(amountValue),
-    outstanding: formatMoneyField(outstanding) || '$0.00',
-    total: formatMoneyField(total) || formatMoneyField(amountValue),
-    paid: formatMoneyField(paid),
+    outstanding: formatMoneyField(outstandingVal) || '$0.00',
+    total: formatMoneyField(amountValue),
+    paid: formatMoneyField(paidVal),
     name: raw.name || raw.pledgeName || raw.Name || raw['Pledge Name'] || raw.OneCRM__Sub_Type__c || raw.subType || 'Membership',
     purpose,
     parent: raw.parent || raw.parentAccount || raw.accountName || raw['Parent Account'] || raw['Related Contact'] || '',

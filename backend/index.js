@@ -46,10 +46,15 @@ function isAllowedCorsOrigin(origin) {
 }
 
 async function verifyClerkSessionToken(token) {
+  /* ==========================================================================
+     CLERK SESSION VERIFICATION (COMMENTED OUT FOR DIRECT JWT LOGIN)
+     ==========================================================================
   return verifyToken(token, {
     secretKey: process.env.CLERK_SECRET_KEY,
     clockSkewInMs: SESSION_CLOCK_SKEW_MS,
   });
+  ========================================================================== */
+  return jwt.verify(token, JWT_SECRET);
 }
 
 app.use(cors({
@@ -942,10 +947,19 @@ async function resolveAuthedEmail(token) {
     };
   }
   const decoded = await verifyClerkSessionToken(token);
+  /* ==========================================================================
+     CLERK USER FETCH (COMMENTED OUT FOR DIRECT JWT LOGIN)
+     ==========================================================================
   const clerkUser = await clerkClient.users.getUser(decoded.sub);
   return {
     userId: decoded.sub,
     email: clerkUser.emailAddresses[0]?.emailAddress?.toLowerCase() || '',
+  };
+  ========================================================================== */
+  const email = decoded.sub || decoded.email;
+  return {
+    userId: decoded.sub,
+    email: email?.toLowerCase() || '',
   };
 }
 
@@ -1125,6 +1139,9 @@ app.post('/api/auth/check-member', async (req, res) => {
     lastName: lookup.memberDetails.lastName || '(empty)',
   });
 
+  /* ==========================================================================
+     CLERK USER PROVISIONING (COMMENTED OUT FOR DIRECT JWT LOGIN)
+     ==========================================================================
   const clerkUser = await ensureClerkMemberUser(lookup.memberDetails);
   if (process.env.CLERK_SECRET_KEY && !clerkUser) {
     authLog('CHECK_MEMBER_FAIL', { email: emailLower, error: 'clerk_provisioning_failed' });
@@ -1134,18 +1151,21 @@ app.post('/api/auth/check-member', async (req, res) => {
       message: 'Unable to prepare your login account. Please try again later.',
     });
   }
+  ========================================================================== */
+
+  const token = jwt.sign({ sub: emailLower, email: emailLower }, JWT_SECRET, { expiresIn: '30d' });
 
   authLog('CHECK_MEMBER_OK', {
     email: emailLower,
-    clerkUserId: clerkUser?.id || null,
+    clerkUserId: null, // clerkUser?.id || null,
     contactId: lookup.memberDetails.contactId || null,
     accountId: lookup.memberDetails.accountId || null,
-    nextStep: 'frontend sends Clerk magic link',
+    nextStep: 'Direct JWT login token generated',
   });
 
   cacheMemberLookup(emailLower, lookup.memberDetails);
 
-  res.json({ allowed: true, member: lookup.memberDetails });
+  res.json({ allowed: true, token, member: lookup.memberDetails });
 });
 
 // Protected portal dashboard data (Salesforce Direct Member Login)
@@ -1157,7 +1177,17 @@ app.get('/api/portal/dashboard', async (req, res) => {
   let rawEmail = xUserEmail || req.query.email;
   if (!rawEmail && authHeader.startsWith('Bearer ')) {
     const tokenPart = authHeader.split(' ')[1];
-    rawEmail = tokenPart.replace(/^dev:/i, '');
+    if (tokenPart.startsWith('dev:')) {
+      rawEmail = tokenPart.replace(/^dev:/i, '');
+    } else {
+      // Try to decode JWT token to extract email
+      try {
+        const decoded = jwt.verify(tokenPart, JWT_SECRET);
+        rawEmail = decoded.sub || decoded.email || '';
+      } catch {
+        rawEmail = tokenPart.replace(/^dev:/i, '');
+      }
+    }
   }
 
   if (!rawEmail || rawEmail.includes('null') || rawEmail.includes('undefined')) {
@@ -1256,8 +1286,13 @@ async function resolveCheckoutContactId(authHeader, email, contactId = '') {
         if (cached.startsWith('003')) resolvedContactId = cached;
       } else {
         const decoded = await verifyClerkSessionToken(token);
+        /* ==========================================================================
+           CLERK USER FETCH (COMMENTED OUT FOR DIRECT JWT LOGIN)
+           ==========================================================================
         const clerkUser = await clerkClient.users.getUser(decoded.sub);
         const clerkEmail = clerkUser.emailAddresses[0]?.emailAddress?.toLowerCase();
+        ========================================================================== */
+        const clerkEmail = decoded.sub || decoded.email;
         const cached = userSalesforceData[clerkEmail]?.contactId || '';
         if (cached.startsWith('003')) resolvedContactId = cached;
       }
@@ -1393,14 +1428,30 @@ function enrichFinancialPayload(payload = {}) {
   const stripePaid = payload.stripePaymentStatus === 'paid'
     || Boolean(payload.stripeSubscriptionId);
 
-  if (isRecurring && paymentAmount > 0 && pledgeAmount <= paymentAmount) {
+  // Auto-calculate annual pledge from recurring payment/pledge amount.
+  // Whether monthly, half-yearly, or weekly, pledgeAmount MUST be the full annual amount commitment.
+  if (isRecurring) {
     const freqLower = frequency.toLowerCase();
+    let multiplier = 1;
     if (freqLower.includes('half') || freqLower.includes('semi')) {
-      pledgeAmount = paymentAmount * 2;
-    } else if (freqLower.includes('month')) {
-      pledgeAmount = paymentAmount * 12;
-    } else {
-      pledgeAmount = paymentAmount;
+      multiplier = 2;
+    } else if (freqLower.includes('month') && !freqLower.includes('semi')) {
+      multiplier = 12;
+    } else if (freqLower.includes('week')) {
+      multiplier = 52;
+    } else if (freqLower.includes('quarter')) {
+      multiplier = 4;
+    }
+
+    if (multiplier > 1) {
+      const annualizedFromPayment = paymentAmount * multiplier;
+      const annualizedFromPledge = pledgeAmount < (paymentAmount * multiplier) ? pledgeAmount * multiplier : pledgeAmount;
+
+      if (annualizedFromPayment > 0 && pledgeAmount < annualizedFromPayment) {
+        pledgeAmount = annualizedFromPayment;
+      } else if (pledgeAmount > 0 && pledgeAmount < (pledgeAmount * multiplier)) {
+        pledgeAmount = pledgeAmount * multiplier;
+      }
     }
   }
 
@@ -1441,10 +1492,10 @@ function enrichFinancialPayload(payload = {}) {
 }
 
 function buildStripeCheckoutMetadata(payload, contactId, email) {
-  const pledgeAmount = parseFloat(payload.pledgeAmount) || 0;
-  const paymentAmount = parseFloat(payload.paymentAmount) || 0;
   const isRecurring = payload.billingMode === 'recurring';
   const enriched = enrichFinancialPayload(payload);
+  const pledgeAmount = enriched.pledgeAmount;
+  const paymentAmount = parseFloat(payload.paymentAmount) || 0;
 
   return {
     email: (email || payload.email || '').toLowerCase(),
@@ -1616,8 +1667,13 @@ async function resolveCheckoutAccountId(authHeader, email, accountId = '') {
         if (resolvedAccountId.startsWith('001')) return resolvedAccountId;
       } else {
         const decoded = await verifyClerkSessionToken(token);
+        /* ==========================================================================
+           CLERK USER FETCH (COMMENTED OUT FOR DIRECT JWT LOGIN)
+           ==========================================================================
         const clerkUser = await clerkClient.users.getUser(decoded.sub);
         const clerkEmail = clerkUser.emailAddresses[0]?.emailAddress?.toLowerCase();
+        ========================================================================== */
+        const clerkEmail = decoded.sub || decoded.email;
         resolvedAccountId = userSalesforceData[clerkEmail]?.accountId || '';
         if (resolvedAccountId.startsWith('001')) return resolvedAccountId;
       }
@@ -1845,8 +1901,13 @@ app.post('/api/payments/confirm-checkout', async (req, res) => {
       userEmail = (typeof token === 'string' && token.startsWith('dev:')) ? token.substring(4).toLowerCase() : (req.body.email || 'acc.appledev@gmail.com').toLowerCase();
     } else {
       const decoded = await verifyClerkSessionToken(token);
+      /* ==========================================================================
+         CLERK USER FETCH (COMMENTED OUT FOR DIRECT JWT LOGIN)
+         ==========================================================================
       const clerkUser = await clerkClient.users.getUser(decoded.sub);
       userEmail = clerkUser.emailAddresses[0]?.emailAddress?.toLowerCase() || '';
+      ========================================================================== */
+      userEmail = (decoded.sub || decoded.email || '').toLowerCase();
     }
 
     if (!userEmail) {
@@ -2013,8 +2074,13 @@ async function resolveAuthedPortalMember(req) {
     email = (typeof token === 'string' && token.startsWith('dev:')) ? token.substring(4).toLowerCase() : (req.body?.email || 'acc.appledev@gmail.com').toLowerCase();
   } else {
     const decoded = await verifyClerkSessionToken(token);
+    /* ==========================================================================
+       CLERK USER FETCH (COMMENTED OUT FOR DIRECT JWT LOGIN)
+       ==========================================================================
     const clerkUser = await clerkClient.users.getUser(decoded.sub);
     email = clerkUser.emailAddresses[0]?.emailAddress?.toLowerCase() || '';
+    ========================================================================== */
+    email = decoded.sub || decoded.email;
   }
 
   if (!email) {

@@ -95,6 +95,7 @@ export default function Login({ initialError = '' }) {
       const userSession = {
         email: cleanEmail,
         name: data.member?.name || data.member?.firstName || cleanEmail.split('@')[0],
+        token: data.token,
         memberDetails: data.member,
       };
 

@@ -17,7 +17,7 @@ export async function fetchPortalApi(path, {
       const stored = localStorage.getItem('sf_user_session');
       if (stored) {
         const sfUser = JSON.parse(stored);
-        token = `dev:${sfUser.email}`;
+        token = sfUser.token || `dev:${sfUser.email}`;
       }
     } catch {
       // Ignore

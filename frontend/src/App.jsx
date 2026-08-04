@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useAuth, useUser, useClerk } from '@clerk/clerk-react';
+// import { useAuth, useUser, useClerk } from '@clerk/clerk-react';
 import { authTrace } from './utils/authTrace';
-import { getEffectiveAuthState } from './utils/clerkMagicLink';
-import { getFreshClerkToken } from './utils/clerkAuth';
+// import { getEffectiveAuthState } from './utils/clerkMagicLink';
+// import { getFreshClerkToken } from './utils/clerkAuth';
 import { showToast } from './utils/toast';
 import Login from './components/Login';
 import Portal from './components/Portal';
-import EmailLinkVerifier, { shouldRunEmailLinkVerifier } from './components/EmailLinkVerifier';
+// import EmailLinkVerifier, { shouldRunEmailLinkVerifier } from './components/EmailLinkVerifier';
 import ToastHost from './components/shared/ToastHost';
 import OnboardWelcome, { ONBOARD_PATH } from './components/onboard/OnboardWelcome';
 import OnboardAboutYou, { ONBOARD_ABOUT_YOU_PATH } from './components/onboard/OnboardAboutYou';
@@ -81,14 +81,17 @@ function SfPortal({ sfUser, onLogout }) {
         id: sfUser.email,
         email: sfUser.email,
         name: sfUser.name,
-        role: 'Member',
+        role: sfUser.role || 'Member',
       }}
-      getAuthToken={async () => `dev:${sfUser.email}`}
+      getAuthToken={async () => sfUser.token || `dev:${sfUser.email}`}
       onLogout={onLogout}
     />
   );
 }
 
+/* ==========================================================================
+   AUTHENTICATED PORTAL (CLERK AUTH) (COMMENTED OUT FOR DIRECT JWT LOGIN)
+   ==========================================================================
 function AuthenticatedPortal({ onLogout, resolvedUserId }) {
   const clerk = useClerk();
   const { userId, getToken } = useAuth();
@@ -157,12 +160,13 @@ function AuthenticatedPortal({ onLogout, resolvedUserId }) {
     />
   );
 }
+========================================================================== */
 
 export default function App() {
-  const clerk = useClerk();
-  const { signOut, isLoaded, userId, isSignedIn } = useAuth();
-  const [restoringSession, setRestoringSession] = useState(false);
-  const auth = getEffectiveAuthState(clerk, { isSignedIn, userId, isLoaded });
+  // const clerk = useClerk();
+  // const { signOut, isLoaded, userId, isSignedIn } = useAuth();
+  // const [restoringSession, setRestoringSession] = useState(false);
+  // const auth = getEffectiveAuthState(clerk, { isSignedIn, userId, isLoaded });
 
   // Direct Salesforce Login Session (Bypassing Clerk)
   const [sfUser, setSfUser] = useState(() => {
@@ -200,6 +204,9 @@ export default function App() {
     }
   }, []);
 
+  /* ==========================================================================
+     CLERK ROUTE LOGGING (COMMENTED OUT FOR DIRECT JWT LOGIN)
+     ==========================================================================
   useEffect(() => {
     if (!isLoaded) return;
 
@@ -219,6 +226,14 @@ export default function App() {
       restoringSession,
     });
   }, [isLoaded, isSignedIn, userId, restoringSession, clerk, auth.authenticated, auth.clerkUserId, auth.effectiveUserId, sfUser]);
+  ========================================================================== */
+
+  useEffect(() => {
+    authTrace('APP_ROUTE', {
+      route: sfUser ? 'sf_dashboard' : 'login',
+      email: sfUser?.email || null,
+    });
+  }, [sfUser]);
 
   // Existing pre-login onboarding — unchanged (public).
   if (window.location.pathname === ONBOARD_PATH) {
@@ -253,8 +268,12 @@ export default function App() {
   ].includes(window.location.pathname);
 
   // Zip stepper requires login — send unauthenticated visitors to the login page.
-  const isLoggedInForStepper = Boolean(sfUser) || auth.authenticated;
+  // Commented out clerk auth.authenticated check for direct JWT session check
+  const isLoggedInForStepper = Boolean(sfUser) /* || auth.authenticated */;
   if (isPostLoginStepperPath && !isLoggedInForStepper) {
+    /* ==========================================================================
+       CLERK STEPPER LOADING WAIT (COMMENTED OUT FOR DIRECT JWT LOGIN)
+       ==========================================================================
     // Wait for Clerk to finish loading before deciding auth for stepper routes.
     if (!isLoaded) {
       return (
@@ -264,6 +283,7 @@ export default function App() {
         </>
       );
     }
+    ========================================================================== */
     return (
       <>
         <ToastHost />
@@ -397,6 +417,9 @@ export default function App() {
     );
   }
 
+  /* ==========================================================================
+     CLERK REDIRECTS/PAGES (COMMENTED OUT FOR DIRECT JWT LOGIN)
+     ==========================================================================
   if (shouldRunEmailLinkVerifier()) {
     return (
       <>
@@ -429,6 +452,7 @@ export default function App() {
       </>
     );
   }
+  ========================================================================== */
 
   return (
     <>

@@ -208,25 +208,42 @@ export function getPledges(sfData) {
       || (p.name || '').toLowerCase().includes('membership')
   );
 
+  const tierPriceMap = {
+    'family': 2244,
+    'upgraded': 3000,
+    'single parent': 1560,
+    'single membership': 1128,
+    'single': 1128,
+    'senior': 1800,
+    'chai donor': 5000,
+    'chai partner': 10000,
+    'chai rabbi': 18000,
+    'chai leadership': 36000,
+  };
+
+  const tierName = (membershipObj.tier || explicitMemPledge?.purpose || explicitMemPledge?.name || sfData?.account?.groups || '').toLowerCase();
+  const matchedTierPrice = Object.entries(tierPriceMap).find(([key]) => tierName.includes(key))?.[1];
+
   const explicitAmt = explicitMemPledge ? parseMoney(explicitMemPledge.total || explicitMemPledge.amount) : 0;
-  let memCommitment = parseMoney(membershipObj.annualCommitment);
+  let memCommitment = matchedTierPrice || parseMoney(membershipObj.annualCommitment);
+
   if (explicitAmt > memCommitment) {
     memCommitment = explicitAmt;
   }
 
   const memPaid = currentYtdPaid || parseMoney(membershipObj.contributedYtd);
 
-  // If commitment is recorded as a single installment amount (e.g. $900 for Individual Half-Yearly, $1122 for Family Half-Yearly), extrapolate to full annual commitment ($1800 / $2244)
-  if (memPaid > 0 && memCommitment <= memPaid && memPaid < 1700) {
-    if (freq.includes('month') || Math.round(memPaid) === 187 || Math.round(memPaid) === 150) {
-      memCommitment = memPaid * 12;
-    } else {
-      memCommitment = memPaid * 2;
+  // If commitment is recorded as per-period or single charge (e.g. $250, $500), extrapolate to full annual commitment
+  if (memCommitment < 1000) {
+    if (freq.includes('half') || freq.includes('semi')) {
+      memCommitment = memCommitment * 2;
+    } else if (freq.includes('month') || memCommitment <= 500) {
+      memCommitment = memCommitment * 12;
     }
   }
 
   if (memCommitment <= 0) {
-    memCommitment = 3000;
+    memCommitment = matchedTierPrice || 3000;
   }
 
   const memOutstanding = Math.max(memCommitment - memPaid, 0);
