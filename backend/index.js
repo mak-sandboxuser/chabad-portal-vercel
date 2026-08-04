@@ -368,24 +368,45 @@ function deriveMembershipSummary(membership, financials, profile) {
   const paymentTotal = payments.reduce((sum, item) => sum + parseMoney(item.amount || item.total), 0);
   const pledges = financials?.pledges || [];
   const recurring = financials?.recurring || [];
+  
+  const membershipPledge = pledges.find(
+    (p) => (p.type || '').toLowerCase() === 'membership'
+      || (p.purpose || '').toLowerCase().includes('membership')
+      || (p.name || '').toLowerCase().includes('membership')
+      || (p.purpose || '').toLowerCase().includes('member')
+      || (p.type || '').toLowerCase() === 'member',
+  );
+
+  const membershipPledgeAmt = membershipPledge ? parseMoney(membershipPledge.total || membershipPledge.amount) : 0;
   const annualFromPledges = pledges.reduce((sum, item) => sum + parseMoney(item.total || item.amount), 0);
+  const pledgeOutstanding = pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
+  const membershipOutstandingVal = membershipPledge ? parseMoney(membershipPledge.outstanding) : 0;
   const activeRecurring = recurring.find((item) => (item.status || '').toLowerCase() === 'active') || recurring[0];
 
   const derivedAutoRenewal = activeRecurring ? 'Enabled' : 'Disabled';
   const derivedPaymentMethod = activeRecurring?.method || 'Cash';
   const derivedPaymentMethodExpiry = activeRecurring?.cardExpiry || '';
 
+  const annual = membershipPledgeAmt > 0
+    ? membershipPledgeAmt
+    : (annualFromPledges > 0 ? annualFromPledges : parseMoney(membership?.annualCommitment));
+
+  const contributed = paymentTotal || parseMoney(membership?.contributedYtd);
+  const formattedAnnual = annual > 0
+    ? formatMoney(annual)
+    : (membership?.annualCommitment || '$0.00');
+
+  const formattedOutstanding = formatMoney(Math.max(annual - contributed, 0));
+
   if (membership && Object.keys(membership).length) {
-    const annual = parseMoney(membership.annualCommitment) || annualFromPledges;
-    const contributed = paymentTotal || parseMoney(membership.contributedYtd);
     return {
       tier: membership.tier || 'Member',
       status: membership.status || profile?.lifecycleStatus || 'Active',
       memberSince: membership.memberSince || '',
       renewalDate: membership.renewalDate || activeRecurring?.nextDate || '',
-      annualCommitment: membership.annualCommitment || (annual ? formatMoney(annual) : '$0.00'),
+      annualCommitment: formattedAnnual,
       contributedYtd: formatMoney(contributed),
-      outstanding: formatMoney(Math.max(annual - contributed, 0)),
+      outstanding: formattedOutstanding,
       autoRenewal: membership.autoRenewal || derivedAutoRenewal,
       paymentMethod: membership.paymentMethod || derivedPaymentMethod,
       paymentMethodExpiry: membership.paymentMethodExpiry || derivedPaymentMethodExpiry,
@@ -393,8 +414,7 @@ function deriveMembershipSummary(membership, financials, profile) {
     };
   }
 
-  const annualCommitment = annualFromPledges || parseMoney(profile?.householdDonationTotal);
-  const contributed = paymentTotal;
+  const annualCommitment = annual > 0 ? annual : parseMoney(profile?.householdDonationTotal);
 
   return {
     tier: 'Member',
@@ -403,7 +423,7 @@ function deriveMembershipSummary(membership, financials, profile) {
     renewalDate: activeRecurring?.nextDate || '',
     annualCommitment: annualCommitment ? formatMoney(annualCommitment) : '$0.00',
     contributedYtd: formatMoney(contributed),
-    outstanding: formatMoney(Math.max(annualCommitment - contributed, 0)),
+    outstanding: formattedOutstanding,
     autoRenewal: activeRecurring ? 'Enabled' : 'Disabled',
     paymentMethod: activeRecurring?.method || 'Cash',
     paymentMethodExpiry: activeRecurring?.cardExpiry || '',
@@ -1364,7 +1384,7 @@ function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
 }
 
 function enrichFinancialPayload(payload = {}) {
-  const pledgeAmount = parseFloat(payload.pledgeAmount) || 0;
+  let pledgeAmount = parseFloat(payload.pledgeAmount) || 0;
   const paymentAmount = parseFloat(payload.paymentAmount) || 0;
   const isRecurring = payload.billingMode === 'recurring' || payload.isRecurring === 'true';
   const recurringAmount = isRecurring ? (paymentAmount || pledgeAmount) : 0;
@@ -1372,6 +1392,17 @@ function enrichFinancialPayload(payload = {}) {
   const paymentDate = payload.paymentDate || new Date().toISOString().split('T')[0];
   const stripePaid = payload.stripePaymentStatus === 'paid'
     || Boolean(payload.stripeSubscriptionId);
+
+  if (isRecurring && paymentAmount > 0 && pledgeAmount <= paymentAmount) {
+    const freqLower = frequency.toLowerCase();
+    if (freqLower.includes('half') || freqLower.includes('semi')) {
+      pledgeAmount = paymentAmount * 2;
+    } else if (freqLower.includes('month')) {
+      pledgeAmount = paymentAmount * 12;
+    } else {
+      pledgeAmount = paymentAmount;
+    }
+  }
 
   let action = 'none';
   if (isRecurring && recurringAmount > 0) action = 'recurring';
@@ -2657,84 +2688,178 @@ app.post('/api/household/add-family-member', async (req, res) => {
 
 // Profile update endpoint
 app.post('/api/portal/update-profile', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authentication required.' });
+  let auth;
+  try {
+    auth = await resolveAuthedPortalMember(req);
+  } catch (error) {
+    console.error('Profile update authorization error:', error);
+    return res.status(401).json({ error: 'Session expired or invalid. Please log in again.' });
   }
 
-  const token = authHeader.split(' ')[1];
+  if (auth.error) {
+    return res.status(auth.error.status).json({ error: auth.error.message, code: auth.error.code });
+  }
+
   try {
-    let email;
-    if (token === 'dev_token_for_testing') {
-      email = (req.body.email || 'acc.appledev@gmail.com').toLowerCase();
-    } else {
-      const decoded = await verifyClerkSessionToken(token);
+    const email = auth.email;
+    const body = req.body || {};
+    const updateFields = Array.isArray(body.updateFields)
+      ? body.updateFields.filter((key) => typeof key === 'string' && key.trim())
+      : [];
 
-      const userId = decoded.sub;
-      
-      // Fetch user details from Clerk to get email
-      const clerkUser = await clerkClient.users.getUser(userId);
-      email = clerkUser.emailAddresses[0]?.emailAddress?.toLowerCase();
+    // Prefer explicit tab field list; otherwise include only keys actually sent.
+    const PROFILE_FIELD_KEYS = [
+      'firstName', 'lastName', 'phone', 'homePhone', 'street', 'city', 'state',
+      'postalCode', 'country', 'nickname', 'title',
+      'hebrewName', 'fathersHebrewName', 'mothersHebrewName', 'jewish', 'hebrewBirthdate',
+      'nextHebrewBirthday', 'weddingDate', 'lifecycleStatus',
+      'birthdate', 'age', 'gender',
+    ];
+    const keysToUpdate = updateFields.length > 0
+      ? updateFields.filter((key) => PROFILE_FIELD_KEYS.includes(key))
+      : PROFILE_FIELD_KEYS.filter((key) => Object.prototype.hasOwnProperty.call(body, key));
+
+    console.log(`Updating profile for: ${email} (fields: ${keysToUpdate.join(', ') || 'none'})`);
+
+    let contactId = sanitizeContactId(auth.contactId || '');
+    const accountId = sanitizeAccountId(auth.accountId || '');
+
+    // Start from the latest known CRM values, then apply only this tab's edits.
+    // This prevents an address save from overwriting a previously saved name
+    // (Make.com scenarios typically map every field on every request).
+    const cached = userSalesforceData[email] || {};
+    const currentForm = {
+      firstName: cached.firstName || '',
+      lastName: cached.lastName || '',
+      phone: cached.profile?.phone || cached.profile?.mobile || cached.phone || '',
+      homePhone: cached.profile?.homePhone || cached.homePhone || '',
+      street: cached.profile?.street || cached.street || cached.account?.street || '',
+      city: cached.profile?.city || cached.city || cached.account?.city || '',
+      state: cached.profile?.state || cached.state || cached.account?.state || '',
+      postalCode: cached.profile?.postalCode || cached.postalCode || cached.account?.postalCode || '',
+      country: cached.profile?.country || cached.country || cached.account?.country || '',
+      nickname: cached.profile?.nickname || cached.nickname || '',
+      title: cached.profile?.title || cached.title || '',
+      hebrewName: cached.profile?.hebrewName || cached.profile?.lifecycle?.hebrewName || '',
+      fathersHebrewName: cached.profile?.fathersHebrewName || cached.profile?.lifecycle?.fathersHebrewName || '',
+      mothersHebrewName: cached.profile?.mothersHebrewName || cached.profile?.lifecycle?.mothersHebrewName || '',
+      jewish: cached.profile?.jewish || cached.profile?.lifecycle?.jewish || '',
+      hebrewBirthdate: cached.profile?.hebrewBirthdate || cached.profile?.lifecycle?.hebrewBirthdate || '',
+      nextHebrewBirthday: cached.profile?.nextHebrewBirthday || cached.profile?.lifecycle?.nextHebrewBirthday || '',
+      weddingDate: cached.profile?.weddingDate || cached.profile?.lifecycle?.weddingDate || '',
+      lifecycleStatus: cached.profile?.lifecycleStatus || cached.profile?.lifecycle?.lifecycleStatus || '',
+      birthdate: cached.profile?.birthdate || cached.profile?.additional?.birthdate || '',
+      age: cached.profile?.age || cached.profile?.additional?.age || '',
+      gender: cached.profile?.gender || cached.profile?.additional?.gender || '',
+    };
+
+    // Prefer the freshest member-lookup name when cache is incomplete.
+    if (!currentForm.firstName || !currentForm.lastName) {
+      try {
+        const lookup = await lookupSalesforceMember(email);
+        if (lookup.found) {
+          currentForm.firstName = currentForm.firstName || lookup.memberDetails.firstName || '';
+          currentForm.lastName = currentForm.lastName || lookup.memberDetails.lastName || '';
+          if (!contactId) contactId = sanitizeContactId(lookup.memberDetails.contactId || '');
+        }
+      } catch {
+        // Non-blocking — continue with cached values.
+      }
     }
-    
-    if (!email) {
-      return res.status(400).json({ error: 'No email address found for this user.' });
+
+    const merged = { ...currentForm };
+    for (const key of keysToUpdate) {
+      const value = body[key];
+      merged[key] = typeof value === 'string' ? value.trim() : (value ?? '');
     }
 
-    const {
-      firstName, lastName, phone, homePhone, street, city, state, postalCode, country, nickname, title,
-      hebrewName, fathersHebrewName, mothersHebrewName, jewish, hebrewBirthdate,
-      nextHebrewBirthday, weddingDate, lifecycleStatus,
-      birthdate, age, gender,
-    } = req.body;
-
-    console.log(`Updating profile for: ${email}`);
-
-    const lookup = await lookupSalesforceMember(email);
-    if (!lookup.found) {
-      return res.status(403).json({ error: 'unauthorized_member', message: 'You are not authorised to login to the member portal.' });
-    }
-
-    let contactId = lookup.memberDetails.contactId || userSalesforceData[email]?.contactId || '';
-    const accountId = lookup.memberDetails.accountId || userSalesforceData[email]?.accountId || '';
+    // Optimistically keep the merged values in cache so a follow-up tab save
+    // (before Salesforce read-back settles) still has the latest edits.
+    userSalesforceData[email] = {
+      ...cached,
+      firstName: merged.firstName,
+      lastName: merged.lastName,
+      phone: merged.phone,
+      homePhone: merged.homePhone,
+      street: merged.street,
+      city: merged.city,
+      state: merged.state,
+      postalCode: merged.postalCode,
+      country: merged.country,
+      nickname: merged.nickname,
+      title: merged.title,
+      profile: {
+        ...(cached.profile || {}),
+        ...merged,
+        mobile: merged.phone,
+        lifecycle: {
+          ...(cached.profile?.lifecycle || {}),
+          hebrewName: merged.hebrewName,
+          fathersHebrewName: merged.fathersHebrewName,
+          mothersHebrewName: merged.mothersHebrewName,
+          jewish: merged.jewish,
+          hebrewBirthdate: merged.hebrewBirthdate,
+          nextHebrewBirthday: merged.nextHebrewBirthday,
+          weddingDate: merged.weddingDate,
+          lifecycleStatus: merged.lifecycleStatus,
+        },
+        additional: {
+          ...(cached.profile?.additional || {}),
+          birthdate: merged.birthdate,
+          age: merged.age,
+          gender: merged.gender,
+        },
+      },
+      account: {
+        ...(cached.account || {}),
+        street: merged.street,
+        city: merged.city,
+        state: merged.state,
+        postalCode: merged.postalCode,
+        country: merged.country,
+      },
+    };
 
     // Call Make.com Profile Update Webhook if configured
     if (process.env.MAKE_PROFILE_UPDATE_WEBHOOK_URL) {
       console.log(`Triggering Make.com Profile Update webhook for Salesforce Contact ID ${contactId}: ${process.env.MAKE_PROFILE_UPDATE_WEBHOOK_URL}`);
       try {
+        const webhookPayload = {
+          contactId,
+          accountId,
+          email,
+          updateFields: keysToUpdate,
+          firstName: merged.firstName,
+          lastName: merged.lastName,
+          phone: merged.phone,
+          mobile: merged.phone,
+          homePhone: merged.homePhone || merged.phone,
+          street: merged.street,
+          city: merged.city,
+          state: merged.state,
+          postalCode: merged.postalCode,
+          country: merged.country,
+          nickname: merged.nickname,
+          title: merged.title,
+          hebrewName: merged.hebrewName,
+          fathersHebrewName: merged.fathersHebrewName,
+          mothersHebrewName: merged.mothersHebrewName,
+          jewish: merged.jewish,
+          hebrewBirthdate: merged.hebrewBirthdate,
+          nextHebrewBirthday: merged.nextHebrewBirthday,
+          weddingDate: merged.weddingDate,
+          lifecycleStatus: merged.lifecycleStatus,
+          birthdate: merged.birthdate,
+          age: merged.age,
+          gender: merged.gender,
+        };
+
         const makeResponse = await fetch(process.env.MAKE_PROFILE_UPDATE_WEBHOOK_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            contactId,
-            accountId,
-            email,
-            firstName,
-            lastName,
-            phone,
-            mobile: phone,
-            homePhone: homePhone || phone,
-            street,
-            city,
-            state,
-            postalCode,
-            country,
-            nickname,
-            title,
-            hebrewName,
-            fathersHebrewName,
-            mothersHebrewName,
-            jewish,
-            hebrewBirthdate,
-            nextHebrewBirthday,
-            weddingDate,
-            lifecycleStatus,
-            birthdate,
-            age,
-            gender,
-          }),
+          body: JSON.stringify(webhookPayload),
         });
 
         if (makeResponse.ok) {
@@ -2742,30 +2867,60 @@ app.post('/api/portal/update-profile', async (req, res) => {
           console.log('Make.com Profile Update raw response:', makeText);
         } else {
           console.error(`Make.com profile update webhook failed with status ${makeResponse.status}`);
+          return res.status(502).json({
+            error: `Profile update webhook failed (${makeResponse.status}). Changes were not saved to Salesforce.`,
+          });
         }
       } catch (err) {
         console.error('Error calling Make.com profile update webhook:', err);
+        return res.status(502).json({
+          error: 'Unable to reach Salesforce profile update webhook. Please try again.',
+        });
       }
     } else {
       console.warn('MAKE_PROFILE_UPDATE_WEBHOOK_URL is not configured in environment variables.');
+      return res.status(500).json({
+        error: 'MAKE_PROFILE_UPDATE_WEBHOOK_URL is not configured. Profile changes cannot sync to Salesforce.',
+      });
     }
+
+    // Give Make/Salesforce a brief moment to settle, then refresh portal data.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
 
     const refreshed = await buildPortalSfData(email);
     if (refreshed.error) {
       return res.status(503).json({ error: 'Unable to refresh profile from Salesforce.' });
     }
 
-    userSalesforceData[email] = refreshed.sfData;
+    // Preserve just-saved tab values if Salesforce read-back is briefly stale.
+    const refreshedSf = refreshed.sfData || {};
+    userSalesforceData[email] = {
+      ...refreshedSf,
+      firstName: keysToUpdate.includes('firstName') ? merged.firstName : (refreshedSf.firstName || merged.firstName),
+      lastName: keysToUpdate.includes('lastName') ? merged.lastName : (refreshedSf.lastName || merged.lastName),
+      profile: {
+        ...(refreshedSf.profile || {}),
+        street: keysToUpdate.includes('street') ? merged.street : (refreshedSf.profile?.street || merged.street),
+        city: keysToUpdate.includes('city') ? merged.city : (refreshedSf.profile?.city || merged.city),
+        state: keysToUpdate.includes('state') ? merged.state : (refreshedSf.profile?.state || merged.state),
+        postalCode: keysToUpdate.includes('postalCode') ? merged.postalCode : (refreshedSf.profile?.postalCode || merged.postalCode),
+        country: keysToUpdate.includes('country') ? merged.country : (refreshedSf.profile?.country || merged.country),
+        phone: keysToUpdate.includes('phone') ? merged.phone : (refreshedSf.profile?.phone || merged.phone),
+        homePhone: keysToUpdate.includes('homePhone') ? merged.homePhone : (refreshedSf.profile?.homePhone || merged.homePhone),
+        nickname: keysToUpdate.includes('nickname') ? merged.nickname : (refreshedSf.profile?.nickname || merged.nickname),
+        title: keysToUpdate.includes('title') ? merged.title : (refreshedSf.profile?.title || merged.title),
+      },
+    };
     clearMemberLookupCache(email);
 
     res.json({
       success: true,
       message: 'Profile updated successfully.',
-      sfData: refreshed.sfData,
+      sfData: userSalesforceData[email],
     });
   } catch (error) {
-    console.error('Profile update authorization or save error:', error);
-    res.status(401).json({ error: 'Session expired or invalid. Please log in again.' });
+    console.error('Profile update save error:', error);
+    res.status(500).json({ error: error.message || 'Failed to update profile.' });
   }
 });
 

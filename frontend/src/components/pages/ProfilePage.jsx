@@ -114,12 +114,13 @@ export default function ProfilePage({
   getAuthToken,
   sfData,
   onProfileUpdated,
+  startInEditMode = false,
 }) {
   const localStorageKey = user?.email ? `portal_group_${user.email}` : null;
   const getStoredGroup = () => (localStorageKey ? localStorage.getItem(localStorageKey) || '' : '');
 
   const [activeTab, setActiveTab] = useState('general');
-  const [editingTab, setEditingTab] = useState(null);
+  const [editingTab, setEditingTab] = useState(startInEditMode ? 'general' : null);
   const [form, setForm] = useState(() => sfDataToProfileForm(sfData, user?.email));
   const [draft, setDraft] = useState(form);
   const [saving, setSaving] = useState(false);
@@ -257,15 +258,26 @@ export default function ProfilePage({
     setSaving(true);
 
     try {
+      // Only send fields for the tab being edited so an address save cannot
+      // overwrite a previously saved name (and vice versa) in Salesforce.
+      const tabKeys = TAB_FIELD_KEYS[editingTab || activeTab] || TAB_FIELD_KEYS.general;
       const data = await fetchPortalApi('/api/portal/update-profile', {
         getAuthToken,
         method: 'POST',
-        body: profileFormToPayload(draft),
+        body: profileFormToPayload(draft, { keys: tabKeys }),
       });
 
       const updated = sfDataToProfileForm(data.sfData, user?.email);
-      setForm(updated);
-      setDraft(updated);
+      // Merge refreshed Salesforce data with the values we just saved, in case
+      // the CRM read-back still has briefly stale values for this section.
+      const merged = { ...updated };
+      tabKeys.forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(draft, key)) {
+          merged[key] = draft[key];
+        }
+      });
+      setForm(merged);
+      setDraft(merged);
       setEditingTab(null);
       onProfileUpdated?.(data.sfData);
       showToast({ message: 'Profile saved and synced to Salesforce.', type: 'success' });
@@ -537,7 +549,25 @@ export default function ProfilePage({
                 {currentTab?.label}
               </h3>
 
-              {/* Edit actions removed */}
+              {activeTab !== 'membership' && (
+                !isEditing ? (
+                  <button type="button" className="btn btn-primary profile-tab-edit-btn" onClick={startEdit}>
+                    <Pencil size={16} />
+                    Edit Profile
+                  </button>
+                ) : (
+                  <div className="profile-tab-actions">
+                    <button type="button" className="btn btn-secondary" onClick={cancelEdit} disabled={saving}>
+                      <X size={16} />
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary" disabled={saving}>
+                      <Save size={16} />
+                      {saving ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                )
+              )}
             </div>
 
             <div className="profile-tab-form-grid">

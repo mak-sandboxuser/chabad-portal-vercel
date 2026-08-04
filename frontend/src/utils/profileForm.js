@@ -109,28 +109,39 @@ export function sfDataToProfileForm(sfData, email = '') {
   };
 }
 
-export function profileFormToPayload(form) {
-  const payload = {
-    firstName: form.firstName?.trim() || '',
-    lastName: form.lastName?.trim() || '',
-    phone: form.phone?.trim() || '',
-    homePhone: form.homePhone?.trim() || '',
-    street: form.street?.trim() || '',
-    city: form.city?.trim() || '',
-    state: form.state?.trim() || '',
-    postalCode: form.postalCode?.trim() || '',
-    country: form.country?.trim() || '',
-    nickname: form.nickname?.trim() || '',
-    title: form.title?.trim() || '',
-    groups: form.groups?.trim() || '',
-  };
+export function profileFormToPayload(form, options = {}) {
+  const allowedKeys = Array.isArray(options.keys) && options.keys.length > 0
+    ? new Set(options.keys)
+    : null;
 
-  for (const key of LIFECYCLE_FIELD_KEYS) {
-    payload[key] = form[key]?.trim() || '';
+  const include = (key) => !allowedKeys || allowedKeys.has(key);
+
+  const payload = {};
+
+  const scalarKeys = [
+    'firstName',
+    'lastName',
+    'phone',
+    'homePhone',
+    'street',
+    'city',
+    'state',
+    'postalCode',
+    'country',
+    'nickname',
+    'title',
+    'groups',
+    ...LIFECYCLE_FIELD_KEYS,
+    ...ADDITIONAL_FIELD_KEYS,
+  ];
+
+  for (const key of scalarKeys) {
+    if (!include(key)) continue;
+    payload[key] = form[key]?.trim?.() || form[key] || '';
   }
 
-  for (const key of ADDITIONAL_FIELD_KEYS) {
-    payload[key] = form[key]?.trim() || '';
+  if (allowedKeys) {
+    payload.updateFields = [...allowedKeys];
   }
 
   return payload;

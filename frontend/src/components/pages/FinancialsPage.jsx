@@ -11,6 +11,7 @@ import {
   getRecurring,
   getPortalFiscalYearLabel,
   parseMoney,
+  isPaymentWindowOpen,
 } from '../../utils/portalData';
 
 const TABS = [
@@ -30,10 +31,12 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
   const pledges = getPledges(sfData);
   const recurring = getRecurring(sfData);
   const outstandingPledges = pledges.filter((item) => parseMoney(item.outstanding) > 0);
+  const displayPledges = outstandingPledges.length > 0 ? outstandingPledges : pledges;
+  const canPayNow = isPaymentWindowOpen(sfData);
 
   const counts = {
     payments: payments.length,
-    pledges: outstandingPledges.length,
+    pledges: displayPledges.length,
     recurring: recurring.length,
   };
 
@@ -51,9 +54,11 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
           </div>
         </div>
         <div className="account-header-actions">
-          <button type="button" className="dash-btn-gold" onClick={() => onDonate()}>
-            <Lock size={16} /> General Payment
-          </button>
+          {canPayNow && (
+            <button type="button" className="dash-btn-gold" onClick={() => onDonate()}>
+              <Lock size={16} /> General Payment
+            </button>
+          )}
         </div>
       </div>
 
@@ -94,7 +99,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
           {activeTab === 'pledges' && (
             <DataTable
               emptyMessage="No Outstanding Balance records found."
-              rows={outstandingPledges}
+              rows={displayPledges}
               columns={[
                 { key: 'status', label: '', render: (row) => <StatusIcon status={row.status} /> },
                 { key: 'amount', label: 'Amount' },
@@ -160,6 +165,10 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
                     };
 
                     const matched = detectPaymentTypeAndSubType(row.name);
+
+                    if (!canPayNow) {
+                      return <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Scheduled</span>;
+                    }
 
                     return (
                       <button

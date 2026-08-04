@@ -30,7 +30,7 @@ const NAV_SECTIONS = [
   {
     label: 'FINANCIAL',
     items: [
-      { id: 'contributions', label: 'Contributions', icon: Landmark },
+      // { id: 'contributions', label: 'Contributions', icon: Landmark },
       { id: 'payments', label: 'Payments', icon: CreditCard },
       { id: 'recurring', label: 'Recurring Contributions', icon: RefreshCw },
     ],

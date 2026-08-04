@@ -12,6 +12,7 @@ import {
   getMembership,
   getPayments,
   getRecurring,
+  isPaymentWindowOpen,
 } from '../utils/portalData';
 
 export default function DashboardHome({
@@ -42,6 +43,7 @@ export default function DashboardHome({
   const contributedYtd = summary.contributedYtd || totalContributed || '$2824.00';
   const outstandingBal = formatMoney(summary.outstanding);
   const progressPct = summary.progressPct || 56;
+  const canPayNow = isPaymentWindowOpen(sfData);
 
   if (paymentsDisabled) {
     return (
@@ -139,13 +141,15 @@ export default function DashboardHome({
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                 {activeRecurring?.nextDate ? `Due on ${formatDisplayDate(activeRecurring.nextDate)}` : 'No due date scheduled'}
               </span>
-              <PaymentActionButton
-                className="dash-btn-gold-action"
-                onClick={onDonate}
-              >
-                Make Payment
-                <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
-              </PaymentActionButton>
+              {canPayNow && (
+                <PaymentActionButton
+                  className="dash-btn-gold-action"
+                  onClick={onDonate}
+                >
+                  Make Payment
+                  <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+                </PaymentActionButton>
+              )}
             </div>
           </div>
 

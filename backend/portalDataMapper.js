@@ -498,8 +498,8 @@ function normalizePayment(raw = {}, index = 0) {
     sortDate,
     outstanding: formatMoneyField(outstanding) || '$0.00',
     payer: raw.payer || raw.payerName || raw.parent || raw.accountName || raw['Payer / Parent'] || raw['Parent Account'] || raw['Related Contact'] || '',
-    type: raw.type || raw.paymentType || raw.Type || raw['Payment Type'] || raw['Recognition Type'] || raw.OneCRM__Payment_Type__c || 'Payment',
-    subType: raw.subType || raw.subtype || raw.subTypeName || raw['Sub-Type'] || raw['Sub Type'] || '',
+    type: raw.OneCRM__Type__c || raw.type || raw.paymentType || raw.Type || raw['Payment Type'] || raw['Recognition Type'] || 'Pledge',
+    subType: raw.OneCRM__Sub_Type__c || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type'] || 'Annual Membership',
     method: raw.method || raw.paymentMethod || raw['Payment Method'] || raw['Payment Plan'] || raw.OneCRM__Payment_Type__c
       || (parseMoneyValue(raw.OneCRM__Paid__c ?? raw['Paid Amount']) > 0 ? 'Cash' : ''),
     status: (() => {
@@ -521,11 +521,11 @@ function normalizePledge(raw = {}, index = 0) {
   const rawDate = raw.date ?? raw.pledgeDate ?? raw.Date ?? raw['Pledge Date'] ?? raw.OneCRM__Date__c ?? '';
   const date = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
 
-  const purpose = raw.purpose || raw.Purpose || raw.OneCRM__Purpose__c
-    || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type'] || raw.OneCRM__Sub_Type__c
+  const purpose = raw.OneCRM__Sub_Type__c || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type']
+    || raw.purpose || raw.Purpose || raw.OneCRM__Purpose__c
     || raw.name || raw.pledgeName || raw.Name || raw['Pledge Name']
-    || raw.type || raw.Type || raw.OneCRM__Type__c
-    || 'Pledge';
+    || raw.OneCRM__Type__c || raw.type || raw.Type
+    || 'Annual Membership';
 
   return {
     id: raw.id || raw.Id || raw.pledgeId || raw['Record ID'] || `pledge_${index}`,
@@ -533,11 +533,11 @@ function normalizePledge(raw = {}, index = 0) {
     outstanding: formatMoneyField(outstanding) || '$0.00',
     total: formatMoneyField(total) || formatMoneyField(amountValue),
     paid: formatMoneyField(paid),
-    name: raw.name || raw.pledgeName || raw.Name || raw['Pledge Name'] || raw.type || raw.Type || raw.OneCRM__Type__c || 'Pledge',
+    name: raw.name || raw.pledgeName || raw.Name || raw['Pledge Name'] || raw.OneCRM__Sub_Type__c || raw.subType || 'Membership',
     purpose,
     parent: raw.parent || raw.parentAccount || raw.accountName || raw['Parent Account'] || raw['Related Contact'] || '',
-    type: raw.type || raw.Type || raw.OneCRM__Type__c || '',
-    subType: raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type'] || raw.OneCRM__Sub_Type__c || '',
+    type: raw.OneCRM__Type__c || raw.type || raw.Type || 'Pledge',
+    subType: raw.OneCRM__Sub_Type__c || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type'] || 'Annual Membership',
     date,
     status: raw.status || raw.Status || raw.OneCRM__Status__c || 'Active',
   };

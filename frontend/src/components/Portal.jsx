@@ -17,7 +17,7 @@ import QuickPaymentModal from './shared/QuickPaymentModal';
 import ContactSupportModal from './shared/ContactSupportModal';
 import { showToast } from '../utils/toast';
 import { fetchPortalApi } from '../utils/portalApi';
-import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE } from '../utils/portalData';
+import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE, isPaymentWindowOpen } from '../utils/portalData';
 
 const PENDING_CHECKOUT_SESSION_KEY = 'pending_checkout_session_id';
 const syncingCheckoutSessions = new Set();
@@ -47,6 +47,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedMember, setSelectedMember] = useState(null);
+  const [profileStartInEditMode, setProfileStartInEditMode] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [sfData, setSfData] = useState(null);
   const [showDonateModal, setShowDonateModal] = useState(false);
@@ -74,6 +75,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
     }
     setActiveTab(tabId);
     if (tabId !== 'member-details') setSelectedMember(null);
+    if (tabId !== 'profile') setProfileStartInEditMode(false);
     setSidebarOpen(false);
   };
 
@@ -83,9 +85,20 @@ export default function Portal({ user, getAuthToken, onLogout }) {
     setSidebarOpen(false);
   };
 
+  const handleEditOwnProfile = () => {
+    setProfileStartInEditMode(true);
+    setActiveTab('profile');
+    setSelectedMember(null);
+    setSidebarOpen(false);
+  };
+
   const handleOpenDonateModal = (presetProps) => {
     if (paymentsDisabled) {
       showToast({ message: GUEST_PAYMENTS_MESSAGE, type: 'error' });
+      return;
+    }
+    if (!isPaymentWindowOpen(sfData)) {
+      showToast({ message: 'No payment is currently due for your billing schedule.', type: 'info' });
       return;
     }
     if (presetProps && typeof presetProps === 'object') {
@@ -359,6 +372,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
               getAuthToken={getAuthToken}
               onNavigate={handleNavigate}
               onViewMember={handleViewMember}
+              onEditOwnProfile={handleEditOwnProfile}
               onDonate={handleOpenDonateModal}
               onHouseholdUpdated={async (nextSfData) => {
                 if (nextSfData) {
@@ -496,6 +510,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
               getAuthToken={getAuthToken}
               sfData={sfData}
               onProfileUpdated={setSfData}
+              startInEditMode={profileStartInEditMode}
             />
           )}
 

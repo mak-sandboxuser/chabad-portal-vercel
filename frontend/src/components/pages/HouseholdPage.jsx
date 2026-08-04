@@ -14,6 +14,7 @@ import {
   getAccount,
   getContacts,
   getHouseholdAccountContext,
+  isPaymentWindowOpen,
 } from '../../utils/portalData';
 
 const TABS = [
@@ -28,6 +29,7 @@ export default function HouseholdPage({
   getAuthToken,
   onNavigate,
   onViewMember,
+  onEditOwnProfile,
   onDonate,
   onHouseholdUpdated,
   paymentsDisabled = false,
@@ -37,6 +39,24 @@ export default function HouseholdPage({
   const [editingMember, setEditingMember] = useState(null);
   const [householdLoading, setHouseholdLoading] = useState(false);
   const [householdError, setHouseholdError] = useState('');
+
+  const isOwnContact = (contact) => {
+    const userEmail = String(user?.email || '').trim().toLowerCase();
+    const contactEmail = String(contact?.email || '').trim().toLowerCase();
+    const userContactId = sfData?.contactId || '';
+    const contactId = contact?.contactId || contact?.id || '';
+    if (userEmail && contactEmail && userEmail === contactEmail) return true;
+    if (userContactId && contactId && userContactId === contactId) return true;
+    return Boolean(contact?.isPrimary && userEmail && (!contactEmail || contactEmail === userEmail));
+  };
+
+  const handleEditProfile = (member) => {
+    if (isOwnContact(member) && onEditOwnProfile) {
+      onEditOwnProfile();
+      return;
+    }
+    setEditingMember(member);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +121,7 @@ export default function HouseholdPage({
           <button type="button" className="dash-btn-outline" onClick={() => setShowAddFamilyModal(true)}>
             <UserPlus size={16} /> Add Family Members
           </button>
-          {!paymentsDisabled && (
+          {!paymentsDisabled && isPaymentWindowOpen(sfData) && (
             <PaymentActionButton className="dash-btn-gold" onClick={onDonate}>
               <Lock size={16} /> General Payment
             </PaymentActionButton>
@@ -138,7 +158,7 @@ export default function HouseholdPage({
           )}
 
           {activeTab === 'contacts' && (
-            <ContactsTable contacts={contacts} onSelectContact={(member) => setEditingMember(member)} />
+            <ContactsTable contacts={contacts} onSelectContact={handleEditProfile} />
           )}
         </div>
       </div>

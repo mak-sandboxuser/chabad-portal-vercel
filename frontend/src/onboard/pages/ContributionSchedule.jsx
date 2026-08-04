@@ -98,7 +98,7 @@ export default function ContributionSchedule() {
   if (selectedOption === 'installments') {
     paymentAmount = annualPrice / 2;
     billingMode = 'recurring';
-    frequency = 'Semi-Annual';
+    frequency = 'Half Yearly';
   } else if (selectedOption === 'monthly') {
     paymentAmount = annualPrice / 12;
     billingMode = 'recurring';
@@ -265,7 +265,7 @@ export default function ContributionSchedule() {
           defaultType="Membership"
           defaultSubType={selectedMembershipTier.name}
           defaultBillingMode={billingMode === 'recurring' ? 'recurring' : 'one-time'}
-          defaultFrequency={frequency === 'Annual' ? 'Annual' : frequency === 'Semi-Annual' ? 'Semi-Annual' : 'Monthly'}
+          defaultFrequency={frequency}
           defaultMemo={`Onboarding Membership Selection: ${selectedMembershipTier.name} (${option.title})`}
           source="onboarding"
           groups={selectedMembershipTier.name}

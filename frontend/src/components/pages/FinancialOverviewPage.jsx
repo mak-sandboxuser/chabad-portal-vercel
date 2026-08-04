@@ -14,6 +14,7 @@ import {
   getMembership,
   getPayments,
   getRecurring,
+  isPaymentWindowOpen,
 } from '../../utils/portalData';
 
 export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDonate }) {
@@ -22,6 +23,7 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
   const account = getAccount(sfData);
   const payments = getPayments(sfData);
   const recurring = getRecurring(sfData)[0];
+  const canPayNow = isPaymentWindowOpen(sfData);
 
   return (
     <PortalPageLayout
@@ -50,9 +52,11 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
           </div>
         </div>
         <div className="financial-top-col actions">
-          <button type="button" className="dash-btn-gold" onClick={onDonate}>
-            <Lock size={16} /> Make a Payment
-          </button>
+          {canPayNow && (
+            <button type="button" className="dash-btn-gold" onClick={onDonate}>
+              <Lock size={16} /> Make a Payment
+            </button>
+          )}
           <small className="stripe-note"><ShieldCheck size={12} /> Secure payments by Stripe</small>
         </div>
       </div>
