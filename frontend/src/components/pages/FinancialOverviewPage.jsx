@@ -1,19 +1,18 @@
 import React from 'react';
 import {
-  Wallet, Calendar, Lock, Heart, RefreshCw,
-  User, Mail, Phone, MapPin, ChevronRight, ShieldCheck,
+  Wallet, Calendar, Lock, Heart,
+  User, Mail, Phone, MapPin, ShieldCheck,
 } from 'lucide-react';
 import PortalPageLayout from '../shared/PortalPageLayout';
 import {
   formatAddress,
   formatDisplayDate,
-  formatFrequencyLabel,
   formatMoney,
   getAccount,
   getFinancialSummary,
   getMembership,
+  getPaymentScheduleSummary,
   getPayments,
-  getRecurring,
   isPaymentWindowOpen,
 } from '../../utils/portalData';
 
@@ -22,7 +21,7 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
   const membership = getMembership(sfData);
   const account = getAccount(sfData);
   const payments = getPayments(sfData);
-  const recurring = getRecurring(sfData)[0];
+  const schedule = getPaymentScheduleSummary(sfData);
   const canPayNow = isPaymentWindowOpen(sfData);
 
   return (
@@ -35,8 +34,8 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
         <div className="financial-top-col">
           <Wallet size={24} className="text-accent" />
           <div>
-            <span className="dash-stat-label">Outstanding Balance</span>
-            <strong className="financial-big">${summary.outstanding.toFixed(2)}</strong>
+            <span className="dash-stat-label">{schedule.balanceLabel}</span>
+            <strong className="financial-big">${Number(schedule.balanceAmount || 0).toFixed(2)}</strong>
             <small className="text-warn">
               {summary.paymentCount ? `${summary.paymentCount} payments · ${formatMoney(summary.totalContributed)} contributed` : 'No payment history yet'}
             </small>
@@ -46,9 +45,8 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
           <Calendar size={20} className="text-accent" />
           <div>
             <span className="dash-stat-label">Next Payment</span>
-            <strong>{formatDisplayDate(recurring?.nextDate || membership.renewalDate)}</strong>
-            <strong className="financial-amount">{recurring?.amount || '—'}</strong>
-            <button type="button" className="portal-text-link" onClick={() => onNavigate('financial')}>View payment schedule →</button>
+            <strong>{schedule.nextPaymentDateDisplay}</strong>
+            <strong className="financial-amount">{schedule.nextPaymentAmountDisplay}</strong>
           </div>
         </div>
         <div className="financial-top-col actions">
@@ -116,7 +114,7 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
             {[
               ['Group', membership.tier],
               ['Membership Status', membership.status, 'badge'],
-              ['Renewal Date', formatDisplayDate(membership.renewalDate)],
+              ['Renewal Date', schedule.membershipRenewalDateDisplay],
               [`Household (${sfData?.contacts?.length || 1})`, account.name, 'link'],
             ].map(([label, val, type]) => (
               <div key={label} className="financial-info-row">
@@ -139,19 +137,6 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
               <p><MapPin size={14} /> {formatAddress(account)}</p>
             </div>
           </div>
-        </div>
-
-        <div className="dash-panel glass-panel">
-          <div className="recurring-header">
-            <RefreshCw size={20} className="text-purple" />
-            <div>
-              <h3>{recurring?.type || 'Recurring Contribution'}</h3>
-              <strong className="recurring-amount">{recurring ? `${recurring.amount} / ${formatFrequencyLabel(recurring.frequency).toLowerCase()}` : 'Not configured'}</strong>
-            </div>
-          </div>
-          <div className="financial-info-row"><span>Next Charge</span><strong>{formatDisplayDate(recurring?.nextDate)}</strong></div>
-          <div className="financial-info-row"><span>Status</span><span className="badge badge-active">{recurring?.status || 'Inactive'}</span></div>
-
         </div>
       </div>
     </PortalPageLayout>

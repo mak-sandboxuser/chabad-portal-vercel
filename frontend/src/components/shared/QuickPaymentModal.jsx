@@ -145,6 +145,7 @@ export default function QuickPaymentModal({
   defaultMemo,
   readOnly = false,
   pledgeAmount = 0,
+  theme,
 }) {
   const [billingMode, setBillingMode] = useState('one-time'); // 'one-time' or 'recurring'
   const [paymentType, setPaymentType] = useState('Donation');
@@ -324,8 +325,14 @@ export default function QuickPaymentModal({
   })();
   const subTypeOptions = isMembership ? membershipSubTypeOptions : (SUB_TYPES[paymentType] || []);
 
+  const themeClass = theme === 'light'
+    ? 'qc-theme-light'
+    : theme === 'dark'
+      ? 'qc-theme-dark'
+      : '';
+
   return (
-    <div className="qc-modal-backdrop" onClick={onClose}>
+    <div className={`qc-modal-backdrop ${themeClass}`.trim()} onClick={onClose}>
       <style>{`
         .qc-modal-backdrop {
           position: fixed;
@@ -340,6 +347,35 @@ export default function QuickPaymentModal({
           z-index: 1100;
           backdrop-filter: blur(8px);
           padding: 12px;
+        }
+        /* Follow onboarding / portal theme when passed explicitly */
+        .qc-modal-backdrop.qc-theme-light {
+          --bg-main: #fbfaf7;
+          --bg-card: #ffffff;
+          --bg-card-hover: #f3ede3;
+          --border-color: #e9e3d6;
+          --border-focus: #c4841f;
+          --color-primary: #c4841f;
+          --color-primary-hover: #a86d16;
+          --color-primary-light: #fbe7c8;
+          --text-primary: #0b1f4d;
+          --text-secondary: #4b5670;
+          --text-muted: #8791a7;
+          --glass-shadow: 0 20px 50px rgba(11, 31, 77, 0.12);
+        }
+        .qc-modal-backdrop.qc-theme-dark {
+          --bg-main: #060b16;
+          --bg-card: #101b30;
+          --bg-card-hover: #16223a;
+          --border-color: #26334d;
+          --border-focus: #e2a542;
+          --color-primary: #e2a542;
+          --color-primary-hover: #c4841f;
+          --color-primary-light: rgba(226, 165, 66, 0.16);
+          --text-primary: #f4f6fb;
+          --text-secondary: #b9c2d6;
+          --text-muted: #8c98aa;
+          --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
         }
         .qc-modal-card {
           width: 100%;
@@ -688,18 +724,6 @@ export default function QuickPaymentModal({
                 <input
                   type="radio"
                   name="paymentMethod"
-                  value="card"
-                  checked={paymentMethodType === 'card'}
-                  onChange={() => setPaymentMethodType('card')}
-                  style={{ accentColor: 'var(--color-primary)', width: '16px', height: '16px', cursor: 'pointer' }}
-                />
-                <CreditCard size={14} style={{ color: 'var(--color-primary)' }} />
-                Card
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-primary)' }}>
-                <input
-                  type="radio"
-                  name="paymentMethod"
                   value="us_bank_account"
                   checked={paymentMethodType === 'us_bank_account'}
                   onChange={() => setPaymentMethodType('us_bank_account')}
@@ -707,6 +731,18 @@ export default function QuickPaymentModal({
                 />
                 <Landmark size={14} style={{ color: 'var(--color-primary)' }} />
                 Bank Transfer
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-primary)' }}>
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="card"
+                  checked={paymentMethodType === 'card'}
+                  onChange={() => setPaymentMethodType('card')}
+                  style={{ accentColor: 'var(--color-primary)', width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <CreditCard size={14} style={{ color: 'var(--color-primary)' }} />
+                Card
               </label>
             </div>
           </div>
@@ -833,7 +869,7 @@ export default function QuickPaymentModal({
               </div>
 
               <div className="qc-field" style={{ marginTop: '10px' }}>
-                <label className="qc-label">Start Date</label>
+                <label className="qc-label">Payment Date</label>
                 <div className="qc-input-box">
                   <Calendar size={14} className="qc-input-icon" />
                   <input
@@ -908,17 +944,11 @@ export default function QuickPaymentModal({
             )}
           </button>
 
-          <div className="qc-footer-text">
-            {billingMode === 'one-time' ? (
-              <>
-                <Lock size={11} /> Secure payment powered by Stripe
-              </>
-            ) : (
-              <>
-                <RefreshCw size={11} /> You can cancel or update anytime.
-              </>
-            )}
-          </div>
+          {billingMode === 'one-time' && (
+            <div className="qc-footer-text">
+              <Lock size={11} /> Secure payment powered by Stripe
+            </div>
+          )}
         </form>
 
         <div className="qc-bottom-banner">

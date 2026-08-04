@@ -574,12 +574,6 @@ export default function ProfilePage({
               {tabContent[activeTab]}
             </div>
           </div>
-
-          {sfData?.contactId && (
-            <div className="profile-contact-id">
-              Salesforce Contact ID: <code>{sfData.contactId}</code>
-            </div>
-          )}
         </form>
       </div>
     </div>

@@ -1,4 +1,9 @@
 import { Headphones, Phone, Mail, Lock } from 'lucide-react';
+import {
+  SUPPORT_EMAIL,
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_TEL,
+} from '../../constants/supportContact';
 
 /**
  * Richer onboarding footer (optional security note + assistance panel +
@@ -32,14 +37,14 @@ export default function OnboardFooter({ securityNote }) {
         </div>
 
         <div className="onboard-assistance-contact">
-          <a href="mailto:support@chabadbedford.org">
+          <a href={`mailto:${SUPPORT_EMAIL}`}>
             <Mail size={15} aria-hidden="true" />
-            support@chabadbedford.org
+            {SUPPORT_EMAIL}
           </a>
           <span className="onboard-form-footer-divider" aria-hidden="true">|</span>
-          <a href="tel:+19142341234">
+          <a href={`tel:${SUPPORT_PHONE_TEL}`}>
             <Phone size={15} aria-hidden="true" />
-            (914) 234-1234
+            {SUPPORT_PHONE_DISPLAY}
           </a>
         </div>
       </div>

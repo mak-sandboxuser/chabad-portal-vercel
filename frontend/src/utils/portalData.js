@@ -351,7 +351,7 @@ export function getMembership(sfData) {
     tier: membership.tier || 'Member',
     status: membership.status || 'Active',
     memberSince: membership.memberSince || sfData?.joinedDate || '',
-    renewalDate: membership.renewalDate || activeRecurring?.nextDate || '',
+    renewalDate: membership.renewalDate || membership.endDate || '',
     annualCommitment: finalAnnualCommitmentStr,
     contributedYtd: formatMoney(contributed),
     outstanding: formatMoney(calculatedOutstanding),
@@ -386,6 +386,154 @@ export function getFinancialSummary(sfData) {
     contributed,
     outstanding,
     progressPct: Math.min(pct, 100),
+  };
+}
+
+function parseLocalDate(value) {
+  const normalized = String(value || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  const [year, month, day] = normalized.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toIsoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addFrequencyInterval(baseDate, frequency) {
+  const next = new Date(baseDate.getTime());
+  const freq = String(frequency || '').toLowerCase();
+  if (freq.includes('week')) next.setDate(next.getDate() + 7);
+  else if (freq.includes('half') || freq.includes('semi')) next.setMonth(next.getMonth() + 6);
+  else if (freq.includes('quarter')) next.setMonth(next.getMonth() + 3);
+  else if (freq.includes('year') || freq.includes('annual')) next.setFullYear(next.getFullYear() + 1);
+  else next.setMonth(next.getMonth() + 1);
+  return next;
+}
+
+function scheduleKindFromFrequency(frequency) {
+  const freq = String(frequency || '').toLowerCase().trim();
+  if (!freq) return '';
+  if (freq.includes('month') && !freq.includes('semi')) return 'monthly';
+  if (freq.includes('half') || freq.includes('semi') || freq.includes('install')) return 'installments';
+  if (freq.includes('week') || freq.includes('quarter')) return 'monthly';
+  if (freq.includes('year') || freq.includes('annual') || freq.includes('one') || freq.includes('full')) {
+    return 'full';
+  }
+  return '';
+}
+
+function amountsMatch(a, b, tolerance = 1.5) {
+  if (!(a > 0) || !(b > 0)) return false;
+  return Math.abs(a - b) <= tolerance || Math.abs(a - b) / b < 0.06;
+}
+
+export function getActiveRecurring(sfData) {
+  const recurring = getRecurring(sfData);
+  return recurring.find(
+    (item) => ['active', 'finished', 'open'].includes((item.status || '').toLowerCase()) && item.nextDate,
+  )
+    || recurring.find(
+      (item) => ['active', 'finished', 'open'].includes((item.status || '').toLowerCase()),
+    )
+    || recurring.find((item) => item.nextDate)
+    || recurring[0]
+    || null;
+}
+
+/**
+ * Shared schedule labels/amounts for Dashboard + Financial Overview.
+ * Infers monthly / two-installment / full when CRM frequency is missing.
+ */
+export function getPaymentScheduleSummary(sfData) {
+  const summary = getFinancialSummary(sfData);
+  const membership = getMembership(sfData);
+  const payments = getPayments(sfData);
+  const activeRecurring = getActiveRecurring(sfData);
+  const lastPaymentAmount = parseMoney(payments[0]?.amount || payments[0]?.total);
+  const recurringAmount = parseMoney(activeRecurring?.amount);
+  const frequency = activeRecurring?.frequency || membership.frequency || '';
+
+  let scheduleKind = scheduleKindFromFrequency(frequency);
+  if (!scheduleKind) {
+    const probe = recurringAmount > 0 ? recurringAmount : lastPaymentAmount;
+    if (summary.annual > 0 && probe > 0) {
+      if (amountsMatch(probe, summary.annual / 12)) scheduleKind = 'monthly';
+      else if (amountsMatch(probe, summary.annual / 2)) scheduleKind = 'installments';
+      else if (amountsMatch(probe, summary.annual)) scheduleKind = 'full';
+      else scheduleKind = 'full';
+    } else {
+      scheduleKind = 'full';
+    }
+  }
+
+  let scheduledAmount = recurringAmount;
+  if (!(scheduledAmount > 0)) {
+    if (scheduleKind === 'monthly') {
+      scheduledAmount = summary.annual > 0
+        ? Math.round((summary.annual / 12) * 100) / 100
+        : lastPaymentAmount;
+    } else if (scheduleKind === 'installments') {
+      scheduledAmount = summary.annual > 0
+        ? Math.min(Math.round((summary.annual / 2) * 100) / 100, summary.outstanding || summary.annual / 2)
+        : lastPaymentAmount;
+    } else {
+      scheduledAmount = summary.outstanding;
+    }
+  }
+
+  // Next payment date is always the 1st of the month.
+  // Monthly: 1st of the month after last payment (or next month from today).
+  let nextPaymentDate = '';
+  const lastPaymentDate = parseLocalDate(payments[0]?.date || payments[0]?.sortDate);
+  const recurringNext = parseLocalDate(activeRecurring?.nextDate);
+
+  if (scheduleKind === 'monthly') {
+    const base = lastPaymentDate || recurringNext || new Date();
+    const firstOfNextMonth = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+    nextPaymentDate = toIsoDate(firstOfNextMonth);
+  } else if (scheduleKind === 'installments') {
+    const base = lastPaymentDate || recurringNext || new Date();
+    const sixMonthsLater = addFrequencyInterval(base, 'Half Yearly');
+    nextPaymentDate = toIsoDate(new Date(sixMonthsLater.getFullYear(), sixMonthsLater.getMonth(), 1));
+  } else {
+    const raw = activeRecurring?.nextDate || membership.renewalDate || membership.endDate || '';
+    const parsed = parseLocalDate(raw);
+    nextPaymentDate = parsed
+      ? toIsoDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1))
+      : '';
+    if (!nextPaymentDate) {
+      const now = new Date();
+      nextPaymentDate = toIsoDate(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+    }
+  }
+
+  // Renewal Date always matches Next Payment date.
+  const membershipRenewalDate = nextPaymentDate;
+
+  const balanceLabel = scheduleKind === 'monthly' ? 'Monthly Payments' : 'Net Payment';
+  const balanceAmount = scheduleKind === 'full' ? summary.outstanding : scheduledAmount;
+  const nextPaymentAmountValue = scheduleKind === 'full' ? summary.outstanding : scheduledAmount;
+
+  return {
+    scheduleKind,
+    activeRecurring,
+    balanceLabel,
+    balanceAmount,
+    balanceAmountDisplay: formatMoney(balanceAmount),
+    nextPaymentDate,
+    nextPaymentDateDisplay: formatDisplayDate(nextPaymentDate),
+    nextPaymentAmount: nextPaymentAmountValue,
+    nextPaymentAmountDisplay: nextPaymentAmountValue > 0 ? formatMoney(nextPaymentAmountValue) : '—',
+    membershipRenewalDate,
+    membershipRenewalDateDisplay: formatDisplayDate(membershipRenewalDate),
+    frequencyLabel: formatFrequencyLabel(
+      frequency || (scheduleKind === 'monthly' ? 'Monthly' : scheduleKind === 'installments' ? 'Half Yearly' : 'Annual'),
+    ),
   };
 }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Mail, Phone, Briefcase, Lock, LogOut, HeartHandshake, Users2, Star } from 'lucide-react';
+import { User, Mail, Phone, Briefcase, Lock, LogOut, HeartHandshake, Users2 } from 'lucide-react';
 import OnboardHeader from '../components/OnboardHeader';
 import OnboardStepper from '../components/OnboardStepper';
 import OnboardFooter from '../components/OnboardFooter';
@@ -287,13 +287,6 @@ export default function AboutYou() {
                   icon={Users2}
                   value={primaryMember.hasChildren}
                   onChange={handleFlagChange('hasChildren')}
-                />
-                <YesNoToggle
-                  name="addYahrzeitRecords"
-                  label="Would you like to add Yahrzeit records?"
-                  icon={Star}
-                  value={primaryMember.addYahrzeitRecords}
-                  onChange={handleFlagChange('addYahrzeitRecords')}
                 />
               </div>
             </div>

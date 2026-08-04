@@ -270,6 +270,7 @@ export default function ContributionSchedule() {
           source="onboarding"
           groups={selectedMembershipTier.name}
           readOnly={true}
+          theme={theme}
         />
       )}
     </div>

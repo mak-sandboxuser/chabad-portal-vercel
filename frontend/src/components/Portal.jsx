@@ -18,6 +18,7 @@ import ContactSupportModal from './shared/ContactSupportModal';
 import { showToast } from '../utils/toast';
 import { fetchPortalApi } from '../utils/portalApi';
 import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE, isPaymentWindowOpen } from '../utils/portalData';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL } from '../constants/supportContact';
 
 const PENDING_CHECKOUT_SESSION_KEY = 'pending_checkout_session_id';
 const syncingCheckoutSessions = new Set();
@@ -223,7 +224,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
     return (
       <div className="verify-container">
         <div className="spinner"></div>
-        <p style={{ color: 'var(--text-secondary)' }}>Loading your dashboard portal...</p>
+        <p style={{ color: 'var(--text-secondary)' }}>Loading you Member Portal..</p>
       </div>
     );
   }
@@ -486,13 +487,13 @@ export default function Portal({ user, getAuthToken, onLogout }) {
                   <Mail size={22} style={{ color: 'var(--color-accent)', marginBottom: '12px' }} />
                   <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Email Support</h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: 1.5 }}>Send us a message and we&apos;ll respond within one business day.</p>
-                  <a href="mailto:info@chabadbedford.com" style={{ color: 'var(--color-accent)', fontWeight: 600, fontSize: '14px' }}>info@chabadbedford.com</a>
+                  <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--color-accent)', fontWeight: 600, fontSize: '14px' }}>{SUPPORT_EMAIL}</a>
                 </div>
                 <div className="glass-panel" style={{ padding: '28px' }}>
                   <Phone size={22} style={{ color: 'var(--color-accent)', marginBottom: '12px' }} />
                   <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Phone Support</h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: 1.5 }}>Call our office during business hours for immediate assistance.</p>
-                  <a href="tel:+19146666065" style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '14px' }}>914.666.6065</a>
+                  <a href={`tel:${SUPPORT_PHONE_TEL}`} style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '14px' }}>{SUPPORT_PHONE_DISPLAY}</a>
                 </div>
                 <div className="glass-panel" style={{ padding: '28px' }}>
                   <Headphones size={22} style={{ color: 'var(--color-accent)', marginBottom: '12px' }} />
@@ -528,6 +529,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
         getAuthToken={getAuthToken}
         sfData={sfData}
         onSuccess={fetchDashboardData}
+        theme={theme}
         {...donateModalProps}
       />
       )}

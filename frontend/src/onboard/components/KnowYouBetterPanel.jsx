@@ -31,8 +31,8 @@ function createEmptyChild() {
 
 /**
  * Preference panel shown directly under the stepper.
- * Spouse defaults to Yes; Children + Yahrzeit default to No.
- * Yahrzeit is toggle-only (no form opens).
+ * Spouse defaults to Yes; Children default to No.
+ * Yahrzeit shows as "Coming soon" and stays disabled (No).
  */
 export default function KnowYouBetterPanel({
   draft,
@@ -50,13 +50,13 @@ export default function KnowYouBetterPanel({
       ...draft,
       data: {
         ...draft.data,
-        householdPreferences: { ...prefs },
+        householdPreferences: { ...prefs, addYahrzeit: false },
       },
     };
     if (persistNow) persistNow(migrated);
     else updateDraft(() => migrated);
 
-    const redirect = getRedirectPathIfStepDisallowed(currentStepId, prefs);
+    const redirect = getRedirectPathIfStepDisallowed(currentStepId, { ...prefs, addYahrzeit: false });
     if (redirect && redirect !== window.location.pathname) {
       goToOnboardingPath(redirect);
     }
@@ -64,9 +64,12 @@ export default function KnowYouBetterPanel({
   }, []);
 
   const commitPreferences = (key, value) => {
+    if (key === 'addYahrzeit') return;
+
     const nextPrefs = {
       ...prefs,
       [key]: value,
+      addYahrzeit: false,
       version: HOUSEHOLD_PREFERENCES_VERSION,
     };
     const nextData = {
@@ -96,9 +99,6 @@ export default function KnowYouBetterPanel({
     // persistNow writes synchronously, so the draft is on disk before navigating.
     if (persistNow) persistNow(nextDraft);
     else updateDraft(() => nextDraft);
-
-    // Yahrzeit is toggle-only — save preference, never open a form.
-    if (key === 'addYahrzeit') return;
 
     if (value && enabledStepId) {
       const path = getStepById(enabledStepId).path;
@@ -151,10 +151,11 @@ export default function KnowYouBetterPanel({
         <div className="onboard-know-you-column">
           <YesNoToggle
             name="addYahrzeit"
-            label="Add Yahrzeit records?"
+            label="Coming soon Yahrzeit"
             icon={StarOfDavidIcon}
-            value={prefs.addYahrzeit}
-            onChange={(value) => commitPreferences('addYahrzeit', value)}
+            value={false}
+            disabled
+            onChange={() => {}}
           />
         </div>
       </div>

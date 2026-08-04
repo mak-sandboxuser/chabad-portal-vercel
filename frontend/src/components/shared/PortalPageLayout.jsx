@@ -10,8 +10,8 @@ export function PortalPageFooter({ onContactSupport }) {
       <div className="portal-page-footer-links">
         <button
           type="button"
+          className="dash-btn-outline portal-page-footer-btn"
           onClick={onContactSupport}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', font: 'inherit', padding: 0 }}
         >
           Contact Support
         </button>

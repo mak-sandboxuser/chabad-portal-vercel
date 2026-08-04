@@ -200,7 +200,7 @@ export default function EditFamilyMemberModal({
         {submitting && (
           <div className="add-family-loading-overlay" aria-live="polite">
             <Loader2 size={32} className="add-family-spinner" />
-            <span>Updating Salesforce CRM...</span>
+            <span>Updating Member Details..</span>
           </div>
         )}
         <div className="portal-modal-header">

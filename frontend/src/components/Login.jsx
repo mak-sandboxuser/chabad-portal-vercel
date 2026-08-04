@@ -309,7 +309,7 @@ export default function Login({ initialError = '' }) {
 
                 <a href={ONBOARD_PATH} className="support-link-btn">
                   <Headphones size={18} className="phone-icon" />
-                  <span>Contact Support</span>
+                  <span>Sign Up</span>
                 </a>
 
                 <div className="passwordless-footer-note">

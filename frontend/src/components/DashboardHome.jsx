@@ -4,14 +4,12 @@ import PaymentActionButton from './shared/PaymentActionButton';
 import BuildingSketch from './shared/BuildingSketch';
 import {
   formatDisplayDate,
-  formatFrequencyLabel,
   formatMoney,
-  getAccount,
   getContacts,
   getFinancialSummary,
   getMembership,
+  getPaymentScheduleSummary,
   getPayments,
-  getRecurring,
   isPaymentWindowOpen,
 } from '../utils/portalData';
 
@@ -29,20 +27,15 @@ export default function DashboardHome({
     user?.email?.split('@')[0] ||
     'Member';
 
-  const account = getAccount(sfData);
   const contacts = getContacts(sfData);
   const membership = getMembership(sfData);
   const summary = getFinancialSummary(sfData);
   const payments = getPayments(sfData);
   const recentPayments = payments.slice(0, 4);
   const totalContributed = formatMoney(summary.totalContributed || summary.contributed);
-  const activeRecurring = getRecurring(sfData).find(
-    (item) => ['active', 'finished', 'open'].includes((item.status || '').toLowerCase()),
-  ) || getRecurring(sfData)[0];
+  const schedule = getPaymentScheduleSummary(sfData);
 
   const contributedYtd = summary.contributedYtd || totalContributed || '$2824.00';
-  const outstandingBal = formatMoney(summary.outstanding);
-  const progressPct = summary.progressPct || 56;
   const canPayNow = isPaymentWindowOpen(sfData);
 
   if (paymentsDisabled) {
@@ -117,14 +110,14 @@ export default function DashboardHome({
             </div>
           </div>
 
-          {/* Card 2: Outstanding Balance */}
+          {/* Card 2: Monthly Payments / Net Payment */}
           <div className="dash-balance-card glass-panel dash-card-fancy" style={{ padding: '28px 30px', minHeight: '195px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div className="dash-icon-wrapper red-glow">
                   <DollarSign size={18} />
                 </div>
-                <span className="dash-card-title">Outstanding Balance</span>
+                <span className="dash-card-title">{schedule.balanceLabel}</span>
               </div>
               <span className="dash-pill-badge red">
                 {membership.annualCommitment ? `Commitment ${membership.annualCommitment}` : 'Due Balance'}
@@ -133,13 +126,13 @@ export default function DashboardHome({
 
             <div style={{ margin: '14px 0 6px 0' }}>
               <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: '#ef4444', letterSpacing: '-0.5px' }}>
-                {outstandingBal}
+                {schedule.balanceAmountDisplay}
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {activeRecurring?.nextDate ? `Due on ${formatDisplayDate(activeRecurring.nextDate)}` : 'No due date scheduled'}
+                {schedule.nextPaymentDate ? `Due on ${schedule.nextPaymentDateDisplay}` : 'No due date scheduled'}
               </span>
               {canPayNow && (
                 <PaymentActionButton
@@ -162,22 +155,22 @@ export default function DashboardHome({
                 </div>
                 <span className="dash-card-title">Next Payment</span>
               </div>
-              {activeRecurring?.frequency && (
+              {schedule.frequencyLabel && schedule.frequencyLabel !== '—' && (
                 <span className="dash-pill-badge blue">
-                  {formatFrequencyLabel(activeRecurring.frequency)}
+                  {schedule.frequencyLabel}
                 </span>
               )}
             </div>
 
             <div style={{ margin: '14px 0 6px 0' }}>
               <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
-                {activeRecurring?.amount || '—'}
+                {schedule.nextPaymentAmountDisplay}
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {activeRecurring?.nextDate ? `Scheduled: ${formatDisplayDate(activeRecurring.nextDate)}` : 'No scheduled billing'}
+                {schedule.nextPaymentDate ? `Scheduled: ${schedule.nextPaymentDateDisplay}` : 'No scheduled billing'}
               </span>
               <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <ShieldCheck size={14} /> Auto-pay

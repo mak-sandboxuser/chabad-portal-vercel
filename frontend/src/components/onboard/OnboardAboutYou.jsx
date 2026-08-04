@@ -1379,10 +1379,6 @@ export default function OnboardAboutYou() {
                         <span className="ay-helper-item-label"><Users size={16} /> Do you have children?</span>
                         <YesNoToggle value={form.hasChildren} onChange={(v) => setForm((f) => ({ ...f, hasChildren: v }))} />
                       </div>
-                      <div className="ay-helper-item">
-                        <span className="ay-helper-item-label"><Star size={16} /> Add Yahrzeit records?</span>
-                        <YesNoToggle value={form.addYahrzeit} onChange={(v) => setForm((f) => ({ ...f, addYahrzeit: v }))} />
-                      </div>
                     </div>
                   </div>
 

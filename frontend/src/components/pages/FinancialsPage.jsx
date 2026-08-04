@@ -9,7 +9,6 @@ import {
   getPayments,
   getPledges,
   getRecurring,
-  getPortalFiscalYearLabel,
   parseMoney,
   isPaymentWindowOpen,
 } from '../../utils/portalData';
@@ -75,7 +74,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
               </h3>
               {activeTab === 'payments' && (
                 <p className="section-panel-subcopy">
-                  Showing payments for {getPortalFiscalYearLabel()}. Older records reset each September 1.
+                  Showing all you performed payments
                 </p>
               )}
             </div>
@@ -107,7 +106,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
                 { key: 'total', label: 'Total' },
                 { key: 'paid', label: 'Paid' },
                 { key: 'purpose', label: 'Purpose', render: (row) => row.purpose || row.name },
-                { key: 'date', label: 'Date', render: (row) => formatDisplayDate(row.date) },
+                { key: 'date', label: 'Payment Date', render: (row) => formatDisplayDate(row.date) },
                 {
                   key: 'action',
                   label: 'Action',

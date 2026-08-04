@@ -94,6 +94,8 @@ export default function HouseholdPage({
   const contacts = getContacts(sfData);
   const household = getHouseholdAccountContext(sfData);
   const { primaryContact, secondaryContact, memberCount } = household;
+  const accountAddress = formatAddress(account);
+  const hasAccountAddress = accountAddress !== '—';
 
   return (
     <PortalPageLayout
@@ -113,7 +115,9 @@ export default function HouseholdPage({
             <div className="account-header-meta">
               {account.phone && <span><Phone size={14} /> {account.phone}</span>}
               {account.email && <span><Mail size={14} /> {account.email}</span>}
-              <span><MapPin size={14} /> {formatAddress(account)}</span>
+              {hasAccountAddress && (
+                <span><MapPin size={14} /> {accountAddress}</span>
+              )}
             </div>
           </div>
         </div>

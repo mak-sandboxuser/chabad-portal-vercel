@@ -78,8 +78,8 @@ export default function MembershipPage({
       };
     }
     return {
-      startDate: membership.startDate ? formatDisplayDate(membership.startDate) : '1 September 2025',
-      endDate: membership.endDate ? formatDisplayDate(membership.endDate) : '31 August 2026',
+      startDate: membership.startDate ? formatDisplayDate(membership.startDate) : '1 September 2026',
+      endDate: membership.endDate ? formatDisplayDate(membership.endDate) : '31 August 2027',
     };
   };
 
@@ -88,8 +88,8 @@ export default function MembershipPage({
   const stats = [
     { label: 'Group', value: membership.tier || '—', sub: membership.status || '—', icon: Gem, badge: membership.tier || '—', badgeClass: 'blue' },
     { label: 'Status', value: membership.status, sub: 'In good standing', icon: ShieldCheck, valueClass: 'text-success' },
-    { label: 'Start Date', value: dates.startDate, sub: '1 September', icon: Calendar },
-    { label: 'End Date', value: dates.endDate, sub: '31 August', icon: Calendar },
+    { label: 'Start Date', value: dates.startDate, sub: 'Start of year', icon: Calendar },
+    { label: 'End Date', value: dates.endDate, sub: 'End of year', icon: Calendar },
   ];
 
 
