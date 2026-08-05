@@ -696,6 +696,47 @@ export default function QuickPaymentModal({
           color: var(--text-muted);
           text-transform: uppercase;
         }
+        .qc-type-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+        .qc-payment-methods {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 20px;
+          margin-top: 6px;
+        }
+        @media (max-width: 480px) {
+          .qc-modal-backdrop {
+            align-items: flex-end;
+            padding: 0;
+          }
+          .qc-modal-card {
+            max-width: none;
+            border-radius: 16px 16px 0 0;
+            max-height: 92vh;
+          }
+          .qc-form-body {
+            max-height: calc(92vh - 110px);
+            padding: 12px 16px;
+          }
+          .qc-type-grid {
+            grid-template-columns: 1fr;
+          }
+          .qc-pills-row {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          .qc-payment-methods {
+            gap: 12px 16px;
+          }
+          .qc-bottom-banner {
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 10px 16px;
+          }
+        }
       `}</style>
 
       <div className="qc-modal-card" onClick={(e) => e.stopPropagation()}>
@@ -733,7 +774,7 @@ export default function QuickPaymentModal({
 
           <div className="qc-field" style={{ marginBottom: '12px' }}>
             <label className="qc-label">Payment Method</label>
-            <div style={{ display: 'flex', gap: '20px', marginTop: '6px' }}>
+            <div className="qc-payment-methods">
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-primary)' }}>
                 <input
                   type="radio"
@@ -761,7 +802,7 @@ export default function QuickPaymentModal({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }}>
+          <div className="qc-type-grid">
             <div className="qc-field">
               <label className="qc-label">Type</label>
               <div className="qc-input-box">

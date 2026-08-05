@@ -1741,6 +1741,12 @@
     width: 24px;
   }
 
+  .onboard-stepper-label {
+    font-size: 10px;
+    line-height: 1.2;
+    word-break: break-word;
+  }
+
   .onboard-question-item {
     flex-direction: column;
     align-items: flex-start;
