@@ -1473,8 +1473,12 @@ function enrichFinancialPayload(payload = {}) {
   } : {};
 
   const method = payload.method || (payload.paymentMethodType === 'us_bank_account' ? 'Bank Transfer' : 'Stripe');
-  const typeVal = payload.paymentType || payload.type || 'Membership';
-  const subTypeVal = payload.subType || 'Family Membership';
+  const rawType = String(payload.paymentType || payload.type || '').toLowerCase();
+  const rawSubType = String(payload.subType || '').toLowerCase();
+  const isMembershipPayload = rawType.includes('member') || rawType.includes('campaign') || rawSubType.includes('member') || !payload.paymentType;
+
+  const typeVal = isMembershipPayload ? 'Campaign' : (payload.paymentType || payload.type || 'Campaign');
+  const subTypeVal = isMembershipPayload ? 'Membership' : (payload.subType || 'Membership');
 
   return {
     ...payload,
@@ -1482,8 +1486,11 @@ function enrichFinancialPayload(payload = {}) {
     type: typeVal,
     paymentType: typeVal,
     OneCRM__Type__c: typeVal,
+    Type: typeVal,
     subType: subTypeVal,
+    paymentSubType: subTypeVal,
     OneCRM__Sub_Type__c: subTypeVal,
+    Sub_Type: subTypeVal,
     action,
     method,
     pledgeAmount: pledgeAmount > 0 ? pledgeAmount : 0,
@@ -1567,10 +1574,20 @@ async function getOrCreateStripeCustomer(email) {
 }
 
 async function createStripeCheckoutSession(payload, contactId, email) {
-  const paymentAmount = parseFloat(payload.paymentAmount) || 0;
+  let paymentAmount = parseFloat(payload.paymentAmount) || 0;
+  // Temporary live-test override: set STRIPE_FORCE_CHECKOUT_AMOUNT=1 in .env, then remove when done.
+  const forcedCheckoutAmount = parseFloat(process.env.STRIPE_FORCE_CHECKOUT_AMOUNT);
+  if (Number.isFinite(forcedCheckoutAmount) && forcedCheckoutAmount > 0) {
+    console.warn(`[STRIPE] Forcing checkout amount $${paymentAmount} → $${forcedCheckoutAmount} (STRIPE_FORCE_CHECKOUT_AMOUNT)`);
+    paymentAmount = forcedCheckoutAmount;
+  }
   const isRecurring = payload.billingMode === 'recurring';
   const checkoutLabel = [payload.paymentType, payload.subType].filter(Boolean).join(' — ');
-  const metadata = buildStripeCheckoutMetadata(payload, contactId, email);
+  const metadata = buildStripeCheckoutMetadata(
+    { ...payload, paymentAmount },
+    contactId,
+    email,
+  );
 
   const paymentMethodType = payload.paymentMethodType || 'card';
   const paymentMethodTypes = paymentMethodType === 'us_bank_account' ? ['us_bank_account'] : ['card'];
