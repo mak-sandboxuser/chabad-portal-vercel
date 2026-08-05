@@ -417,7 +417,7 @@ export default function ProfilePage({
                 <h4 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '14px', color: 'var(--text-primary)' }}>
                   Select Membership Tier:
                 </h4>
-                <div className="membership-tier-grid">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
                   {MEMBERSHIP_TIERS.map((tier) => {
                     const isSelected = selectedGroup === tier.name;
                     return (

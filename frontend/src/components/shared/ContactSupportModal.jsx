@@ -210,38 +210,6 @@ export default function ContactSupportModal({ open, onClose, user, sfData }) {
           align-items: center;
           gap: 5px;
         }
-        @media (max-width: 540px) {
-          .cs-backdrop {
-            align-items: flex-end;
-            padding: 0;
-          }
-          .cs-modal {
-            max-width: none;
-            border-radius: 16px 16px 0 0;
-            max-height: 92vh;
-            overflow-y: auto;
-          }
-          .cs-header {
-            padding: 16px 18px 12px;
-          }
-          .cs-header p {
-            display: none;
-          }
-          .cs-body {
-            padding: 16px 18px 20px;
-          }
-          .cs-row {
-            grid-template-columns: 1fr;
-          }
-          .cs-footer {
-            flex-direction: column;
-            align-items: stretch;
-          }
-          .cs-submit {
-            justify-content: center;
-            width: 100%;
-          }
-        }
       `}</style>
 
       <div className="cs-modal" onClick={(e) => e.stopPropagation()}>

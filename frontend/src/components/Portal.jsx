@@ -66,30 +66,6 @@ export default function Portal({ user, getAuthToken, onLogout }) {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  useEffect(() => {
-    if (!sidebarOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [sidebarOpen]);
-
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setSidebarOpen(false);
-    };
-    const handleResize = () => {
-      if (window.innerWidth > 768) setSidebarOpen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
-
   const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   const paymentsDisabled = isGuestUser(sfData);
 
@@ -268,15 +244,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
   }
 
   return (
-    <div className={`portal-layout${sidebarOpen ? ' sidebar-open' : ''}`}>
-      {sidebarOpen && (
-        <button
-          type="button"
-          className="sidebar-backdrop"
-          aria-label="Close navigation menu"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+    <div className="portal-layout">
       <PortalSidebar
         activeTab={activeTab}
         onNavigate={handleNavigate}
@@ -290,14 +258,8 @@ export default function Portal({ user, getAuthToken, onLogout }) {
       <main className="portal-content">
         {/* Header */}
         <header className="portal-header">
-          <div className="portal-header-left">
-            <button
-              type="button"
-              className="mobile-toggle"
-              onClick={toggleSidebar}
-              aria-label={sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}
-              aria-expanded={sidebarOpen}
-            >
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <button className="mobile-toggle" onClick={toggleSidebar}>
               {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
             <div className="header-title">
@@ -305,7 +267,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
             </div>
           </div>
 
-          <div className="portal-header-actions">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             {/* HIDDEN: Notifications header bell (kept for later)
             <button
               type="button"
@@ -328,14 +290,14 @@ export default function Portal({ user, getAuthToken, onLogout }) {
               <div className="avatar">
                 {getInitials(user?.email)}
               </div>
-              <div className="user-info">
+              <div className="user-info" style={{ display: 'flex' }}>
                 <span className="user-email">{sfData?.name || user?.email}</span>
                 <span className="user-role">{isGuestUser(sfData) ? 'Guest' : (user?.role || 'Member')}</span>
               </div>
             </div>
             <button type="button" className="btn btn-secondary portal-signout" onClick={onLogout}>
               <LogOut size={16} />
-              <span>Sign Out</span>
+              Sign Out
             </button>
           </div>
         </header>
@@ -520,20 +482,20 @@ export default function Portal({ user, getAuthToken, onLogout }) {
                 <h2>Help & Support</h2>
                 <p>Get assistance with your membership portal, billing, or household account.</p>
               </div>
-              <div className="help-support-grid">
-                <div className="glass-panel help-support-card">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+                <div className="glass-panel" style={{ padding: '28px' }}>
                   <Mail size={22} style={{ color: 'var(--color-accent)', marginBottom: '12px' }} />
                   <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Email Support</h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: 1.5 }}>Send us a message and we&apos;ll respond within one business day.</p>
-                  <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--color-accent)', fontWeight: 600, fontSize: '14px', wordBreak: 'break-word' }}>{SUPPORT_EMAIL}</a>
+                  <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--color-accent)', fontWeight: 600, fontSize: '14px' }}>{SUPPORT_EMAIL}</a>
                 </div>
-                <div className="glass-panel help-support-card">
+                <div className="glass-panel" style={{ padding: '28px' }}>
                   <Phone size={22} style={{ color: 'var(--color-accent)', marginBottom: '12px' }} />
                   <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Phone Support</h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: 1.5 }}>Call our office during business hours for immediate assistance.</p>
                   <a href={`tel:${SUPPORT_PHONE_TEL}`} style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '14px' }}>{SUPPORT_PHONE_DISPLAY}</a>
                 </div>
-                <div className="glass-panel help-support-card">
+                <div className="glass-panel" style={{ padding: '28px' }}>
                   <Headphones size={22} style={{ color: 'var(--color-accent)', marginBottom: '12px' }} />
                   <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Contact Support</h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: 1.5 }}>We&apos;re here to help you with any questions about your account.</p>

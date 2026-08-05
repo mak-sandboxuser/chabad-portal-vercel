@@ -150,11 +150,11 @@ export default function MemberDetailsPage({
       </div>
 
       {/* Section 1: General Details */}
-      <div className="member-details-card glass-panel">
+      <div className="member-details-card glass-panel" style={{ marginBottom: '24px', padding: '24px' }}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', fontSize: '18px', color: 'var(--color-primary)' }}>
           <User size={20} /> General Details
         </h3>
-        <div className="member-details-fields-grid">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
           {[
             { label: 'Salutation', value: memberForm.title },
             { label: 'First Name', value: memberForm.firstName },
@@ -181,11 +181,11 @@ export default function MemberDetailsPage({
       </div>
 
       {/* Section 2: Contact & Address Details */}
-      <div className="member-details-card glass-panel">
+      <div className="member-details-card glass-panel" style={{ marginBottom: '24px', padding: '24px' }}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', fontSize: '18px', color: 'var(--color-primary)' }}>
           <MapPin size={20} /> Contact & Address Details
         </h3>
-        <div className="member-details-fields-grid">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
           {[
             { label: 'Email Address', value: memberForm.email },
             { label: 'Mobile Number', value: memberForm.phone },
@@ -205,11 +205,11 @@ export default function MemberDetailsPage({
       </div>
 
       {/* Section 3: Personal & Hebrew Details */}
-      <div className="member-details-card glass-panel">
+      <div className="member-details-card glass-panel" style={{ marginBottom: '24px', padding: '24px' }}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', fontSize: '18px', color: 'var(--color-primary)' }}>
           <Heart size={20} /> Personal Information
         </h3>
-        <div className="member-details-fields-grid">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
           {[
             { label: 'Hebrew Name', value: memberForm.hebrewName },
             { label: "Father's Hebrew Name", value: memberForm.fathersHebrewName },
