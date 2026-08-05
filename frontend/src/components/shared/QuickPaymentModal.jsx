@@ -8,8 +8,8 @@ import { ALL_MEMBERSHIP_TIERS } from '../../onboard/data/membershipTiers';
 import { getMembership, getRecurring, parseMoney } from '../../utils/portalData';
 
 const TYPE_OPTIONS = [
+  { id: 'Campaign', label: 'Campaign' },
   { id: 'Donation', label: 'Donation' },
-  { id: 'Membership', label: 'Membership' },
 ];
 
 const MEMBERSHIP_SUB_TYPES = ALL_MEMBERSHIP_TIERS.map((tier) => ({
@@ -18,6 +18,11 @@ const MEMBERSHIP_SUB_TYPES = ALL_MEMBERSHIP_TIERS.map((tier) => ({
 }));
 
 const SUB_TYPES = {
+  Campaign: [
+    { id: 'Membership', label: 'Membership' },
+    { id: 'Building Campaign', label: 'Building Campaign' },
+    { id: 'Capital Campaign', label: 'Capital Campaign' },
+  ],
   Donation: [
     { id: 'General Donation', label: 'General Donation' },
     { id: 'Holiday Contribution', label: 'Holiday Contribution' },
@@ -25,7 +30,6 @@ const SUB_TYPES = {
     { id: 'Administration', label: 'Administration' },
     { id: 'Miscellaneous', label: 'Miscellaneous' },
   ],
-  Membership: MEMBERSHIP_SUB_TYPES,
 };
 
 const DEDICATION_TYPES = [
@@ -160,10 +164,10 @@ export default function QuickPaymentModal({
   const [paymentMethodType, setPaymentMethodType] = useState('us_bank_account'); // 'card' or 'us_bank_account'
   const amountInputRef = useRef(null);
 
-  const isMembership = paymentType === 'Membership';
+  const isMembership = (paymentType === 'Campaign' && subType === 'Membership') || paymentType === 'Membership';
 
-  const applyMembershipAmount = (nextSubType, nextFrequency) => {
-    const tier = findMembershipTier(nextSubType);
+  const applyMembershipAmount = (tierName, nextFrequency) => {
+    const tier = findMembershipTier(tierName || defaultSubType || groups || sfData?.account?.groups || 'Family Membership');
     if (!tier) return;
     const nextAmount = getMembershipPaymentAmount(tier.annualPrice, nextFrequency);
     if (nextAmount > 0) setAmount(nextAmount.toFixed(2));
@@ -172,11 +176,19 @@ export default function QuickPaymentModal({
   useEffect(() => {
     if (!open) return;
 
-    const nextType = defaultType || 'Donation';
+    let nextType = defaultType || 'Campaign';
+    let nextSubType = defaultSubType || 'Membership';
+
+    if (nextType === 'Membership') {
+      nextType = 'Campaign';
+      nextSubType = 'Membership';
+    }
+
     const nextBillingMode = defaultBillingMode === 'recurring' ? 'recurring' : 'one-time';
 
     setBillingMode(nextBillingMode);
     setPaymentType(nextType);
+    setSubType(nextSubType);
     setStartDate(todayIsoDate());
     setDedicationType(readOnly ? 'None' : 'In Honor Of');
     setDedicationName('');
@@ -184,26 +196,23 @@ export default function QuickPaymentModal({
     setPaymentMethodType('us_bank_account');
     setLoading(false);
 
-    if (nextType === 'Membership') {
+    if (nextType === 'Campaign' && nextSubType === 'Membership') {
       const membershipDefaults = resolveMembershipDefaults({
         sfData,
-        defaultSubType,
+        defaultSubType: defaultSubType === 'Membership' ? null : defaultSubType,
         groups,
         defaultAmount,
         defaultFrequency,
       });
-      setSubType(membershipDefaults.subType);
       setFrequency(membershipDefaults.frequency);
       setAmount(membershipDefaults.amount);
       if (nextBillingMode === 'one-time' && !defaultFrequency) {
-        // Keep one-time amount as full annual when opened as one-time membership pay.
         const tier = findMembershipTier(membershipDefaults.subType);
         if (tier && !defaultAmount) {
           setAmount(tier.annualPrice.toFixed(2));
         }
       }
     } else {
-      setSubType(defaultSubType || 'General Donation');
       setAmount(defaultAmount || '100.00');
       setFrequency(defaultFrequency || 'Monthly');
     }
@@ -213,7 +222,8 @@ export default function QuickPaymentModal({
 
   const handleTypeChange = (typeVal) => {
     setPaymentType(typeVal);
-    if (typeVal === 'Membership') {
+    if (typeVal === 'Campaign') {
+      setSubType('Membership');
       const membershipDefaults = resolveMembershipDefaults({
         sfData,
         defaultSubType,
@@ -221,7 +231,6 @@ export default function QuickPaymentModal({
         defaultAmount,
         defaultFrequency: frequency,
       });
-      setSubType(membershipDefaults.subType);
       setFrequency(membershipDefaults.frequency);
       setAmount(membershipDefaults.amount);
       return;
@@ -236,15 +245,15 @@ export default function QuickPaymentModal({
 
   const handleSubTypeChange = (nextSubType) => {
     setSubType(nextSubType);
-    if (paymentType === 'Membership') {
-      applyMembershipAmount(nextSubType, frequency);
+    if ((paymentType === 'Campaign' && nextSubType === 'Membership') || paymentType === 'Membership') {
+      applyMembershipAmount(defaultSubType || groups || 'Family Membership', frequency);
     }
   };
 
   const handleFrequencyChange = (nextFrequency) => {
     setFrequency(nextFrequency);
-    if (paymentType === 'Membership') {
-      applyMembershipAmount(subType, nextFrequency);
+    if ((paymentType === 'Campaign' && subType === 'Membership') || paymentType === 'Membership') {
+      applyMembershipAmount(defaultSubType || groups || 'Family Membership', nextFrequency);
     }
   };
 
@@ -269,6 +278,9 @@ export default function QuickPaymentModal({
 
     setLoading(true);
     try {
+      const payloadType = paymentType === 'Membership' ? 'Campaign' : paymentType;
+      const payloadSubType = paymentType === 'Membership' ? 'Membership' : subType;
+
       const data = await fetchPortalApi('/api/payments/quick-payment', {
         getAuthToken,
         method: 'POST',
@@ -276,9 +288,11 @@ export default function QuickPaymentModal({
           email: user?.email,
           contactId: sfData?.contactId || '',
           accountId: sfData?.accountId || sfData?.account?.id || '',
-          purpose: paymentType === 'Membership' ? `Membership — ${subType}` : subType,
-          paymentType: paymentType,
-          subType: subType,
+          purpose: paymentType === 'Membership' ? `Campaign — Membership` : subType,
+          type: payloadType,
+          paymentType: payloadType,
+          subType: payloadSubType,
+          membershipTier: subType,
           memo: note || dedicationName ? `${dedicationType}: ${dedicationName}. Note: ${note}` : '',
           pledgeAmount: pledgeAmount || 0,
           paymentAmount: parsedAmount,
@@ -682,6 +696,47 @@ export default function QuickPaymentModal({
           color: var(--text-muted);
           text-transform: uppercase;
         }
+        .qc-type-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+        .qc-payment-methods {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 20px;
+          margin-top: 6px;
+        }
+        @media (max-width: 480px) {
+          .qc-modal-backdrop {
+            align-items: flex-end;
+            padding: 0;
+          }
+          .qc-modal-card {
+            max-width: none;
+            border-radius: 16px 16px 0 0;
+            max-height: 92vh;
+          }
+          .qc-form-body {
+            max-height: calc(92vh - 110px);
+            padding: 12px 16px;
+          }
+          .qc-type-grid {
+            grid-template-columns: 1fr;
+          }
+          .qc-pills-row {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          .qc-payment-methods {
+            gap: 12px 16px;
+          }
+          .qc-bottom-banner {
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 10px 16px;
+          }
+        }
       `}</style>
 
       <div className="qc-modal-card" onClick={(e) => e.stopPropagation()}>
@@ -719,7 +774,7 @@ export default function QuickPaymentModal({
 
           <div className="qc-field" style={{ marginBottom: '12px' }}>
             <label className="qc-label">Payment Method</label>
-            <div style={{ display: 'flex', gap: '20px', marginTop: '6px' }}>
+            <div className="qc-payment-methods">
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-primary)' }}>
                 <input
                   type="radio"
@@ -747,7 +802,7 @@ export default function QuickPaymentModal({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }}>
+          <div className="qc-type-grid">
             <div className="qc-field">
               <label className="qc-label">Type</label>
               <div className="qc-input-box">

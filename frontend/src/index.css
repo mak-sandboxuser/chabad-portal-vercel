@@ -1673,6 +1673,7 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   border-bottom: 1px solid var(--border-color);
   background: var(--portal-header-bg);
   backdrop-filter: blur(12px);
@@ -1682,11 +1683,34 @@ h1, h2, h3, h4, h5, h6 {
   z-index: 90;
 }
 
+.portal-header-left,
+.portal-header-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.portal-header-actions {
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.header-title {
+  min-width: 0;
+}
+
 .header-title h1 {
   font-family: var(--font-serif);
   font-size: 22px;
   font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-backdrop {
+  display: none;
 }
 
 .portal-page-shell {
@@ -1852,6 +1876,86 @@ h1, h2, h3, h4, h5, h6 {
 .light-theme .dash-welcome-sketch {
   opacity: 0.62;
   filter: invert(1);
+}
+
+.dash-balance-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  width: 100%;
+}
+
+.dash-balance-card {
+  padding: 28px 30px;
+  min-height: 195px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.dash-balance-card-top,
+.dash-balance-card-footer,
+.dash-balance-card-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dash-balance-card-label {
+  justify-content: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-balance-card-footer {
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.dash-balance-card-footer--actions {
+  border-top: none;
+  padding-top: 4px;
+}
+
+.dash-balance-amount-wrap {
+  margin: 14px 0 6px;
+}
+
+.dash-balance-amount {
+  font-size: 32px;
+  font-weight: 800;
+  font-family: var(--font-heading);
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+  word-break: break-word;
+}
+
+.dash-balance-amount--success {
+  color: #10b981;
+}
+
+.dash-balance-amount--danger {
+  color: #ef4444;
+}
+
+.dash-balance-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.dash-balance-meta--success {
+  color: #10b981;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .dash-stat-row {
@@ -2365,6 +2469,14 @@ h1, h2, h3, h4, h5, h6 {
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   }
 
+  .dash-balance-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-balance-row .dash-balance-card:last-child {
+    grid-column: 1 / -1;
+  }
+
   .dash-stat-row {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -2376,17 +2488,53 @@ h1, h2, h3, h4, h5, h6 {
 
 @media (max-width: 768px) {
   .dash-stat-row,
-  .dash-split-row {
+  .dash-split-row,
+  .dash-balance-row {
     grid-template-columns: 1fr;
+  }
+
+  .dash-balance-row .dash-balance-card:last-child {
+    grid-column: auto;
+  }
+
+  .dash-welcome-card {
+    padding: 28px 22px;
+    min-height: 150px;
   }
 
   .dash-welcome-text {
     max-width: 100%;
   }
 
+  .dash-welcome-text h2 {
+    font-size: 22px;
+  }
+
   .dash-welcome-sketch {
-    width: 200px;
-    opacity: 0.25;
+    width: 180px;
+    opacity: 0.22;
+  }
+
+  .dash-balance-card {
+    padding: 22px 20px;
+    min-height: 0;
+  }
+
+  .dash-balance-amount {
+    font-size: 28px;
+  }
+
+  .dash-balance-card-top {
+    flex-wrap: wrap;
+  }
+
+  .dash-balance-card-footer--actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dash-card-title {
+    font-size: 13px;
   }
 }
 
@@ -2733,6 +2881,314 @@ h1, h2, h3, h4, h5, h6 {
 
 .light-theme .portal-page-hero-sketch {
   filter: invert(1);
+}
+
+/* Renewed Membership Banner (Shown before 1st September) */
+.renewed-membership-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #f0f6ff 0%, #e0edff 100%);
+  border: 1px solid #bfdbfe;
+  border-left: 5px solid #2563eb;
+  border-radius: 20px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  box-shadow: 0 10px 30px rgba(37, 99, 235, 0.07);
+  color: #0f172a;
+  gap: 24px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+[data-theme="dark"] .renewed-membership-banner,
+.qc-theme-dark .renewed-membership-banner {
+  background: linear-gradient(135deg, #0b1d3a 0%, #0f2b57 100%);
+  border-color: #1e40af;
+  border-left-color: #3b82f6;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  color: #f8fafc;
+}
+
+.renewed-banner-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  flex: 1;
+}
+
+.renewed-banner-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+  height: 90px;
+  flex-shrink: 0;
+}
+
+.renewed-banner-shield-circle {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: #dbeafe;
+  border: 3px solid #ffffff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.15);
+}
+
+[data-theme="dark"] .renewed-banner-shield-circle {
+  background: #1e3a8a;
+  border-color: #1e293b;
+  color: #60a5fa;
+}
+
+.renewed-banner-sparkle {
+  position: absolute;
+  color: #93c5fd;
+  font-size: 11px;
+  user-select: none;
+  animation: pulseSparkle 2s infinite alternate;
+}
+
+.sp-top-left { top: 2px; left: 10px; }
+.sp-top-right { top: 6px; right: 10px; animation-delay: 0.5s; }
+.sp-bottom-left { bottom: 8px; left: 6px; animation-delay: 1s; }
+.sp-bottom-right { bottom: 4px; right: 12px; animation-delay: 1.5s; }
+
+@keyframes pulseSparkle {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.2); opacity: 1; }
+}
+
+.renewed-banner-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.renewed-banner-title {
+  font-family: var(--font-sans, sans-serif);
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+}
+
+[data-theme="dark"] .renewed-banner-title {
+  color: #f8fafc;
+}
+
+.renewed-banner-sub {
+  font-size: 14px;
+  color: #475569;
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+  max-width: 520px;
+}
+
+[data-theme="dark"] .renewed-banner-sub {
+  color: #94a3b8;
+}
+
+.renewed-banner-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(219, 234, 254, 0.65);
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 10px 16px;
+  max-width: fit-content;
+}
+
+[data-theme="dark"] .renewed-banner-pill {
+  background: rgba(30, 58, 138, 0.45);
+  border-color: #1e40af;
+}
+
+.renewed-pill-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .renewed-pill-icon {
+  background: #3b82f6;
+}
+
+.renewed-pill-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.renewed-pill-text strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+[data-theme="dark"] .renewed-pill-text strong {
+  color: #60a5fa;
+}
+
+.renewed-pill-text span {
+  font-size: 12px;
+  color: #475569;
+}
+
+[data-theme="dark"] .renewed-pill-text span {
+  color: #cbd5e1;
+}
+
+.renewed-banner-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-left: 20px;
+}
+
+.renewed-right-divider {
+  width: 1px;
+  height: 90px;
+  background: #cbd5e1;
+}
+
+[data-theme="dark"] .renewed-right-divider {
+  background: #334155;
+}
+
+.renewed-right-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 180px;
+}
+
+.renewed-right-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-theme="dark"] .renewed-right-badge {
+  background: #1e3a8a;
+  color: #60a5fa;
+}
+
+.renewed-right-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0;
+  line-height: 1.35;
+}
+
+[data-theme="dark"] .renewed-right-text {
+  color: #cbd5e1;
+}
+
+.renewed-script-note {
+  font-family: 'Caveat', 'Dancing Script', cursive, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1d4ed8;
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+
+[data-theme="dark"] .renewed-script-note {
+  color: #60a5fa;
+}
+
+@media (max-width: 900px) {
+  .renewed-membership-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 20px;
+  }
+  .renewed-banner-right {
+    padding-left: 0;
+    width: 100%;
+  }
+  .renewed-right-divider {
+    display: none;
+  }
+}
+
+.expired-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.expired-renew-btn {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-radius: 10px !important;
+  padding: 10px 20px !important;
+  font-weight: 700 !important;
+  font-size: 13.5px !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25) !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: transform 0.2s, background 0.2s !important;
+}
+
+.expired-renew-btn:hover {
+  background: #1d4ed8 !important;
+  transform: translateY(-1px) !important;
+}
+
+.expired-learn-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 13.5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.expired-learn-more:hover {
+  text-decoration: underline;
+}
+
+.text-danger-red {
+  color: #ef4444 !important;
+}
+
+.badge-expired-pill {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.25) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 2px 8px !important;
+  border-radius: 6px !important;
+  display: inline-block !important;
+  margin-left: 8px !important;
 }
 
 .portal-page-meta-bar {
@@ -4048,33 +4504,148 @@ h1, h2, h3, h4, h5, h6 {
   border: none;
   color: var(--text-primary);
   cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
   .portal-sidebar {
     transform: translateX(-100%);
     transition: var(--transition-smooth);
+    box-shadow: none;
   }
   
   .portal-sidebar.open {
     transform: translateX(0);
+    box-shadow: 16px 0 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    border: none;
+    padding: 0;
+    margin: 0;
+    background: rgba(6, 11, 22, 0.55);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 95;
+    cursor: pointer;
   }
   
   .portal-content {
     margin-left: 0;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
   
   .portal-header {
-    padding: 0 24px;
+    padding: 0 16px;
+  }
+
+  .portal-header-actions {
+    gap: 10px;
+  }
+
+  .header-title h1 {
+    font-size: 18px;
   }
   
   .mobile-toggle {
     display: block;
-    margin-right: 16px;
+    margin-right: 10px;
   }
   
   .dashboard-grid {
-    padding: 24px;
+    padding: 16px;
+  }
+
+  .portal-page-shell,
+  .portal-page-intro {
+    gap: 16px;
+  }
+
+  .portal-page-intro {
+    padding: 20px;
+  }
+
+  .portal-page-intro h2 {
+    font-size: 18px;
+  }
+
+  .quick-pay-presets {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .quick-pay-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .table-wrapper,
+  .crm-table-wrap,
+  .add-family-search-table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .add-family-modal {
+    width: calc(100vw - 16px);
+    max-height: 94vh;
+    padding: 20px 16px 18px;
+  }
+
+  .add-family-col-street,
+  .add-family-col-city {
+    display: none;
+  }
+
+  .toast-host {
+    top: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .portal-header {
+    padding: 0 12px;
+  }
+
+  .dashboard-grid {
+    padding: 12px;
+  }
+
+  .dash-welcome-card {
+    padding: 22px 16px;
+  }
+
+  .dash-welcome-text h2 {
+    font-size: 20px;
+  }
+
+  .dash-welcome-text p {
+    font-size: 13px;
+  }
+
+  .dash-balance-amount {
+    font-size: 26px;
+  }
+
+  .portal-signout {
+    padding: 8px;
+  }
+
+  .avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
+  }
+
+  .members-table th,
+  .members-table td,
+  .dash-table th,
+  .dash-table td {
+    padding: 10px 8px;
+    font-size: 12px;
   }
 }
 
@@ -5451,4 +6022,44 @@ h1, h2, h3, h4, h5, h6 {
 
 .light-theme .crm-contact-link {
   color: #0176d3;
+}
+
+.help-support-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 24px;
+}
+
+.help-support-card {
+  padding: 28px;
+  min-width: 0;
+}
+
+.membership-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 16px;
+}
+
+.member-details-card {
+  margin-bottom: 24px;
+  padding: 24px;
+}
+
+.member-details-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .member-details-card {
+    padding: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .help-support-card {
+    padding: 20px;
+  }
 }

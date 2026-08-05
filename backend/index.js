@@ -1473,8 +1473,12 @@ function enrichFinancialPayload(payload = {}) {
   } : {};
 
   const method = payload.method || (payload.paymentMethodType === 'us_bank_account' ? 'Bank Transfer' : 'Stripe');
-  const typeVal = payload.paymentType || payload.type || 'Membership';
-  const subTypeVal = payload.subType || 'Family Membership';
+  const rawType = String(payload.paymentType || payload.type || '').toLowerCase();
+  const rawSubType = String(payload.subType || '').toLowerCase();
+  const isMembershipPayload = rawType.includes('member') || rawType.includes('campaign') || rawSubType.includes('member') || !payload.paymentType;
+
+  const typeVal = isMembershipPayload ? 'Campaign' : (payload.paymentType || payload.type || 'Campaign');
+  const subTypeVal = isMembershipPayload ? 'Membership' : (payload.subType || 'Membership');
 
   return {
     ...payload,
@@ -1482,8 +1486,11 @@ function enrichFinancialPayload(payload = {}) {
     type: typeVal,
     paymentType: typeVal,
     OneCRM__Type__c: typeVal,
+    Type: typeVal,
     subType: subTypeVal,
+    paymentSubType: subTypeVal,
     OneCRM__Sub_Type__c: subTypeVal,
+    Sub_Type: subTypeVal,
     action,
     method,
     pledgeAmount: pledgeAmount > 0 ? pledgeAmount : 0,

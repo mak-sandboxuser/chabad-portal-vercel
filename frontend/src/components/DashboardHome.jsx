@@ -82,12 +82,12 @@ export default function DashboardHome({
         </div>
 
         {/* 3 Executive Summary Cards */}
-        <div className="dash-balance-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '22px', width: '100%' }}>
+        <div className="dash-balance-row">
           
           {/* Card 1: Total Contributed YTD */}
-          <div className="dash-balance-card glass-panel dash-card-fancy" style={{ padding: '28px 30px', minHeight: '195px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="dash-balance-card glass-panel dash-card-fancy">
+            <div className="dash-balance-card-top">
+              <div className="dash-balance-card-label">
                 <div className="dash-icon-wrapper gold-glow">
                   <TrendingUp size={18} />
                 </div>
@@ -98,22 +98,22 @@ export default function DashboardHome({
               </span>
             </div>
 
-            <div style={{ margin: '14px 0 6px 0' }}>
-              <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: '#10b981', letterSpacing: '-0.5px' }}>
+            <div className="dash-balance-amount-wrap">
+              <div className="dash-balance-amount dash-balance-amount--success">
                 {contributedYtd}
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Since 2023 To Till Date</span>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Synced from CRM</span>
+            <div className="dash-balance-card-footer">
+              <span className="dash-balance-meta">Since 2023 To Till Date</span>
+              <span className="dash-balance-meta">Synced from CRM</span>
             </div>
           </div>
 
           {/* Card 2: Outstanding Balance */}
-          <div className="dash-balance-card glass-panel dash-card-fancy" style={{ padding: '28px 30px', minHeight: '195px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="dash-balance-card glass-panel dash-card-fancy">
+            <div className="dash-balance-card-top">
+              <div className="dash-balance-card-label">
                 <div className="dash-icon-wrapper red-glow">
                   <DollarSign size={18} />
                 </div>
@@ -124,14 +124,14 @@ export default function DashboardHome({
               </span>
             </div>
 
-            <div style={{ margin: '14px 0 6px 0' }}>
-              <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: '#ef4444', letterSpacing: '-0.5px' }}>
+            <div className="dash-balance-amount-wrap">
+              <div className="dash-balance-amount dash-balance-amount--danger">
                 {formatMoney(summary.outstanding)}
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            <div className="dash-balance-card-footer dash-balance-card-footer--actions">
+              <span className="dash-balance-meta">
                 {schedule.nextPaymentDate ? `Due on ${schedule.nextPaymentDateDisplay}` : 'No due date scheduled'}
               </span>
               {canPayNow && (
@@ -147,9 +147,9 @@ export default function DashboardHome({
           </div>
 
           {/* Card 3: Next Scheduled Contribution */}
-          <div className="dash-balance-card glass-panel dash-card-fancy" style={{ padding: '28px 30px', minHeight: '195px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="dash-balance-card glass-panel dash-card-fancy">
+            <div className="dash-balance-card-top">
+              <div className="dash-balance-card-label">
                 <div className="dash-icon-wrapper blue-glow">
                   <Calendar size={18} />
                 </div>
@@ -162,17 +162,17 @@ export default function DashboardHome({
               )}
             </div>
 
-            <div style={{ margin: '14px 0 6px 0' }}>
-              <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+            <div className="dash-balance-amount-wrap">
+              <div className="dash-balance-amount">
                 {schedule.nextPaymentAmountDisplay}
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            <div className="dash-balance-card-footer">
+              <span className="dash-balance-meta">
                 {schedule.nextPaymentDate ? `Scheduled: ${schedule.nextPaymentDateDisplay}` : 'No scheduled billing'}
               </span>
-              <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span className="dash-balance-meta dash-balance-meta--success">
                 <ShieldCheck size={14} /> Auto-pay
               </span>
             </div>
