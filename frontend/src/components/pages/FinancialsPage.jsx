@@ -131,39 +131,41 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
                       );
                     }
 
-                    const detectPaymentTypeAndSubType = (pledgeName = '') => {
+                    const detectPaymentTypeAndSubType = (pledgeRow = {}) => {
+                      const pledgeName = pledgeRow.name || pledgeRow.purpose || '';
+                      const rawSubType = pledgeRow.subType || pledgeRow.purpose || pledgeRow.name || '';
                       const name = pledgeName.trim().toLowerCase();
                       if (name.includes('tuition')) {
-                        return { type: 'Payment', subType: 'Hebrew School Tuition' };
+                        return { type: 'Payment', subType: rawSubType || 'Hebrew School Tuition' };
                       }
                       if (name.includes('event')) {
-                        return { type: 'Payment', subType: 'Event Registration' };
+                        return { type: 'Payment', subType: rawSubType || 'Event Registration' };
                       }
                       if (name.includes('camp')) {
-                        return { type: 'Payment', subType: 'Camp Bedford' };
+                        return { type: 'Payment', subType: rawSubType || 'Camp Bedford' };
                       }
                       if (name.includes('membership')) {
-                        return { type: 'Pledge', subType: 'Annual Membership' };
+                        return { type: 'Membership', subType: rawSubType || 'Family Membership' };
                       }
                       if (name.includes('building')) {
-                        return { type: 'Pledge', subType: 'Building Campaign' };
+                        return { type: 'Pledge', subType: rawSubType || 'Building Campaign' };
                       }
                       if (name.includes('capital')) {
-                        return { type: 'Pledge', subType: 'Capital Campaign' };
+                        return { type: 'Pledge', subType: rawSubType || 'Capital Campaign' };
                       }
                       if (name.includes('holiday')) {
-                        return { type: 'Donation', subType: 'Holiday Contribution' };
+                        return { type: 'Donation', subType: rawSubType || 'Holiday Contribution' };
                       }
                       if (name.includes('yizkor')) {
-                        return { type: 'Donation', subType: 'Yizkor' };
+                        return { type: 'Donation', subType: rawSubType || 'Yizkor' };
                       }
                       if (name.includes('chai')) {
-                        return { type: 'Donation', subType: 'Chai Club' };
+                        return { type: 'Donation', subType: rawSubType || 'Chai Club' };
                       }
-                      return { type: 'Donation', subType: 'General Donation' };
+                      return { type: 'Donation', subType: rawSubType || 'General Donation' };
                     };
 
-                    const matched = detectPaymentTypeAndSubType(row.name);
+                    const matched = detectPaymentTypeAndSubType(row);
 
                     if (!canPayNow) {
                       return <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Scheduled</span>;

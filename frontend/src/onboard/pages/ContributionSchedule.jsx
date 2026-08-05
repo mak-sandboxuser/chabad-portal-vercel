@@ -263,12 +263,12 @@ export default function ContributionSchedule() {
           pledgeAmount={selectedMembershipTier.annualPrice}
           defaultAmount={paymentAmount.toFixed(2)}
           defaultType="Membership"
-          defaultSubType={selectedMembershipTier.name}
+          defaultSubType={selectedMembershipTier.sfGroup || selectedMembershipTier.name}
           defaultBillingMode={billingMode === 'recurring' ? 'recurring' : 'one-time'}
           defaultFrequency={frequency}
           defaultMemo={`Onboarding Membership Selection: ${selectedMembershipTier.name} (${option.title})`}
           source="onboarding"
-          groups={selectedMembershipTier.name}
+          groups={selectedMembershipTier.sfGroup || selectedMembershipTier.name}
           readOnly={true}
           theme={theme}
         />

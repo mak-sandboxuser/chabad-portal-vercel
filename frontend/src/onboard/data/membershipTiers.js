@@ -11,6 +11,7 @@ export const GENERAL_TIERS = [
   {
     id: 'family',
     name: 'Family Membership',
+    sfGroup: 'Family Membership 26-27 (Household) (Household)',
     description: 'Perfect for families who want to be actively involved in our community and programs.',
     annualPrice: 2244,
     icon: Users,
@@ -19,6 +20,7 @@ export const GENERAL_TIERS = [
   {
     id: 'upgraded',
     name: 'Upgraded Membership',
+    sfGroup: 'Upgraded Membership 26-27 (Household) (Household)',
     description: 'Enhanced benefits and opportunities for deeper engagement and impact.',
     annualPrice: 3000,
     icon: Star,
@@ -27,6 +29,7 @@ export const GENERAL_TIERS = [
   {
     id: 'single-parent',
     name: 'Single Parent Family',
+    sfGroup: 'Membership 26-27 (Household)',
     description: 'Supporting single parents and their children in our community.',
     annualPrice: 1560,
     icon: Users2,
@@ -35,6 +38,7 @@ export const GENERAL_TIERS = [
   {
     id: 'single',
     name: 'Single Membership',
+    sfGroup: 'Single Membership 26-27 (Household) (Household)',
     description: 'For individuals seeking connection and Jewish life enrichment.',
     annualPrice: 1128,
     icon: User,
@@ -43,6 +47,7 @@ export const GENERAL_TIERS = [
   {
     id: 'senior',
     name: 'Senior Citizen Membership',
+    sfGroup: 'Senior Citizen Membership 26-27 (Household) (Household)',
     description: 'Special rate for seniors (65+) to stay engaged and inspired.',
     annualPrice: 1800,
     icon: MenorahIcon,
@@ -54,6 +59,7 @@ export const CHAI_TIERS = [
   {
     id: 'chai-donor',
     name: 'Chai Donor',
+    sfGroup: 'Chai Donor Membership 26-27 (Household) (Household)',
     description: 'Your generosity helps sustain our daily operations and essential programs.',
     annualPrice: 5000,
     isOpenEnded: false,
@@ -64,6 +70,7 @@ export const CHAI_TIERS = [
   {
     id: 'chai-partner',
     name: 'Chai Partner',
+    sfGroup: 'Chai Partner Membership 26-27 (Household) (Household)',
     description: 'Partner with us to expand programs and reach more families.',
     annualPrice: 10000,
     isOpenEnded: false,
@@ -74,6 +81,7 @@ export const CHAI_TIERS = [
   {
     id: 'chai-rabbis-circle',
     name: "Chai Rabbi's Circle",
+    sfGroup: 'Chai Rabbi Circle Membership 26-27 (Household) (Household)',
     description: 'Invest in leadership, education, and inspiring Jewish experiences.',
     annualPrice: 18000,
     isOpenEnded: false,
@@ -84,6 +92,7 @@ export const CHAI_TIERS = [
   {
     id: 'chai-leadership-circle',
     name: 'Chai Leadership Circle',
+    sfGroup: 'Chai Leadership Circle Membership 26-27 (Household) (Household)',
     description: 'Make a transformational impact and help shape the future of our community.',
     annualPrice: 36000,
     isOpenEnded: false,

@@ -317,6 +317,28 @@ export function isGuestUser(sfData) {
 
 export function getMembership(sfData) {
   const membership = sfData?.membership || {};
+  const rawTierCandidate = membership.tier
+    || sfData?.groups
+    || sfData?.profile?.groups
+    || sfData?.account?.groups
+    || '';
+
+  const resolveStandardGroup = (raw = '') => {
+    const s = String(raw || '').toLowerCase().trim();
+    if (!s) return 'Family Membership 26-27 (Household) (Household)';
+    if (s.includes('family membership')) return 'Family Membership 26-27 (Household) (Household)';
+    if (s.includes('upgraded membership')) return 'Upgraded Membership 26-27 (Household) (Household)';
+    if (s.includes('senior citizen')) return 'Senior Citizen Membership 26-27 (Household) (Household)';
+    if (s.includes('single membership')) return 'Single Membership 26-27 (Household) (Household)';
+    if (s.includes('chai donor')) return 'Chai Donor Membership 26-27 (Household) (Household)';
+    if (s.includes('chai partner')) return 'Chai Partner Membership 26-27 (Household) (Household)';
+    if (s.includes('chai rabbi')) return 'Chai Rabbi Circle Membership 26-27 (Household) (Household)';
+    if (s.includes('chai leadership')) return 'Chai Leadership Circle Membership 26-27 (Household) (Household)';
+    if (s.includes('single parent') || s.includes('membership 26-27')) return 'Membership 26-27 (Household)';
+    return raw || 'Family Membership 26-27 (Household) (Household)';
+  };
+
+  const resolvedTier = resolveStandardGroup(rawTierCandidate);
   const pledges = getPledges(sfData);
   const recurring = getRecurring(sfData);
   const payments = getPayments(sfData);
@@ -348,7 +370,7 @@ export function getMembership(sfData) {
     : (membership.annualCommitment || '$0.00');
 
   return {
-    tier: membership.tier || 'Member',
+    tier: resolvedTier,
     status: membership.status || 'Active',
     memberSince: membership.memberSince || sfData?.joinedDate || '',
     renewalDate: membership.renewalDate || membership.endDate || '',

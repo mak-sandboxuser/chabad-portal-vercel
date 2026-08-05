@@ -1473,10 +1473,17 @@ function enrichFinancialPayload(payload = {}) {
   } : {};
 
   const method = payload.method || (payload.paymentMethodType === 'us_bank_account' ? 'Bank Transfer' : 'Stripe');
+  const typeVal = payload.paymentType || payload.type || 'Membership';
+  const subTypeVal = payload.subType || 'Family Membership';
 
   return {
     ...payload,
     ...recurringFields,
+    type: typeVal,
+    paymentType: typeVal,
+    OneCRM__Type__c: typeVal,
+    subType: subTypeVal,
+    OneCRM__Sub_Type__c: subTypeVal,
     action,
     method,
     pledgeAmount: pledgeAmount > 0 ? pledgeAmount : 0,
