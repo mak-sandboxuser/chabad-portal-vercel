@@ -5,7 +5,14 @@ import { Mail, ArrowRight, ShieldAlert, Shield, CheckCircle, HelpCircle, Moon, S
 import BuildingSketch from './shared/BuildingSketch';
 import ChabadLogo from './shared/ChabadLogo';
 import { ONBOARD_PATH } from './onboard/OnboardWelcome';
-import { getPostLoginStepperEntryPath, isPostLoginStepperPending, prepareOnboardingDraftForLogin } from '../onboard/utils/postLoginStepper';
+import {
+  releasePostLoginStepperPending,
+  prepareOnboardingDraftForLogin,
+  markPostLoginStepperPending,
+  getPostLoginStepperEntryPath,
+} from '../onboard/utils/postLoginStepper';
+import { clearDraft, writeThemeCookie } from '../onboard/utils/onboardingCookies';
+import { clearRecentMembershipPayment } from '../utils/portalData';
 import { apiUrl } from '../config/api';
 import { authTrace } from '../utils/authTrace';
 import {
@@ -50,17 +57,20 @@ export default function Login({ initialError = '' }) {
     const root = document.documentElement;
     if (theme === 'light') {
       root.classList.add('light-theme');
+      root.setAttribute('data-theme', 'light');
     } else {
       root.classList.remove('light-theme');
+      root.setAttribute('data-theme', 'dark');
     }
     localStorage.setItem('theme', theme);
+    writeThemeCookie(theme);
   }, [theme]);
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  const UNAUTHORIZED_MSG = 'You are not authorised to login to the member portal.';
+  const UNAUTHORIZED_MSG = 'Please click "Join the Chabad of Bedford Family" button below';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -86,28 +96,49 @@ export default function Login({ initialError = '' }) {
 
       if (!response.ok || data.allowed === false) {
         authTrace('LOGIN_SALESFORCE_DENIED', { email: cleanEmail, message: data.message });
-        throw new Error(data.message || UNAUTHORIZED_MSG);
+        throw new Error(UNAUTHORIZED_MSG);
       }
 
       authTrace('LOGIN_SALESFORCE_OK', { email: cleanEmail, member: data.member?.name });
 
       // Direct Salesforce Login (Clerk authentication commented out)
+      const memberRole = data.member?.role || '';
+      // Make.com often returns groups="" even for established members — do NOT
+      // force the membership stepper from check-member groups alone. True new
+      // guests (solo household / no financials) are routed by Portal after
+      // dashboard data loads. Only explicit Guest role opens the stepper here.
+      const needsMembershipStepper = /^guest$/i.test(memberRole) || memberRole === '';
+
       const userSession = {
         email: cleanEmail,
         name: data.member?.name || data.member?.firstName || cleanEmail.split('@')[0],
         token: data.token,
+        role: needsMembershipStepper ? 'Guest' : (memberRole || 'Member'),
         memberDetails: data.member,
       };
 
       localStorage.setItem('sf_user_session', JSON.stringify(userSession));
-      // Drop any previous applicant's onboarding draft before entering the stepper.
       prepareOnboardingDraftForLogin(cleanEmail);
+
+      if (needsMembershipStepper) {
+        clearRecentMembershipPayment();
+        markPostLoginStepperPending();
+        showToast({ message: `Welcome, ${userSession.name}! Continue your membership application.`, type: 'success' });
+        setTimeout(() => {
+          window.location.replace(getPostLoginStepperEntryPath());
+        }, 300);
+        return;
+      }
+
+      // Do not mark stepper "completed" here — CRM often returns role "Member"
+      // for brand-new pre-login contacts. Portal opens the stepper when
+      // dashboard data confirms they are still a guest (no paid membership).
+      releasePostLoginStepperPending();
+      clearDraft();
       showToast({ message: `Welcome back, ${userSession.name}!`, type: 'success' });
 
       setTimeout(() => {
-        window.location.replace(
-          isPostLoginStepperPending() ? getPostLoginStepperEntryPath() : '/',
-        );
+        window.location.replace('/');
       }, 300);
 
       /* ==========================================================================
@@ -224,7 +255,10 @@ export default function Login({ initialError = '' }) {
   return (
     <div className="chabad-login-layout">
       {/* Top Header */}
-      <header className="chabad-header" style={{ justifyContent: 'flex-end' }}>
+      <header className="chabad-header">
+        <div className="header-brand">
+          <ChabadLogo className="chabad-header-logo" theme={theme} alt="Chabad of Bedford" />
+        </div>
         <div className="header-links">
           <button className="theme-toggle-btn" onClick={toggleTheme} title="Toggle Theme">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
@@ -260,9 +294,7 @@ export default function Login({ initialError = '' }) {
             {!sentTo ? (
               <form onSubmit={handleSubmit} className="login-card-form">
                 <div className="card-top-icon">
-                  <div className="login-logo-ring">
-                    <ChabadLogo className="chabad-logo chabad-logo--login-card" alt="Chabad Bedford" />
-                  </div>
+                  <ChabadLogo className="chabad-logo chabad-logo--login-card" theme={theme} alt="Chabad Bedford" />
                 </div>
 
                 <h2 className="card-title">Sign in to your account</h2>
@@ -309,7 +341,7 @@ export default function Login({ initialError = '' }) {
 
                 <a href={ONBOARD_PATH} className="support-link-btn">
                   <Headphones size={18} className="phone-icon" />
-                  <span>Sign Up</span>
+                  <span>Join the Chabad of Bedford Family</span>
                 </a>
 
                 <div className="passwordless-footer-note">

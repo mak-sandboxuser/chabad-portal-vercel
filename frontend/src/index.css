@@ -530,6 +530,41 @@ h1, h2, h3, h4, h5, h6 {
   max-width: 100%;
 }
 
+.chabad-header-logo {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
+}
+
+.building-sketch,
+.building-sketch-img {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.building-sketch--login {
+  max-width: 460px;
+  width: 100%;
+  margin-top: 20px;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+/* Dark Mode Sketch: soft inverted pencil art on dark backgrounds */
+.theme-dark-sketch {
+  opacity: 0.72;
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(1.05);
+}
+
+/* Light Mode Sketch: natural graphite tones on light backgrounds */
+.theme-light-sketch,
+.light-theme .theme-dark-sketch {
+  opacity: 0.88;
+  filter: none !important;
+}
+
 .features-list {
   list-style: none;
   display: flex;
@@ -636,23 +671,23 @@ h1, h2, h3, h4, h5, h6 {
 
 .light-theme .building-sketch--login {
   opacity: 0.92;
-  filter: invert(1);
+  filter: none;
 }
 
 :not(.light-theme) .building-sketch--login {
-  opacity: 0.85;
-  filter: none;
+  opacity: 0.78;
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(1.05);
 }
 
 :not(.light-theme) .building-sketch {
   opacity: 0.42;
-  filter: brightness(1.15) contrast(0.95);
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(1.05);
 }
 
 .light-theme .building-sketch {
   opacity: 0.78;
   max-width: 540px;
-  filter: invert(1);
+  filter: none;
 }
 
 /* Hide the dark bottom vignette overlay in light theme for a bright layout */
@@ -698,32 +733,15 @@ h1, h2, h3, h4, h5, h6 {
 .card-top-icon {
   display: flex;
   justify-content: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
-.login-logo-ring {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  background: var(--bg-card);
-  border: 1px solid rgba(200, 148, 63, 0.28);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-}
-
-.light-theme .login-logo-ring {
-  background: #ffffff;
-  border: 1px solid rgba(176, 141, 87, 0.22);
-  box-shadow: 0 8px 24px rgba(0, 27, 61, 0.06);
-}
-
-.chabad-logo--login-card {
-  height: 56px;
+.chabad-logo.chabad-logo--login-card {
+  height: 48px;
   width: auto;
-  max-width: 56px;
+  max-width: 48px;
   object-fit: contain;
+  display: block;
 }
 
 .card-emblem {
@@ -2735,6 +2753,314 @@ h1, h2, h3, h4, h5, h6 {
   filter: invert(1);
 }
 
+/* Renewed Membership Banner (Shown before 1st September) */
+.renewed-membership-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #f0f6ff 0%, #e0edff 100%);
+  border: 1px solid #bfdbfe;
+  border-left: 5px solid #2563eb;
+  border-radius: 20px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  box-shadow: 0 10px 30px rgba(37, 99, 235, 0.07);
+  color: #0f172a;
+  gap: 24px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+[data-theme="dark"] .renewed-membership-banner,
+.qc-theme-dark .renewed-membership-banner {
+  background: linear-gradient(135deg, #0b1d3a 0%, #0f2b57 100%);
+  border-color: #1e40af;
+  border-left-color: #3b82f6;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  color: #f8fafc;
+}
+
+.renewed-banner-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  flex: 1;
+}
+
+.renewed-banner-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+  height: 90px;
+  flex-shrink: 0;
+}
+
+.renewed-banner-shield-circle {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: #dbeafe;
+  border: 3px solid #ffffff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.15);
+}
+
+[data-theme="dark"] .renewed-banner-shield-circle {
+  background: #1e3a8a;
+  border-color: #1e293b;
+  color: #60a5fa;
+}
+
+.renewed-banner-sparkle {
+  position: absolute;
+  color: #93c5fd;
+  font-size: 11px;
+  user-select: none;
+  animation: pulseSparkle 2s infinite alternate;
+}
+
+.sp-top-left { top: 2px; left: 10px; }
+.sp-top-right { top: 6px; right: 10px; animation-delay: 0.5s; }
+.sp-bottom-left { bottom: 8px; left: 6px; animation-delay: 1s; }
+.sp-bottom-right { bottom: 4px; right: 12px; animation-delay: 1.5s; }
+
+@keyframes pulseSparkle {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.2); opacity: 1; }
+}
+
+.renewed-banner-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.renewed-banner-title {
+  font-family: var(--font-sans, sans-serif);
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+}
+
+[data-theme="dark"] .renewed-banner-title {
+  color: #f8fafc;
+}
+
+.renewed-banner-sub {
+  font-size: 14px;
+  color: #475569;
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+  max-width: 520px;
+}
+
+[data-theme="dark"] .renewed-banner-sub {
+  color: #94a3b8;
+}
+
+.renewed-banner-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(219, 234, 254, 0.65);
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 10px 16px;
+  max-width: fit-content;
+}
+
+[data-theme="dark"] .renewed-banner-pill {
+  background: rgba(30, 58, 138, 0.45);
+  border-color: #1e40af;
+}
+
+.renewed-pill-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .renewed-pill-icon {
+  background: #3b82f6;
+}
+
+.renewed-pill-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.renewed-pill-text strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+[data-theme="dark"] .renewed-pill-text strong {
+  color: #60a5fa;
+}
+
+.renewed-pill-text span {
+  font-size: 12px;
+  color: #475569;
+}
+
+[data-theme="dark"] .renewed-pill-text span {
+  color: #cbd5e1;
+}
+
+.renewed-banner-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-left: 20px;
+}
+
+.renewed-right-divider {
+  width: 1px;
+  height: 90px;
+  background: #cbd5e1;
+}
+
+[data-theme="dark"] .renewed-right-divider {
+  background: #334155;
+}
+
+.renewed-right-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 180px;
+}
+
+.renewed-right-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-theme="dark"] .renewed-right-badge {
+  background: #1e3a8a;
+  color: #60a5fa;
+}
+
+.renewed-right-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0;
+  line-height: 1.35;
+}
+
+[data-theme="dark"] .renewed-right-text {
+  color: #cbd5e1;
+}
+
+.renewed-script-note {
+  font-family: 'Caveat', 'Dancing Script', cursive, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1d4ed8;
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+
+[data-theme="dark"] .renewed-script-note {
+  color: #60a5fa;
+}
+
+@media (max-width: 900px) {
+  .renewed-membership-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 20px;
+  }
+  .renewed-banner-right {
+    padding-left: 0;
+    width: 100%;
+  }
+  .renewed-right-divider {
+    display: none;
+  }
+}
+
+.expired-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.expired-renew-btn {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-radius: 10px !important;
+  padding: 10px 20px !important;
+  font-weight: 700 !important;
+  font-size: 13.5px !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25) !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: transform 0.2s, background 0.2s !important;
+}
+
+.expired-renew-btn:hover {
+  background: #1d4ed8 !important;
+  transform: translateY(-1px) !important;
+}
+
+.expired-learn-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 13.5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.expired-learn-more:hover {
+  text-decoration: underline;
+}
+
+.text-danger-red {
+  color: #ef4444 !important;
+}
+
+.badge-expired-pill {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.25) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 2px 8px !important;
+  border-radius: 6px !important;
+  display: inline-block !important;
+  margin-left: 8px !important;
+}
+
 .portal-page-meta-bar {
   display: flex;
   align-items: center;
@@ -3317,6 +3643,20 @@ h1, h2, h3, h4, h5, h6 {
   gap: 24px;
   padding: 28px 32px;
   margin-top: 22px;
+}
+
+.guest-membership-invite-banner {
+  margin-top: 22px;
+  margin-bottom: 0;
+}
+
+.guest-membership-invite-banner .expired-banner-actions {
+  margin-top: 14px;
+}
+
+.guest-membership-invite-banner .expired-renew-btn {
+  display: inline-flex;
+  align-items: center;
 }
 
 .guest-payment-only-copy h3 {

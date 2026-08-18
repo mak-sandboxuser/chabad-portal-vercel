@@ -17,7 +17,18 @@ import QuickPaymentModal from './shared/QuickPaymentModal';
 import ContactSupportModal from './shared/ContactSupportModal';
 import { showToast } from '../utils/toast';
 import { fetchPortalApi } from '../utils/portalApi';
-import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE, isPaymentWindowOpen, getPaymentScheduleSummary, getMembership, parseMoney, markLastPaymentNow } from '../utils/portalData';
+import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE, isPaymentWindowOpen } from '../utils/portalData';
+import { consumeDashboardPrefetch, consumeSkipPortalFullLoader } from '../utils/dashboardPrefetch';
+
+import {
+  isPostLoginStepperPending,
+  getPostLoginStepperEntryPath,
+  hasDismissedPostLoginStepper,
+  hasCompletedPostLoginStepper,
+  markPostLoginStepperPending,
+  clearPostLoginStepperPending,
+} from '../onboard/utils/postLoginStepper';
+
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL } from '../constants/supportContact';
 
 const PENDING_CHECKOUT_SESSION_KEY = 'pending_checkout_session_id';
@@ -99,65 +110,22 @@ export default function Portal({ user, getAuthToken, onLogout }) {
       return;
     }
     if (!isPaymentWindowOpen(sfData)) {
-      const delayMs = (() => {
-        const kind = getPaymentScheduleSummary(sfData).scheduleKind;
-        if (kind === 'monthly') return 1;
-        if (kind === 'installments') return 5;
-        if (kind === 'full') return 10;
-        return 0;
-      })();
-      showToast({
-        message: delayMs > 0
-          ? `Next Make Payment opens ${delayMs} min after your last payment.`
-          : 'No payment is currently due for your billing schedule.',
-        type: 'info',
-      });
+      showToast({ message: 'No payment is currently due for your billing schedule.', type: 'info' });
       return;
     }
-
-    const schedule = getPaymentScheduleSummary(sfData);
-    const membership = getMembership(sfData);
-    const scheduleFrequency = schedule.scheduleKind === 'monthly'
-      ? 'Monthly'
-      : schedule.scheduleKind === 'installments'
-        ? 'Half Yearly'
-        : 'Yearly';
-    const isInstallmentSchedule = schedule.scheduleKind === 'monthly' || schedule.scheduleKind === 'installments';
-    const scheduledAmount = schedule.nextPaymentAmount > 0
-      ? Number(schedule.nextPaymentAmount).toFixed(2)
-      : undefined;
-    const annualCommitment = parseMoney(membership.annualCommitment) || 0;
-
-    // Button onClick passes a click event — ignore events and only use real preset objects.
-    const isRealPreset = Boolean(
-      presetProps
-      && typeof presetProps === 'object'
-      && !presetProps.nativeEvent
-      && (presetProps.amount != null || presetProps.type || presetProps.subType || presetProps.billingMode),
-    );
-
-    if (isRealPreset) {
+    if (presetProps && typeof presetProps === 'object') {
       setDonateModalProps({
-        defaultAmount: presetProps.amount != null ? String(presetProps.amount) : scheduledAmount,
-        defaultType: presetProps.type || 'Campaign',
-        defaultSubType: presetProps.subType || 'Membership',
-        defaultBillingMode: presetProps.billingMode
-          || (isInstallmentSchedule ? 'recurring' : 'one-time'),
-        defaultFrequency: presetProps.frequency || scheduleFrequency,
-        groups: membership.tier,
-        pledgeAmount: annualCommitment,
+        defaultAmount: presetProps.amount,
+        defaultType: presetProps.type,
+        defaultSubType: presetProps.subType,
+        defaultBillingMode: presetProps.billingMode,
+        defaultFrequency: presetProps.frequency,
+        groups: presetProps.groups,
+        readOnly: Boolean(presetProps.readOnly),
+        source: presetProps.source,
       });
     } else {
-      // Dashboard "Make Payment" → membership schedule (monthly/half-yearly/yearly).
-      setDonateModalProps({
-        defaultAmount: scheduledAmount,
-        defaultType: 'Campaign',
-        defaultSubType: 'Membership',
-        defaultBillingMode: isInstallmentSchedule ? 'recurring' : 'one-time',
-        defaultFrequency: scheduleFrequency,
-        groups: membership.tier,
-        pledgeAmount: annualCommitment,
-      });
+      setDonateModalProps(null);
     }
     setShowDonateModal(true);
   };
@@ -184,8 +152,31 @@ export default function Portal({ user, getAuthToken, onLogout }) {
   useEffect(() => {
     let cancelled = false;
 
+    const applyDashboardPayload = (data) => {
+      if (!data || cancelled) return;
+      setError('');
+      setStats(data.stats);
+      setMembers(data.members || []);
+      setEvents(data.events || []);
+      setSfData(data.sfData || null);
+    };
+
     const load = async () => {
-      setLoading(true);
+      const skipLoader = consumeSkipPortalFullLoader();
+      const prefetched = consumeDashboardPrefetch();
+
+      // After payment-success: open dashboard immediately with prefetched data
+      // (no "Loading your Member Portal..." interstitial).
+      if (prefetched) {
+        applyDashboardPayload(prefetched);
+        setLoading(false);
+        fetchDashboardData().catch(() => {});
+        return;
+      }
+
+      if (!skipLoader) setLoading(true);
+      else setLoading(false);
+
       await fetchDashboardData();
       if (!cancelled) setLoading(false);
     };
@@ -196,6 +187,29 @@ export default function Portal({ user, getAuthToken, onLogout }) {
       cancelled = true;
     };
   }, [getAuthToken]);
+
+  // New guests only: open membership stepper after portal data confirms they
+  // are not an established household / paid member. Never trap real members
+  // just because Make returned empty groups on login.
+  // Honor dismiss (Back to Portal). Also stay on portal after payment success
+  // (completed flag / recent payment) — do not bounce back into the stepper.
+  useEffect(() => {
+    if (loading || !sfData) return;
+
+    if (!isGuestUser(sfData)) {
+      if (isPostLoginStepperPending()) {
+        clearPostLoginStepperPending();
+      }
+      return;
+    }
+
+    if (hasDismissedPostLoginStepper() || hasCompletedPostLoginStepper()) return;
+
+    if (!isPostLoginStepperPending()) {
+      markPostLoginStepperPending();
+    }
+    window.location.replace(getPostLoginStepperEntryPath());
+  }, [loading, sfData]);
 
   useEffect(() => {
     if (paymentsDisabled && PAYMENT_TAB_IDS.has(activeTab)) {
@@ -224,7 +238,6 @@ export default function Portal({ user, getAuthToken, onLogout }) {
         if (checkoutSessionId) {
           try {
             await syncCheckoutSession(checkoutSessionId, getAuthToken);
-            markLastPaymentNow();
             showToast({ message: 'Payment synced to ChabadOne CRM.', type: 'success' });
             setPaymentAlert({ type: 'success', message: 'Payment synced to ChabadOne CRM. Records will update shortly.' });
           } catch (err) {
@@ -272,7 +285,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
     return (
       <div className="verify-container">
         <div className="spinner"></div>
-        <p style={{ color: 'var(--text-secondary)' }}>Loading you Member Portal..</p>
+        <p style={{ color: 'var(--text-secondary)' }}>Loading your Member Portal...</p>
       </div>
     );
   }

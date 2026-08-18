@@ -9,11 +9,13 @@ import {
 
 const PENDING_POST_LOGIN_STEPPER_KEY = 'pending_post_login_membership_stepper';
 const COMPLETED_POST_LOGIN_STEPPER_KEY = 'completed_post_login_membership_stepper';
+const DISMISSED_POST_LOGIN_STEPPER_KEY = 'dismissed_post_login_membership_stepper';
 
 export function markPostLoginStepperPending() {
   try {
     localStorage.setItem(PENDING_POST_LOGIN_STEPPER_KEY, '1');
     localStorage.removeItem(COMPLETED_POST_LOGIN_STEPPER_KEY);
+    localStorage.removeItem(DISMISSED_POST_LOGIN_STEPPER_KEY);
 
     // Fresh membership onboarding — never carry over a previous applicant's
     // spouse/children form data into the new run.
@@ -31,10 +33,37 @@ export function markPostLoginStepperPending() {
   }
 }
 
+/** Mark membership onboarding as finished (after payment / processing). */
 export function clearPostLoginStepperPending() {
   try {
     localStorage.removeItem(PENDING_POST_LOGIN_STEPPER_KEY);
+    localStorage.removeItem(DISMISSED_POST_LOGIN_STEPPER_KEY);
     localStorage.setItem(COMPLETED_POST_LOGIN_STEPPER_KEY, '1');
+  } catch {
+    // ignore storage failures
+  }
+}
+
+/**
+ * Clear stepper routing flags without marking onboarding complete.
+ * Use on established-member login so a leftover "completed" flag cannot
+ * block a later new guest on the same browser.
+ */
+export function releasePostLoginStepperPending() {
+  try {
+    localStorage.removeItem(PENDING_POST_LOGIN_STEPPER_KEY);
+    localStorage.removeItem(DISMISSED_POST_LOGIN_STEPPER_KEY);
+    localStorage.removeItem(COMPLETED_POST_LOGIN_STEPPER_KEY);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+/** Leave the stepper without marking membership onboarding complete (e.g. Back to Portal). */
+export function dismissPostLoginStepperPending() {
+  try {
+    localStorage.removeItem(PENDING_POST_LOGIN_STEPPER_KEY);
+    localStorage.setItem(DISMISSED_POST_LOGIN_STEPPER_KEY, '1');
   } catch {
     // ignore storage failures
   }
@@ -43,6 +72,22 @@ export function clearPostLoginStepperPending() {
 export function isPostLoginStepperPending() {
   try {
     return localStorage.getItem(PENDING_POST_LOGIN_STEPPER_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function hasCompletedPostLoginStepper() {
+  try {
+    return localStorage.getItem(COMPLETED_POST_LOGIN_STEPPER_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function hasDismissedPostLoginStepper() {
+  try {
+    return localStorage.getItem(DISMISSED_POST_LOGIN_STEPPER_KEY) === '1';
   } catch {
     return false;
   }

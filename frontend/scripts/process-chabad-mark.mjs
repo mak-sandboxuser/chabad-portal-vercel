@@ -1,4 +1,3 @@
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
@@ -7,16 +6,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
 
 const VARIANTS = [
-  {
-    source: 'chabad-bedford-logo-light-source.png',
-    output: 'chabad-bedford-logo-light.png',
-    mode: 'light',
-  },
-  {
-    source: 'chabad-bedford-logo-dark-source.png',
-    output: 'chabad-bedford-logo-dark.png',
-    mode: 'dark',
-  },
+  { source: 'chabad-bedford-mark-light-source.png', output: 'chabad-bedford-mark-light.png' },
+  { source: 'chabad-bedford-mark-dark-source.png', output: 'chabad-bedford-mark-dark.png' },
 ];
 
 function sampleCornerAverage(data, width, height, channels) {
@@ -47,10 +38,8 @@ function colorDistance(r1, g1, b1, r2, g2, b2) {
 
 function applyTransparentBackground(data, width, height, channels) {
   const [br, bg, bb] = sampleCornerAverage(data, width, height, channels);
-  // Soft-key the solid canvas background; gold logo strokes stay opaque.
   const fullClear = 28;
   const softClear = 52;
-
   for (let i = 0; i < data.length; i += channels) {
     const dist = colorDistance(data[i], data[i + 1], data[i + 2], br, bg, bb);
     if (dist <= fullClear) {
@@ -65,50 +54,21 @@ function applyTransparentBackground(data, width, height, channels) {
 
 async function processVariant({ source, output }) {
   const sourcePath = path.join(publicDir, source);
-  if (!fs.existsSync(sourcePath)) {
-    throw new Error(`Missing source logo: ${source}`);
-  }
-
   const { data, info } = await sharp(sourcePath)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-
   const rgba = Buffer.from(data);
   applyTransparentBackground(rgba, info.width, info.height, info.channels);
-
-  const pngPath = path.join(publicDir, output);
   const meta = await sharp(rgba, {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
     .trim({ threshold: 12 })
     .png()
-    .toFile(pngPath);
-
+    .toFile(path.join(publicDir, output));
   console.log(`${output}: ${meta.width}x${meta.height}`);
-  return meta;
 }
 
-async function main() {
-  const results = [];
-  for (const variant of VARIANTS) {
-    results.push(await processVariant(variant));
-  }
-
-  // Keep legacy filenames pointing at the light logo for favicon / old refs.
-  const lightPng = path.join(publicDir, 'chabad-bedford-logo-light.png');
-  const legacyPng = path.join(publicDir, 'chabad-bedford-logo.png');
-  fs.copyFileSync(lightPng, legacyPng);
-
-  const { width, height } = results[0];
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Chabad of Bedford">
-  <title>Chabad of Bedford</title>
-  <image width="${width}" height="${height}" href="/chabad-bedford-logo-light.png" xlink:href="/chabad-bedford-logo-light.png" />
-</svg>`;
-
-  fs.writeFileSync(path.join(publicDir, 'chabad-bedford-logo.svg'), svg, 'utf8');
-  console.log('Wrote chabad-bedford-logo.png and chabad-bedford-logo.svg');
+for (const variant of VARIANTS) {
+  await processVariant(variant);
 }
-
-await main();

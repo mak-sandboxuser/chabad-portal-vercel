@@ -18,6 +18,7 @@ import {
 } from '../data/onboardingSteps';
 import { getMembershipTierById, formatCurrency } from '../data/membershipTiers';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
+import { isPostLoginStepperPending } from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
@@ -154,11 +155,13 @@ export default function ContributionSchedule() {
         <OnboardHeader
           theme={theme}
           onToggleTheme={toggleTheme}
-          title="Membership Onboarding"
-          subtitle="Join our community in a few simple steps."
+          title={isPostLoginStepperPending() ? "Membership Renewal" : "Membership Onboarding"}
+          subtitle={isPostLoginStepperPending() ? "Choose your contribution schedule to complete renewal." : "Join our community in a few simple steps."}
         />
 
-        <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
+        {!isPostLoginStepperPending() && (
+          <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
+        )}
 
         <main>
           <form className="onboard-about-card" onSubmit={handleSubmit} noValidate>
@@ -271,6 +274,16 @@ export default function ContributionSchedule() {
           groups={selectedMembershipTier.sfGroup || selectedMembershipTier.name}
           readOnly={true}
           theme={theme}
+          onBeforeCheckout={() => {
+            try {
+              sessionStorage.setItem(
+                'pending_paid_membership_name',
+                selectedMembershipTier.name || 'Membership'
+              );
+            } catch {
+              // ignore
+            }
+          }}
         />
       )}
     </div>
