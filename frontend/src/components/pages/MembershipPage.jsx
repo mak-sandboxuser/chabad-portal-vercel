@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ShieldCheck, Calendar, CircleDollarSign, Gem,
-  FileText, Users, Edit, CalendarOff, Heart, ArrowRight,
-  Handshake, Star,
+  FileText, Users, Edit,
 } from 'lucide-react';
 import PortalPageLayout from '../shared/PortalPageLayout';
 import EditFamilyMemberModal from '../shared/EditFamilyMemberModal';
@@ -13,155 +12,8 @@ import {
   getMembership,
   getContacts,
   isGuestUser,
-  parseMoney,
 } from '../../utils/portalData';
 import GuestMembershipPage from './GuestMembershipPage';
-
-function NewMemberJoiningBanner({ dates }) {
-  return (
-    <div className="renewed-membership-banner new-joining-banner">
-      <div className="renewed-banner-left">
-        <div className="renewed-banner-icon-wrapper">
-          <span className="renewed-banner-sparkle sp-top-left">✦</span>
-          <span className="renewed-banner-sparkle sp-top-right">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-left">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-right">✦</span>
-          <div className="renewed-banner-shield-circle">
-            <Handshake size={38} strokeWidth={2.2} />
-          </div>
-        </div>
-
-        <div className="renewed-banner-body">
-          <h2 className="renewed-banner-title">Thank You for Joining Our Community!</h2>
-          <p className="renewed-banner-sub">
-            We truly appreciate your timely payment and your commitment to Chabad of Bedford.
-          </p>
-          <div className="renewed-banner-pill">
-            <div className="renewed-pill-icon">
-              <Calendar size={18} />
-            </div>
-            <div className="renewed-pill-text">
-              <strong>Your membership will commence on {dates.startDate}</strong>
-              <span>You'll start enjoying all membership benefits from this date.</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="renewed-banner-right">
-        <div className="renewed-right-divider" aria-hidden="true" />
-        <div className="renewed-right-content">
-          <div className="renewed-right-badge">
-            <Star size={16} />
-          </div>
-          <p className="renewed-right-text">
-            Your support helps us strengthen our community and make a lasting impact.
-          </p>
-          <span className="renewed-script-note">Thank you! ♡</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RenewedMembershipBanner({ dates }) {
-  return (
-    <div className="renewed-membership-banner">
-      <div className="renewed-banner-left">
-        <div className="renewed-banner-icon-wrapper">
-          <span className="renewed-banner-sparkle sp-top-left">✦</span>
-          <span className="renewed-banner-sparkle sp-top-right">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-left">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-right">✦</span>
-          <div className="renewed-banner-shield-circle">
-            <ShieldCheck size={38} strokeWidth={2.2} />
-          </div>
-        </div>
-
-        <div className="renewed-banner-body">
-          <h2 className="renewed-banner-title">Your Membership is Renewed!</h2>
-          <p className="renewed-banner-sub">
-            Thank you for renewing your membership and continuing to be a valued part of our community.
-          </p>
-          <div className="renewed-banner-pill">
-            <div className="renewed-pill-icon">
-              <Calendar size={18} />
-            </div>
-            <div className="renewed-pill-text">
-              <strong>Your renewed membership is active from {dates.startDate}</strong>
-              <span>It will remain active until {dates.endDate}.</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="renewed-banner-right">
-        <div className="renewed-right-divider" aria-hidden="true" />
-        <div className="renewed-right-content">
-          <div className="renewed-right-badge">
-            <Users size={16} />
-          </div>
-          <p className="renewed-right-text">Together, we make a stronger community.</p>
-          <span className="renewed-script-note">Thank, you for renewing! ♡</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExpiredMembershipBanner({ dates, onRenew }) {
-  return (
-    <div className="renewed-membership-banner expired-membership-banner">
-      <div className="renewed-banner-left">
-        <div className="renewed-banner-icon-wrapper">
-          <span className="renewed-banner-sparkle sp-top-left">✦</span>
-          <span className="renewed-banner-sparkle sp-top-right">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-left">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-right">✦</span>
-          <div className="renewed-banner-shield-circle">
-            <CalendarOff size={38} strokeWidth={2.2} />
-          </div>
-        </div>
-
-        <div className="renewed-banner-body">
-          <h2 className="renewed-banner-title">Your Membership Has Expired</h2>
-          <p className="renewed-banner-sub">
-            Your membership expired on {dates.endDate}.
-            <br />
-            Renew your membership today to continue enjoying all member benefits and stay connected with our community.
-          </p>
-          <div className="expired-banner-actions">
-            <button
-              type="button"
-              className="dash-btn-primary expired-renew-btn"
-              onClick={onRenew}
-            >
-              Renew Membership Now
-            </button>
-            <button
-              type="button"
-              className="expired-learn-more"
-              onClick={onRenew}
-            >
-              Learn More <ArrowRight size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="renewed-banner-right">
-        <div className="renewed-right-divider" aria-hidden="true" />
-        <div className="renewed-right-content">
-          <div className="renewed-right-badge">
-            <Heart size={16} />
-          </div>
-          <p className="renewed-right-text">We miss having you as part of our community.</p>
-          <span className="renewed-script-note">We'd love to have you back! ♡</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function MembershipPage({
   theme,
@@ -233,59 +85,13 @@ export default function MembershipPage({
 
   const dates = getDatesFromTier(membership.tier);
 
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const startYearMatch = dates.startDate.match(/\d{4}/);
-  const startYear = startYearMatch ? parseInt(startYearMatch[0], 10) : 2026;
-  const septFirst = new Date(startYear, 8, 1);
-  const isBeforeSeptFirst = now < septFirst;
-
-  const memberSinceYear = membership.memberSince ? parseInt(membership.memberSince.match(/\d{4}/)?.[0] || '0', 10) : 0;
-  const isExplicitRenewal = Boolean(sfData?.isRenewal || sfData?.membership?.isRenewal || sfData?.account?.isRenewal);
-  const hasPriorHistory = Boolean((memberSinceYear > 0 && memberSinceYear < startYear) || (sfData?.pledges && sfData?.pledges?.length > 1));
-
-  const isNewMember = !isExplicitRenewal && !hasPriorHistory && Boolean(
-    sfData?.isNewMember
-    || sfData?.account?.isNew
-    || sfData?.membership?.isNewMember
-    || (memberSinceYear >= startYear)
-    || (!sfData?.pledges?.length && !sfData?.payments?.length)
-  );
-
-  const statusLower = (membership.status || '').toLowerCase();
-  const isExplicitExpired = statusLower.includes('expire') || statusLower.includes('ended') || statusLower.includes('inactive');
-  const endDateParsed = dates.endDate ? Date.parse(dates.endDate) : 0;
-  const isPastEndDate = Number.isFinite(endDateParsed) && now.getTime() > endDateParsed;
-  const isPaidOrRenewed = (parseMoney(membership.outstanding) <= 0 && parseMoney(membership.contributedYtd) > 0) || Boolean(sfData?.membership?.paymentSessionId);
-
-  const isExpired = isExplicitExpired || (isPastEndDate && !isPaidOrRenewed);
-
   const stats = [
-    {
-      label: 'Group',
-      value: membership.tier || '—',
-      sub: isExpired ? 'Expired' : (membership.status || '—'),
-      subClass: isExpired ? 'text-danger-red' : '',
-      icon: Gem,
-      badge: membership.tier || '—',
-      badgeClass: 'blue',
-    },
-    {
-      label: 'Status',
-      value: isExpired ? 'Expired' : membership.status,
-      sub: isExpired ? 'Membership has ended' : 'In good standing',
-      icon: ShieldCheck,
-      valueClass: isExpired ? 'text-danger-red' : 'text-success',
-    },
+    { label: 'Group', value: membership.tier || '—', sub: membership.status || '—', icon: Gem, badge: membership.tier || '—', badgeClass: 'blue' },
+    { label: 'Status', value: membership.status, sub: 'In good standing', icon: ShieldCheck, valueClass: 'text-success' },
     { label: 'Start Date', value: dates.startDate, sub: 'Start of year', icon: Calendar },
-    {
-      label: 'End Date',
-      value: dates.endDate,
-      sub: 'End of year',
-      icon: Calendar,
-      subClass: isExpired ? 'text-danger-red' : '',
-    },
+    { label: 'End Date', value: dates.endDate, sub: 'End of year', icon: Calendar },
   ];
+
 
   const details = [
     {
@@ -299,7 +105,6 @@ export default function MembershipPage({
       icon: Calendar,
       label: 'End Date',
       value: dates.endDate,
-      isExpiredTag: isExpired,
       sub: null,
       action: null,
     },
@@ -313,31 +118,17 @@ export default function MembershipPage({
     },
   ];
 
-  const showHeaderHero = !isBeforeSeptFirst && !isExpired;
-
   return (
     <PortalPageLayout
       theme={theme}
-      title={showHeaderHero ? (membership.tier?.toLowerCase().includes('membership') ? membership.tier : `${membership.tier} Membership`) : null}
-      subtitle={showHeaderHero ? "Thank you for your ongoing commitment to our community." : null}
+      title={membership.tier?.toLowerCase().includes('membership') ? membership.tier : `${membership.tier} Membership`}
+      subtitle="Thank you for your ongoing commitment to our community."
       breadcrumbs={[
         { label: 'Dashboard', onClick: () => onNavigate('dashboard') },
         { label: 'Membership' },
       ]}
       showSketch={false}
     >
-      {isExpired ? (
-        <ExpiredMembershipBanner
-          dates={dates}
-          onRenew={() => onDonate?.({ type: 'Membership', subType: membership.tier })}
-        />
-      ) : isBeforeSeptFirst ? (
-        isNewMember ? (
-          <NewMemberJoiningBanner dates={dates} />
-        ) : (
-          <RenewedMembershipBanner dates={dates} />
-        )
-      ) : null}
       <div className="membership-page-grid">
         <div className="membership-main">
           <div className="membership-hero-badge-row">
@@ -368,10 +159,7 @@ export default function MembershipPage({
                   <Icon size={18} />
                   <div className="membership-detail-body">
                     <span className="membership-detail-label">{row.label}</span>
-                    <strong className={row.valueClass}>
-                      {row.value}
-                      {row.isExpiredTag && <span className="badge-expired-pill">Expired</span>}
-                    </strong>
+                    <strong className={row.valueClass}>{row.value}</strong>
                     {row.sub && <small>{row.sub}</small>}
                   </div>
                   {row.action && (

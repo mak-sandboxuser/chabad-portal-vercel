@@ -133,15 +133,8 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
 
                     const detectPaymentTypeAndSubType = (pledgeRow = {}) => {
                       const pledgeName = pledgeRow.name || pledgeRow.purpose || '';
-                      const rawType = pledgeRow.type || pledgeRow.paymentType || '';
                       const rawSubType = pledgeRow.subType || pledgeRow.purpose || pledgeRow.name || '';
                       const name = pledgeName.trim().toLowerCase();
-                      const typeStr = String(rawType).trim().toLowerCase();
-                      const subTypeStr = String(rawSubType).trim().toLowerCase();
-
-                      if (typeStr === 'campaign' || subTypeStr === 'membership' || name.includes('membership') || name.includes('member')) {
-                        return { type: 'Campaign', subType: 'Membership' };
-                      }
                       if (name.includes('tuition')) {
                         return { type: 'Payment', subType: rawSubType || 'Hebrew School Tuition' };
                       }
@@ -150,6 +143,9 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
                       }
                       if (name.includes('camp')) {
                         return { type: 'Payment', subType: rawSubType || 'Camp Bedford' };
+                      }
+                      if (name.includes('membership')) {
+                        return { type: 'Membership', subType: rawSubType || 'Family Membership' };
                       }
                       if (name.includes('building')) {
                         return { type: 'Pledge', subType: rawSubType || 'Building Campaign' };
@@ -166,7 +162,7 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
                       if (name.includes('chai')) {
                         return { type: 'Donation', subType: rawSubType || 'Chai Club' };
                       }
-                      return { type: rawType || 'Campaign', subType: rawSubType || 'Membership' };
+                      return { type: 'Donation', subType: rawSubType || 'General Donation' };
                     };
 
                     const matched = detectPaymentTypeAndSubType(row);

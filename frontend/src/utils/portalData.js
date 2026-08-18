@@ -559,52 +559,90 @@ export function getPaymentScheduleSummary(sfData) {
   };
 }
 
+const LAST_PAYMENT_AT_KEY = 'portal_last_payment_at';
+
+export function markLastPaymentNow() {
+  try {
+    localStorage.setItem(LAST_PAYMENT_AT_KEY, String(Date.now()));
+  } catch {
+    // Ignore storage errors in private mode.
+  }
+}
+
+export function getLastPaymentAtMs(sfData) {
+  let storedMs = 0;
+  try {
+    storedMs = parseInt(localStorage.getItem(LAST_PAYMENT_AT_KEY) || '0', 10) || 0;
+  } catch {
+    storedMs = 0;
+  }
+  if (storedMs > 0) return storedMs;
+
+  const payments = getPayments(sfData);
+  let crmMs = 0;
+  payments.forEach((p) => {
+    const pDate = p.date ? new Date(p.date) : null;
+    if (!pDate || isNaN(pDate.getTime())) return;
+    const ms = pDate.getTime();
+    if (ms > crmMs) crmMs = ms;
+  });
+
+  if (!(crmMs > 0)) return 0;
+
+  // Salesforce dates are day-only. For testing delays, if last payment is today,
+  // seed a precise timestamp so Monthly/Half/Yearly cool-down can apply.
+  const crmDate = new Date(crmMs);
+  const now = new Date();
+  const sameDay = crmDate.getFullYear() === now.getFullYear()
+    && crmDate.getMonth() === now.getMonth()
+    && crmDate.getDate() === now.getDate();
+
+  if (sameDay) {
+    markLastPaymentNow();
+    try {
+      return parseInt(localStorage.getItem(LAST_PAYMENT_AT_KEY) || '0', 10) || Date.now();
+    } catch {
+      return Date.now();
+    }
+  }
+
+  return crmMs;
+}
+
+export function getPaymentScheduleDelayMs(sfData) {
+  const schedule = getPaymentScheduleSummary(sfData);
+  if (schedule.scheduleKind === 'monthly') return 60 * 1000;
+  if (schedule.scheduleKind === 'installments') return 5 * 60 * 1000;
+  if (schedule.scheduleKind === 'full') return 10 * 60 * 1000;
+  return 0;
+}
+
 export function isPaymentWindowOpen(sfData) {
   if (!sfData) return false;
 
   const membership = getMembership(sfData);
   const outstandingVal = parseMoney(membership.outstanding);
-  const recurring = getRecurring(sfData);
-  const activeRecurring = recurring.find(
-    (item) => ['active', 'finished', 'open'].includes((item.status || '').toLowerCase()),
-  ) || recurring[0];
 
-  const freq = (activeRecurring?.frequency || membership.frequency || '').toLowerCase().trim();
-  const isHalfYearly = freq.includes('half') || freq.includes('semi');
-  const isYearly = freq.includes('annual') || freq.includes('yearly') || freq.includes('full') || freq.includes('one-time');
-
+  // TEMP testing schedule:
+  // Monthly → 1 min after last payment
+  // Half Yearly → 5 min after last payment
+  // Yearly → 10 min after last payment
+  // No schedule / outstanding left → immediately
   if (outstandingVal <= 0) {
     return false;
   }
 
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-
-  if (isYearly) {
-    return outstandingVal > 0;
+  const delayMs = getPaymentScheduleDelayMs(sfData);
+  if (!(delayMs > 0)) {
+    return true;
   }
 
-  if (isHalfYearly) {
-    const decFirst2026 = new Date(2026, 11, 1);
-    if (now < decFirst2026) {
-      return false;
-    }
-    return outstandingVal > 0;
+  const lastPaymentAtMs = getLastPaymentAtMs(sfData);
+  if (!(lastPaymentAtMs > 0)) {
+    return true;
   }
 
-  const payments = getPayments(sfData);
-  const hasPaidThisMonth = payments.some((p) => {
-    const pDate = p.date ? new Date(p.date) : null;
-    if (!pDate || isNaN(pDate.getTime())) return false;
-    return pDate.getFullYear() === currentYear && pDate.getMonth() === currentMonth;
-  });
-
-  if (hasPaidThisMonth) {
-    return false;
-  }
-
-  return true;
+  return Date.now() >= lastPaymentAtMs + delayMs;
 }
 
 export function formatAddress(account) {

@@ -1403,6 +1403,13 @@ function stripeRecurringIntervalCount(frequency = 'Monthly') {
   return 1;
 }
 
+function makeTestScheduleDelayMinutes(frequency = 'Monthly') {
+  if (frequency === 'Monthly') return 1;
+  if (frequency === 'Half Yearly' || frequency === 'Semi-Annual') return 5;
+  if (frequency === 'Yearly' || frequency === 'Annual') return 10;
+  return 0;
+}
+
 function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
   const base = (dateStr || new Date().toISOString().split('T')[0]).slice(0, 10);
   const date = new Date(`${base}T12:00:00`);
@@ -1444,13 +1451,10 @@ function enrichFinancialPayload(payload = {}) {
     }
 
     if (multiplier > 1) {
-      const annualizedFromPayment = paymentAmount * multiplier;
-      const annualizedFromPledge = pledgeAmount < (paymentAmount * multiplier) ? pledgeAmount * multiplier : pledgeAmount;
-
+      const annualizedFromPayment = paymentAmount > 0 ? paymentAmount * multiplier : 0;
+      // Keep this idempotent: if pledgeAmount is already annualized, do not multiply it again.
       if (annualizedFromPayment > 0 && pledgeAmount < annualizedFromPayment) {
         pledgeAmount = annualizedFromPayment;
-      } else if (pledgeAmount > 0 && pledgeAmount < (pledgeAmount * multiplier)) {
-        pledgeAmount = pledgeAmount * multiplier;
       }
     }
   }
@@ -1473,12 +1477,16 @@ function enrichFinancialPayload(payload = {}) {
   } : {};
 
   const method = payload.method || (payload.paymentMethodType === 'us_bank_account' ? 'Bank Transfer' : 'Stripe');
-  const rawType = String(payload.paymentType || payload.type || '').toLowerCase();
-  const rawSubType = String(payload.subType || '').toLowerCase();
-  const isMembershipPayload = rawType.includes('member') || rawType.includes('campaign') || rawSubType.includes('member') || !payload.paymentType;
-
-  const typeVal = isMembershipPayload ? 'Campaign' : (payload.paymentType || payload.type || 'Campaign');
-  const subTypeVal = isMembershipPayload ? 'Membership' : (payload.subType || 'Membership');
+  const typeVal = payload.paymentType || payload.type || 'Membership';
+  const subTypeVal = payload.subType || 'Family Membership';
+  const annualPledgeAmount = pledgeAmount > 0 ? pledgeAmount : 0;
+  const paidThisCharge = paymentAmount > 0 ? paymentAmount : 0;
+  const pledgeOutstandingAmount = Math.max(annualPledgeAmount - paidThisCharge, 0);
+  // For monthly/recurring pledge creation workflows: create pledge at remaining balance,
+  // while still sending full annual commitment as masterPledgeAmount.
+  const pledgeCreateAmount = isRecurring && annualPledgeAmount > 0
+    ? pledgeOutstandingAmount
+    : annualPledgeAmount;
 
   return {
     ...payload,
@@ -1486,14 +1494,15 @@ function enrichFinancialPayload(payload = {}) {
     type: typeVal,
     paymentType: typeVal,
     OneCRM__Type__c: typeVal,
-    Type: typeVal,
     subType: subTypeVal,
-    paymentSubType: subTypeVal,
     OneCRM__Sub_Type__c: subTypeVal,
-    Sub_Type: subTypeVal,
     action,
     method,
-    pledgeAmount: pledgeAmount > 0 ? pledgeAmount : 0,
+    pledgeAmount: annualPledgeAmount,
+    masterPledgeAmount: annualPledgeAmount,
+    pledgeCreateAmount,
+    pledgeOutstandingAmount,
+    pledgePaidAmount: paidThisCharge,
     createPledge: pledgeAmount > 0 && pledgeAmount > paymentAmount,
     createPayment: paymentAmount > 0,
     createRecurring: isRecurring && recurringAmount > 0,
@@ -1526,6 +1535,10 @@ function buildStripeCheckoutMetadata(payload, contactId, email) {
     paymentDateIso: toSalesforceDateIso(payload.paymentDate),
     donorId: payload.accountId || '',
     pledgeAmount: String(pledgeAmount > 0 ? pledgeAmount : 0),
+    masterPledgeAmount: String(enriched.masterPledgeAmount || 0),
+    pledgeCreateAmount: String(enriched.pledgeCreateAmount || 0),
+    pledgeOutstandingAmount: String(enriched.pledgeOutstandingAmount || 0),
+    pledgePaidAmount: String(enriched.pledgePaidAmount || 0),
     paymentAmount: String(paymentAmount),
     action: enriched.action,
     createPledge: enriched.createPledge ? 'true' : 'false',
@@ -1574,13 +1587,7 @@ async function getOrCreateStripeCustomer(email) {
 }
 
 async function createStripeCheckoutSession(payload, contactId, email) {
-  let paymentAmount = parseFloat(payload.paymentAmount) || 0;
-  // Temporary live-test override: set STRIPE_FORCE_CHECKOUT_AMOUNT=1 in .env, then remove when done.
-  const forcedCheckoutAmount = parseFloat(process.env.STRIPE_FORCE_CHECKOUT_AMOUNT);
-  if (Number.isFinite(forcedCheckoutAmount) && forcedCheckoutAmount > 0) {
-    console.warn(`[STRIPE] Forcing checkout amount $${paymentAmount} → $${forcedCheckoutAmount} (STRIPE_FORCE_CHECKOUT_AMOUNT)`);
-    paymentAmount = forcedCheckoutAmount;
-  }
+  const paymentAmount = parseFloat(payload.paymentAmount) || 0;
   const isRecurring = payload.billingMode === 'recurring';
   const checkoutLabel = [payload.paymentType, payload.subType].filter(Boolean).join(' — ');
   const metadata = buildStripeCheckoutMetadata(
@@ -1802,12 +1809,27 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
 
   const paymentUrl = process.env.MAKE_STRIPE_PAYMENT_WEBHOOK_URL;
   const pledgeRecurringUrl = process.env.MAKE_QUICK_PAYMENT_WEBHOOK_URL;
+  const masterPledgeAmount = parseFloat(enriched.pledgeAmount) || 0;
+  const paymentAmount = parseFloat(enriched.paymentAmount) || 0;
+  const remainingPledgeAmount = Math.max(0, masterPledgeAmount - (enriched.createPayment ? paymentAmount : 0));
 
   const webhookPayload = {
     ...enriched,
-    pledgeAmount: enriched.createPledge ? enriched.pledgeAmount : 0,
+<<<<<<< Updated upstream
+    // Send the full annual amount as pledgeAmount for master-pledge creation.
+    // Use pledgePaidAmount / pledgeOutstandingAmount for the paid/outstanding math.
+    pledgeAmount: enriched.createPledge ? enriched.masterPledgeAmount : 0,
+=======
+    // Send pledgeAmount as remaining annual commitment after this payment.
+    pledgeAmount: remainingPledgeAmount,
+    // Keep annual commitment available for master pledge create/upsert mapping.
+    masterPledgeAmount,
+    pledgePaidAmount: enriched.createPayment ? paymentAmount : 0,
+    pledgeOutstandingAmount: remainingPledgeAmount,
+>>>>>>> Stashed changes
     createPledge: Boolean(enriched.createPledge),
     paymentOnly: Boolean(enriched.paymentOnly),
+    scheduleDelayMinutes: makeTestScheduleDelayMinutes(enriched.frequency || 'Monthly'),
     // Explicit aliases for Make.com field mapping (Charge Paid must NOT be 0 on payment-only).
     chargePaidAmount: enriched.createPayment ? enriched.paymentAmount : 0,
     lineItemAmount: enriched.createPayment ? -Math.abs(enriched.paymentAmount) : 0,

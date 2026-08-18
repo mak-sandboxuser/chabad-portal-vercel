@@ -17,7 +17,7 @@ import QuickPaymentModal from './shared/QuickPaymentModal';
 import ContactSupportModal from './shared/ContactSupportModal';
 import { showToast } from '../utils/toast';
 import { fetchPortalApi } from '../utils/portalApi';
-import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE, isPaymentWindowOpen } from '../utils/portalData';
+import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE, isPaymentWindowOpen, getPaymentScheduleSummary, getMembership, parseMoney, markLastPaymentNow } from '../utils/portalData';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL } from '../constants/supportContact';
 
 const PENDING_CHECKOUT_SESSION_KEY = 'pending_checkout_session_id';
@@ -99,18 +99,65 @@ export default function Portal({ user, getAuthToken, onLogout }) {
       return;
     }
     if (!isPaymentWindowOpen(sfData)) {
-      showToast({ message: 'No payment is currently due for your billing schedule.', type: 'info' });
+      const delayMs = (() => {
+        const kind = getPaymentScheduleSummary(sfData).scheduleKind;
+        if (kind === 'monthly') return 1;
+        if (kind === 'installments') return 5;
+        if (kind === 'full') return 10;
+        return 0;
+      })();
+      showToast({
+        message: delayMs > 0
+          ? `Next Make Payment opens ${delayMs} min after your last payment.`
+          : 'No payment is currently due for your billing schedule.',
+        type: 'info',
+      });
       return;
     }
-    if (presetProps && typeof presetProps === 'object') {
+
+    const schedule = getPaymentScheduleSummary(sfData);
+    const membership = getMembership(sfData);
+    const scheduleFrequency = schedule.scheduleKind === 'monthly'
+      ? 'Monthly'
+      : schedule.scheduleKind === 'installments'
+        ? 'Half Yearly'
+        : 'Yearly';
+    const isInstallmentSchedule = schedule.scheduleKind === 'monthly' || schedule.scheduleKind === 'installments';
+    const scheduledAmount = schedule.nextPaymentAmount > 0
+      ? Number(schedule.nextPaymentAmount).toFixed(2)
+      : undefined;
+    const annualCommitment = parseMoney(membership.annualCommitment) || 0;
+
+    // Button onClick passes a click event — ignore events and only use real preset objects.
+    const isRealPreset = Boolean(
+      presetProps
+      && typeof presetProps === 'object'
+      && !presetProps.nativeEvent
+      && (presetProps.amount != null || presetProps.type || presetProps.subType || presetProps.billingMode),
+    );
+
+    if (isRealPreset) {
       setDonateModalProps({
-        defaultAmount: presetProps.amount,
-        defaultType: presetProps.type,
-        defaultSubType: presetProps.subType,
-        defaultBillingMode: presetProps.billingMode,
+        defaultAmount: presetProps.amount != null ? String(presetProps.amount) : scheduledAmount,
+        defaultType: presetProps.type || 'Campaign',
+        defaultSubType: presetProps.subType || 'Membership',
+        defaultBillingMode: presetProps.billingMode
+          || (isInstallmentSchedule ? 'recurring' : 'one-time'),
+        defaultFrequency: presetProps.frequency || scheduleFrequency,
+        groups: membership.tier,
+        pledgeAmount: annualCommitment,
       });
     } else {
-      setDonateModalProps(null);
+      // Dashboard "Make Payment" → membership schedule (monthly/half-yearly/yearly).
+      setDonateModalProps({
+        defaultAmount: scheduledAmount,
+        defaultType: 'Campaign',
+        defaultSubType: 'Membership',
+        defaultBillingMode: isInstallmentSchedule ? 'recurring' : 'one-time',
+        defaultFrequency: scheduleFrequency,
+        groups: membership.tier,
+        pledgeAmount: annualCommitment,
+      });
     }
     setShowDonateModal(true);
   };
@@ -177,6 +224,7 @@ export default function Portal({ user, getAuthToken, onLogout }) {
         if (checkoutSessionId) {
           try {
             await syncCheckoutSession(checkoutSessionId, getAuthToken);
+            markLastPaymentNow();
             showToast({ message: 'Payment synced to ChabadOne CRM.', type: 'success' });
             setPaymentAlert({ type: 'success', message: 'Payment synced to ChabadOne CRM. Records will update shortly.' });
           } catch (err) {

@@ -1,0 +1,1351 @@
+{
+    "name": "Pledge and recurring",
+    "flow": [
+        {
+            "id": 2,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 2532614,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "My gateway-webhook webhook"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "action",
+                        "type": "text"
+                    },
+                    {
+                        "name": "createPledge",
+                        "type": "boolean"
+                    },
+                    {
+                        "name": "createPayment",
+                        "type": "boolean"
+                    },
+                    {
+                        "name": "createRecurring",
+                        "type": "boolean"
+                    },
+                    {
+                        "name": "pledgeAmount",
+                        "type": "number"
+                    },
+                    {
+                        "name": "masterPledgeAmount",
+                        "type": "number"
+                    },
+                    {
+                        "name": "pledgePaidAmount",
+                        "type": "number"
+                    },
+                    {
+                        "name": "pledgeOutstandingAmount",
+                        "type": "number"
+                    },
+                    {
+                        "name": "paymentAmount",
+                        "type": "number"
+                    },
+                    {
+                        "name": "recurringAmount",
+                        "type": "number"
+                    },
+                    {
+                        "name": "frequency",
+                        "type": "text"
+                    },
+                    {
+                        "name": "email",
+                        "type": "text"
+                    },
+                    {
+                        "name": "contactId",
+                        "type": "text"
+                    },
+                    {
+                        "name": "accountId",
+                        "type": "text"
+                    },
+                    {
+                        "name": "paymentType",
+                        "type": "text"
+                    },
+                    {
+                        "name": "subType",
+                        "type": "text"
+                    },
+                    {
+                        "name": "memo",
+                        "type": "text"
+                    },
+                    {
+                        "name": "billingMode",
+                        "type": "text"
+                    },
+                    {
+                        "name": "paymentDate",
+                        "type": "text"
+                    },
+                    {
+                        "name": "paymentDateIso",
+                        "type": "text"
+                    },
+                    {
+                        "name": "isRecurring",
+                        "type": "text"
+                    },
+                    {
+                        "name": "purpose",
+                        "type": "text"
+                    },
+                    {
+                        "name": "source",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 3,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "mapper": null,
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            },
+            "routes": [
+                {
+                    "flow": [
+                        {
+                            "id": 4,
+                            "module": "salesforce:createAResponsibleRecordV4",
+                            "version": 4,
+                            "parameters": {
+                                "__IMTCONN__": 6217304
+                            },
+                            "filter": {
+                                "name": "",
+                                "conditions": [
+                                    [
+                                        {
+                                            "a": "{{2.createPledge}}",
+                                            "b": "true",
+                                            "o": "text:equal"
+                                        }
+                                    ]
+                                ]
+                            },
+                            "mapper": {
+                                "fields": {
+                                    "recordTypeId": "012Jx000003eaxdIAA",
+                                    "custom_fields": {
+                                        "oneCRM__Date__c": "{{2.paymentDate}}",
+                                        "oneCRM__Paid__c": "{{2.pledgePaidAmount}}",
+                                        "oneCRM__Amount__c": "{{ifempty(2.masterPledgeAmount; 2.pledgeAmount)}}",
+                                        "oneCRM__Amount_Outstanding__c": "{{ifempty(2.pledgeOutstandingAmount; 0)}}",
+                                        "oneCRM__Type__c": "{{2.paymentType}}",
+                                        "oneCRM__Donor__c": "{{2.accountId}}",
+                                        "oneCRM__Related_Contact__c": "{{2.contactId}}"
+                                    }
+                                },
+                                "sObject": "OneCRM__Income__c"
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 600,
+                                    "y": -150
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "fields": {
+                                            "nested": {
+                                                "recordTypeId": {
+                                                    "mode": "chose",
+                                                    "label": "Charge"
+                                                },
+                                                "custom_fields": {
+                                                    "nested": {
+                                                        "oneCRM__Type__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Donor__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Status__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Campaign__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Credit_Card__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Recognition__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Payment_Plan__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Payment_Type__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Send_Invoice__c": {
+                                                            "mode": "chose"
+                                                        },
+                                                        "oneCRM__Letter_Config__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Scribe_Letter__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Billing_Address__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Payment_Program__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Related_Contact__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Recognition_Type__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Processing_Status__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Recognition_Contact__c": {
+                                                            "mode": "edit"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "sObject": {
+                                            "label": "Income"
+                                        }
+                                    },
+                                    "parameters": {
+                                        "__IMTCONN__": {
+                                            "data": {
+                                                "scoped": "true",
+                                                "connection": "salesforce"
+                                            },
+                                            "label": "ChabadOne CRM (chbd3609.my.salesforce.com - Chabad of Bedford)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "__IMTCONN__",
+                                        "type": "account:salesforce,salesforce2",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ],
+                                "expect": [
+                                    {
+                                        "name": "sObject",
+                                        "type": "select",
+                                        "label": "Type",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "fields",
+                                        "spec": [
+                                            {
+                                                "name": "ownerId",
+                                                "type": "text",
+                                                "label": "Owner ID (OwnerId)",
+                                                "metadata": {
+                                                    "type": "reference"
+                                                }
+                                            },
+                                            {
+                                                "name": "name",
+                                                "type": "text",
+                                                "label": "Income Name (Name)",
+                                                "metadata": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            {
+                                                "mode": "edit",
+                                                "name": "recordTypeId",
+                                                "type": "select",
+                                                "label": "Record Type ID (RecordTypeId)",
+                                                "metadata": {
+                                                    "type": "reference"
+                                                }
+                                            },
+                                            {
+                                                "name": "custom_fields",
+                                                "spec": [
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Payment_Type__c",
+                                                        "type": "select",
+                                                        "label": "Payment Type (OneCRM__Payment_Type__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Processing_Status__c",
+                                                        "type": "select",
+                                                        "label": "Processing Status (OneCRM__Processing_Status__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Recognition_Type__c",
+                                                        "type": "select",
+                                                        "label": "Recognition Type (OneCRM__Recognition_Type__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Amount_Past_Due__c",
+                                                        "type": "number",
+                                                        "label": "Amount Past Due (OneCRM__Amount_Past_Due__c)",
+                                                        "metadata": {
+                                                            "type": "currency"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Billing_Address__c",
+                                                        "type": "select",
+                                                        "label": "Billing Address (OneCRM__Billing_Address__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Campaign__c",
+                                                        "type": "select",
+                                                        "label": "Campaign (OneCRM__Campaign__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Check_Number__c",
+                                                        "type": "text",
+                                                        "label": "Check Number (OneCRM__Check_Number__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Credit_Card__c",
+                                                        "type": "select",
+                                                        "label": "Credit Card (OneCRM__Credit_Card__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Date_Invoice_Sent__c",
+                                                        "type": "date",
+                                                        "label": "Date Invoice Sent (OneCRM__Date_Invoice_Sent__c)",
+                                                        "metadata": {
+                                                            "type": "datetime"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Date__c",
+                                                        "time": false,
+                                                        "type": "date",
+                                                        "label": "Date (OneCRM__Date__c)",
+                                                        "metadata": {
+                                                            "type": "date"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Dedication_Text__c",
+                                                        "type": "text",
+                                                        "label": "Dedication Text (OneCRM__Dedication_Text__c)",
+                                                        "metadata": {
+                                                            "type": "textarea"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Donor_Email__c",
+                                                        "type": "email",
+                                                        "label": "Donor Email (OneCRM__Donor_Email__c)",
+                                                        "metadata": {
+                                                            "type": "email"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Donor__c",
+                                                        "type": "select",
+                                                        "label": "Donor (OneCRM__Donor__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Exchange_Rate__c",
+                                                        "type": "number",
+                                                        "label": "Exchange Rate (OneCRM__Exchange_Rate__c)",
+                                                        "metadata": {
+                                                            "type": "double"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__HonorMemory__c",
+                                                        "type": "text",
+                                                        "label": "Because of... (OneCRM__HonorMemory__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Last_Auto_Payment_Time__c",
+                                                        "type": "date",
+                                                        "label": "Last Auto Payment Time (OneCRM__Last_Auto_Payment_Time__c)",
+                                                        "metadata": {
+                                                            "type": "datetime"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Last_Downloaded__c",
+                                                        "type": "date",
+                                                        "label": "Last Downloaded (OneCRM__Last_Downloaded__c)",
+                                                        "metadata": {
+                                                            "type": "datetime"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Last_Emailed__c",
+                                                        "type": "date",
+                                                        "label": "Last Emailed (OneCRM__Last_Emailed__c)",
+                                                        "metadata": {
+                                                            "type": "datetime"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Notes__c",
+                                                        "type": "text",
+                                                        "label": "Notes (OneCRM__Notes__c)",
+                                                        "metadata": {
+                                                            "type": "textarea"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Paid__c",
+                                                        "type": "number",
+                                                        "label": "Paid Amount (OneCRM__Paid__c)",
+                                                        "metadata": {
+                                                            "type": "currency"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Payment_Plan__c",
+                                                        "type": "select",
+                                                        "label": "Payment Plan (OneCRM__Payment_Plan__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Payment_Processor_ID__c",
+                                                        "type": "text",
+                                                        "label": "Payment Processor ID (OneCRM__Payment_Processor_ID__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Payment_Program__c",
+                                                        "type": "select",
+                                                        "label": "Payment Program (OneCRM__Payment_Program__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Portal_Link__c",
+                                                        "type": "url",
+                                                        "label": "Portal Link (OneCRM__Portal_Link__c)",
+                                                        "metadata": {
+                                                            "type": "url"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Recognition_Contact__c",
+                                                        "type": "select",
+                                                        "label": "Recognition (Contact) (OneCRM__Recognition_Contact__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Recognition__c",
+                                                        "type": "select",
+                                                        "label": "Recognition (OneCRM__Recognition__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Related_Contact__c",
+                                                        "type": "select",
+                                                        "label": "Related Contact (OneCRM__Related_Contact__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Scribe_Error_Message__c",
+                                                        "type": "text",
+                                                        "label": "Scribe Error Message (OneCRM__Scribe_Error_Message__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Send_Invoice__c",
+                                                        "type": "boolean",
+                                                        "label": "Send Invoice (OneCRM__Send_Invoice__c)",
+                                                        "metadata": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__StatusID__c",
+                                                        "type": "text",
+                                                        "label": "StatusID (OneCRM__StatusID__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__StatusReason__c",
+                                                        "type": "text",
+                                                        "label": "Status Reason (OneCRM__StatusReason__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__StatusText__c",
+                                                        "type": "text",
+                                                        "label": "Status Text (OneCRM__StatusText__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Status_Code__c",
+                                                        "type": "text",
+                                                        "label": "Status Code (OneCRM__Status_Code__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Token__c",
+                                                        "type": "text",
+                                                        "label": "Token (OneCRM__Token__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__TransactionId__c",
+                                                        "type": "text",
+                                                        "label": "TransactionId (OneCRM__TransactionId__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Transaction_Number__c",
+                                                        "type": "text",
+                                                        "label": "Transaction Number (OneCRM__Transaction_Number__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Status__c",
+                                                        "type": "select",
+                                                        "label": "Status (OneCRM__Status__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Type__c",
+                                                        "type": "select",
+                                                        "label": "Type (OneCRM__Type__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Memo__c",
+                                                        "type": "text",
+                                                        "label": "For (OneCRM__Memo__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Migration_Id__c",
+                                                        "type": "text",
+                                                        "label": "Migration Id (OneCRM__Migration_Id__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Scribe_Letter__c",
+                                                        "type": "select",
+                                                        "label": "Scribe Letter (OneCRM__Scribe_Letter__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "legacy_Id__c",
+                                                        "type": "text",
+                                                        "label": "Legacy_Id (Legacy_Id__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Letter_Config__c",
+                                                        "type": "select",
+                                                        "label": "Letter Config (OneCRM__Letter_Config__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "collection",
+                                                "label": "Custom Fields"
+                                            }
+                                        ],
+                                        "type": "collection",
+                                        "label": "Fields"
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "id": 9,
+                            "module": "salesforce:createAResponsibleRecordV4",
+                            "version": 4,
+                            "parameters": {
+                                "__IMTCONN__": 6217304
+                            },
+                            "mapper": {
+                                "fields": {
+                                    "custom_fields": {
+                                        "oneCRM__Date__c": "{{2.paymentDate}}",
+                                        "oneCRM__Type__c": "Donation",
+                                        "oneCRM__Amount__c": "-{{2.paymentAmount}}",
+                                        "oneCRM__Income__c": "{{4.id}}",
+                                        "oneCRM__SubType__c": "{{2.subType}}"
+                                    }
+                                },
+                                "sObject": "OneCRM__Income_Line_Item__c"
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 980,
+                                    "y": -177
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "fields": {
+                                            "nested": {
+                                                "custom_fields": {
+                                                    "nested": {
+                                                        "oneCRM__Type__c": {
+                                                            "mode": "chose",
+                                                            "label": "Donation"
+                                                        },
+                                                        "oneCRM__Donor__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Income__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__SubType__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Related_Income__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Related_Contact__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Related_Campaign__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Is_Tax_Deductible__c": {
+                                                            "mode": "chose"
+                                                        },
+                                                        "oneCRM__Related_Income_Line_Item__c": {
+                                                            "mode": "edit"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "sObject": {
+                                            "label": "Income Line Item"
+                                        }
+                                    },
+                                    "parameters": {
+                                        "__IMTCONN__": {
+                                            "data": {
+                                                "scoped": "true",
+                                                "connection": "salesforce"
+                                            },
+                                            "label": "ChabadOne CRM (chbd3609.my.salesforce.com - Chabad of Bedford)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "__IMTCONN__",
+                                        "type": "account:salesforce,salesforce2",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ],
+                                "expect": [
+                                    {
+                                        "name": "sObject",
+                                        "type": "select",
+                                        "label": "Type",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "fields",
+                                        "spec": [
+                                            {
+                                                "name": "custom_fields",
+                                                "spec": [
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Income__c",
+                                                        "type": "select",
+                                                        "label": "Transaction (OneCRM__Income__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__SubType__c",
+                                                        "type": "select",
+                                                        "label": "SubType (OneCRM__SubType__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Type__c",
+                                                        "type": "select",
+                                                        "label": "Type (OneCRM__Type__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Amount__c",
+                                                        "type": "number",
+                                                        "label": "Amount (Income Line) (OneCRM__Amount__c)",
+                                                        "metadata": {
+                                                            "type": "currency"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Date__c",
+                                                        "time": false,
+                                                        "type": "date",
+                                                        "label": "Date (OneCRM__Date__c)",
+                                                        "metadata": {
+                                                            "type": "date"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Dedication_Text__c",
+                                                        "type": "text",
+                                                        "label": "Dedication Text (OneCRM__Dedication_Text__c)",
+                                                        "metadata": {
+                                                            "type": "textarea"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Donor__c",
+                                                        "type": "select",
+                                                        "label": "Donor (OneCRM__Donor__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Is_Tax_Deductible__c",
+                                                        "type": "boolean",
+                                                        "label": "Is Tax Deductible (OneCRM__Is_Tax_Deductible__c)",
+                                                        "metadata": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Memo__c",
+                                                        "type": "text",
+                                                        "label": "Memo (OneCRM__Memo__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Notes__c",
+                                                        "type": "text",
+                                                        "label": "Notes (OneCRM__Notes__c)",
+                                                        "metadata": {
+                                                            "type": "textarea"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Paid__c",
+                                                        "type": "number",
+                                                        "label": "Paid (OneCRM__Paid__c)",
+                                                        "metadata": {
+                                                            "type": "currency"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Related_Campaign__c",
+                                                        "type": "select",
+                                                        "label": "Related Campaign (OneCRM__Related_Campaign__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Related_Contact__c",
+                                                        "type": "select",
+                                                        "label": "Related Contact (OneCRM__Related_Contact__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Related_Income_Line_Item__c",
+                                                        "type": "select",
+                                                        "label": "Related Income Line Item (OneCRM__Related_Income_Line_Item__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Related_Income__c",
+                                                        "type": "select",
+                                                        "label": "Income (OneCRM__Related_Income__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Migration_Id__c",
+                                                        "type": "text",
+                                                        "label": "Migration Id (OneCRM__Migration_Id__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "legacy_Id__c",
+                                                        "type": "text",
+                                                        "label": "Legacy_Id (Legacy_Id__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "collection",
+                                                "label": "Custom Fields"
+                                            }
+                                        ],
+                                        "type": "collection",
+                                        "label": "Fields"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "flow": [
+                        {
+                            "id": 13,
+                            "module": "salesforce:createAResponsibleRecordV4",
+                            "version": 4,
+                            "parameters": {
+                                "__IMTCONN__": 6217304
+                            },
+                            "filter": {
+                                "name": " Recurring",
+                                "conditions": [
+                                    [
+                                        {
+                                            "a": "{{2.action}}",
+                                            "b": "recurring",
+                                            "o": "text:equal"
+                                        }
+                                    ]
+                                ]
+                            },
+                            "mapper": {
+                                "fields": {
+                                    "custom_fields": {
+                                        "oneCRM__Type__c": "{{2.paymentType}}",
+                                        "oneCRM__Payor__c": "{{2.accountId}}",
+                                        "oneCRM__Status__c": "Active",
+                                        "oneCRM__Schedule__c": "{{2.frequency}}",
+                                        "oneCRM__Related_Contact__c": "{{2.contactId}}",
+                                        "oneCRM__Next_Charge_Date__c": "{{2.nextChargeDate}}",
+                                        "oneCRM__Amount_Per_Charge__c": "{{2.recurringAmount}}",
+                                        "oneCRM__Charge_Start_Date__c": "{{2.paymentDate}}",
+                                        "oneCRM__Charges_Remaining__c": "{{2.chargesRemaining}}",
+                                        "oneCRM__Payment_Processor_ID__c": "{{2.paymentProcessorId}}",
+                                        "oneCRM__Total_Estimated_Revenue__c": "{{2.totalEstimatedRevenue}}",
+                                        "oneCRM__Initial_Recurrence_Amount__c": "{{2.initialRecurrences}}"
+                                    }
+                                },
+                                "sObject": "OneCRM__Payment_Program__c"
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 600,
+                                    "y": 150
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "fields": {
+                                            "nested": {
+                                                "recordTypeId": {
+                                                    "mode": "edit"
+                                                },
+                                                "custom_fields": {
+                                                    "nested": {
+                                                        "oneCRM__Type__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Payor__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Status__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__SubType__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Campaign__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Schedule__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Payment_Type__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Letter_Config__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Scribe_Letter__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Related_Contact__c": {
+                                                            "mode": "edit"
+                                                        },
+                                                        "oneCRM__Next_Charge_Credit_Card__c": {
+                                                            "mode": "edit"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "sObject": {
+                                            "label": "Payment Program"
+                                        }
+                                    },
+                                    "parameters": {
+                                        "__IMTCONN__": {
+                                            "data": {
+                                                "scoped": "true",
+                                                "connection": "salesforce"
+                                            },
+                                            "label": "ChabadOne CRM (chbd3609.my.salesforce.com - Chabad of Bedford)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "__IMTCONN__",
+                                        "type": "account:salesforce,salesforce2",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ],
+                                "expect": [
+                                    {
+                                        "name": "sObject",
+                                        "type": "select",
+                                        "label": "Type",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "fields",
+                                        "spec": [
+                                            {
+                                                "name": "ownerId",
+                                                "type": "text",
+                                                "label": "Owner ID (OwnerId)",
+                                                "metadata": {
+                                                    "type": "reference"
+                                                }
+                                            },
+                                            {
+                                                "name": "name",
+                                                "type": "text",
+                                                "label": "Payment Program Name (Name)",
+                                                "metadata": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            {
+                                                "mode": "edit",
+                                                "name": "recordTypeId",
+                                                "type": "select",
+                                                "label": "Record Type ID (RecordTypeId)",
+                                                "metadata": {
+                                                    "type": "reference"
+                                                }
+                                            },
+                                            {
+                                                "name": "custom_fields",
+                                                "spec": [
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Payment_Type__c",
+                                                        "type": "select",
+                                                        "label": "Payment Type (OneCRM__Payment_Type__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Schedule__c",
+                                                        "type": "select",
+                                                        "label": "Schedule (OneCRM__Schedule__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Status__c",
+                                                        "type": "select",
+                                                        "label": "Status (OneCRM__Status__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__SubType__c",
+                                                        "type": "select",
+                                                        "label": "SubType (OneCRM__SubType__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Type__c",
+                                                        "type": "select",
+                                                        "label": "Type (OneCRM__Type__c)",
+                                                        "metadata": {
+                                                            "type": "picklist"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Amount_Per_Charge__c",
+                                                        "type": "number",
+                                                        "label": "Amount Per Charge (OneCRM__Amount_Per_Charge__c)",
+                                                        "metadata": {
+                                                            "type": "currency"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Campaign__c",
+                                                        "type": "select",
+                                                        "label": "Campaign (OneCRM__Campaign__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Charge_Start_Date__c",
+                                                        "time": false,
+                                                        "type": "date",
+                                                        "label": "Charge Start Date (OneCRM__Charge_Start_Date__c)",
+                                                        "metadata": {
+                                                            "type": "date"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Charges_Remaining__c",
+                                                        "type": "number",
+                                                        "label": "Charges Remaining (OneCRM__Charges_Remaining__c)",
+                                                        "metadata": {
+                                                            "type": "double"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Deactivation_Reason__c",
+                                                        "type": "text",
+                                                        "label": "Deactivation Reason (OneCRM__Deactivation_Reason__c)",
+                                                        "metadata": {
+                                                            "type": "textarea"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Dedication_Text__c",
+                                                        "type": "text",
+                                                        "label": "Dedication Text (OneCRM__Dedication_Text__c)",
+                                                        "metadata": {
+                                                            "type": "textarea"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Initial_Recurrence_Amount__c",
+                                                        "type": "number",
+                                                        "label": "Initial Amount of Recurrences (OneCRM__Initial_Recurrence_Amount__c)",
+                                                        "metadata": {
+                                                            "type": "double"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Last_Auto_Advance_Time__c",
+                                                        "type": "date",
+                                                        "label": "Last Auto Advance Time (OneCRM__Last_Auto_Advance_Time__c)",
+                                                        "metadata": {
+                                                            "type": "datetime"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Last_Card_Transaction_Status__c",
+                                                        "type": "text",
+                                                        "label": "Last Card Transaction Status (OneCRM__Last_Card_Transaction_Status__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Memo__c",
+                                                        "type": "text",
+                                                        "label": "Memo (OneCRM__Memo__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Next_Charge_Credit_Card__c",
+                                                        "type": "select",
+                                                        "label": "Next Charge Credit Card (OneCRM__Next_Charge_Credit_Card__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Next_Charge_Date__c",
+                                                        "time": false,
+                                                        "type": "date",
+                                                        "label": "Next Charge Date (OneCRM__Next_Charge_Date__c)",
+                                                        "metadata": {
+                                                            "type": "date"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Notes__c",
+                                                        "type": "text",
+                                                        "label": "Notes (OneCRM__Notes__c)",
+                                                        "metadata": {
+                                                            "type": "textarea"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Payment_Processor_ID__c",
+                                                        "type": "text",
+                                                        "label": "Payment Processor ID (OneCRM__Payment_Processor_ID__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Payor__c",
+                                                        "type": "select",
+                                                        "label": "Payor (OneCRM__Payor__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Related_Contact__c",
+                                                        "type": "select",
+                                                        "label": "Related Contact (OneCRM__Related_Contact__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Total_Estimated_Revenue__c",
+                                                        "type": "number",
+                                                        "label": "Total Estimated Revenue (OneCRM__Total_Estimated_Revenue__c)",
+                                                        "metadata": {
+                                                            "type": "currency"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "oneCRM__Migration_Id__c",
+                                                        "type": "text",
+                                                        "label": "Migration Id (OneCRM__Migration_Id__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Scribe_Letter__c",
+                                                        "type": "select",
+                                                        "label": "Scribe Letter (OneCRM__Scribe_Letter__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "legacy_Id__c",
+                                                        "type": "text",
+                                                        "label": "Legacy_Id (Legacy_Id__c)",
+                                                        "metadata": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    {
+                                                        "mode": "edit",
+                                                        "name": "oneCRM__Letter_Config__c",
+                                                        "type": "select",
+                                                        "label": "Letter Config (OneCRM__Letter_Config__c)",
+                                                        "metadata": {
+                                                            "type": "reference"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "collection",
+                                                "label": "Custom Fields"
+                                            }
+                                        ],
+                                        "type": "collection",
+                                        "label": "Fields"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "metadata": {
+        "instant": true,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": false,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": []
+    }
+}
