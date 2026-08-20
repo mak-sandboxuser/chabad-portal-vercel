@@ -203,18 +203,7 @@ export default function DashboardHome({
               {canPayNow && (
                 <PaymentActionButton
                   className="dash-btn-gold-action"
-                  onClick={() => onDonate({
-                    type: 'Campaign',
-                    subType: 'Membership',
-                    billingMode: schedule.scheduleKind === 'full' ? 'one-time' : 'recurring',
-                    frequency: 'Monthly',
-                    amount: schedule.nextPaymentAmount > 0
-                      ? schedule.nextPaymentAmount.toFixed(2)
-                      : undefined,
-                    groups: membership.tier || undefined,
-                    readOnly: true,
-                    source: 'dashboard_make_payment',
-                  })}
+                  onClick={onDonate}
                 >
                   Make Payment
                   <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />

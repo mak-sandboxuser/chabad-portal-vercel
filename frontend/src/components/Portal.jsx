@@ -119,10 +119,6 @@ export default function Portal({ user, getAuthToken, onLogout }) {
         defaultType: presetProps.type,
         defaultSubType: presetProps.subType,
         defaultBillingMode: presetProps.billingMode,
-        defaultFrequency: presetProps.frequency,
-        groups: presetProps.groups,
-        readOnly: Boolean(presetProps.readOnly),
-        source: presetProps.source,
       });
     } else {
       setDonateModalProps(null);

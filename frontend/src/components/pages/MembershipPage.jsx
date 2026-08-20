@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ShieldCheck, Calendar, CircleDollarSign, Gem,
   FileText, Users, Edit, CalendarOff, Heart, ArrowRight,
-  Handshake, Star,
+  Handshake, Star, Wallet,
 } from 'lucide-react';
 import PortalPageLayout from '../shared/PortalPageLayout';
 import EditFamilyMemberModal from '../shared/EditFamilyMemberModal';
@@ -290,6 +290,20 @@ export default function MembershipPage({
       icon: Gem,
       badge: membership.tier || '—',
       badgeClass: 'blue',
+    },
+    {
+      label: 'Commitment',
+      value: membership.annualCommitment || '—',
+      sub: 'Annual membership',
+      icon: Wallet,
+    },
+    {
+      label: 'Outstanding',
+      value: membership.outstanding || '—',
+      sub: parseMoney(membership.outstanding) > 0 ? 'Balance remaining' : 'Paid up',
+      subClass: parseMoney(membership.outstanding) > 0 ? 'text-danger-red' : 'text-success',
+      icon: CircleDollarSign,
+      valueClass: parseMoney(membership.outstanding) > 0 ? 'text-danger-red' : 'text-success',
     },
     {
       label: 'Status',

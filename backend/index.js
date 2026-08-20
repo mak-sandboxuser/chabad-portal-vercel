@@ -591,6 +591,13 @@ async function fetchHouseholdDataFromWebhook(webhookUrl, email, contactId, membe
       contactId: contactId || '',
       accountId,
       fetchHousehold: true,
+      // Ask Make/SF Search to return personal fields (must also be mapped in Webhook response).
+      includePersonalFields: true,
+      contactFields: [
+        'Id', 'FirstName', 'LastName', 'Name', 'Email', 'MobilePhone', 'HomePhone',
+        'Phone', 'Salutation', 'Birthdate', 'Gender', 'Title',
+        'MailingStreet', 'MailingCity', 'MailingState', 'MailingPostalCode', 'MailingCountry',
+      ],
     }),
   });
 
@@ -600,7 +607,7 @@ async function fetchHouseholdDataFromWebhook(webhookUrl, email, contactId, membe
   }
 
   const text = await response.text();
-  console.log(`Make.com household data for ${email}:`, text.slice(0, 800));
+  console.log(`Make.com household data for ${email}:`, text.slice(0, 1200));
   const payload = parseMakePayload(text);
   return extractPortalDataFromPayload(payload, memberDetails || {});
 }
@@ -622,6 +629,9 @@ async function lookupHouseholdData(email, contactId, memberDetails = null) {
 function applyHouseholdDataToSfData(sfData = {}, householdData = null) {
   if (!householdData) return sfData;
 
+  // Pass cached contacts only as a fallback for non-Salesforce household payloads.
+  // When Make returns fromSalesforce:true, mergeHouseholdPortalData replaces contacts
+  // so deleted household members no longer linger in the portal.
   const merged = mergeHouseholdPortalData({
     fromSalesforce: sfData.syncedFromSalesforce,
     accountId: sfData.accountId || sfData.account?.id,
@@ -632,7 +642,8 @@ function applyHouseholdDataToSfData(sfData = {}, householdData = null) {
     state: sfData.account?.state || sfData.profile?.state,
     postalCode: sfData.account?.postalCode || sfData.profile?.postalCode,
     country: sfData.account?.country || sfData.profile?.country,
-    contacts: sfData.contacts || [],
+    // contacts: sfData.contacts || [],
+    contacts: householdData.fromSalesforce ? [] : (sfData.contacts || []),
     relationships: sfData.relationships || [],
   }, householdData);
 
@@ -710,19 +721,86 @@ async function buildHouseholdMemberDetails(auth, requestedContactId) {
     }
   }
 
-  const profile = profileDetails ? buildProfileFromDetails(profileDetails) : {};
+  const profile = profileDetails ? buildProfileFromDetails(profileDetails) : {
+    phone: contact.phone || '',
+    mobile: contact.phone || '',
+    homePhone: contact.homePhone || '',
+    street: contact.street || '',
+    city: contact.city || '',
+    state: contact.state || '',
+    postalCode: contact.postalCode || '',
+    country: contact.country || '',
+    nickname: contact.nickname || '',
+    title: contact.title || '',
+    hebrewName: contact.hebrewName || '',
+    fathersHebrewName: contact.fathersHebrewName || '',
+    mothersHebrewName: contact.mothersHebrewName || '',
+    jewish: contact.jewish || '',
+    hebrewBirthdate: contact.hebrewBirthdate || '',
+    nextHebrewBirthday: contact.nextHebrewBirthday || '',
+    weddingDate: contact.weddingDate || '',
+    lifecycleStatus: contact.lifecycleStatus || '',
+    birthdate: contact.birthdate || '',
+    age: contact.age || '',
+    gender: contact.gender || '',
+    lifecycle: contact.profile?.lifecycle || {
+      hebrewName: contact.hebrewName || '',
+      fathersHebrewName: contact.fathersHebrewName || '',
+      mothersHebrewName: contact.mothersHebrewName || '',
+      jewish: contact.jewish || '',
+      hebrewBirthdate: contact.hebrewBirthdate || '',
+      nextHebrewBirthday: contact.nextHebrewBirthday || '',
+      weddingDate: contact.weddingDate || '',
+      lifecycleStatus: contact.lifecycleStatus || '',
+    },
+    additional: contact.profile?.additional || {
+      birthdate: contact.birthdate || '',
+      age: contact.age || '',
+      gender: contact.gender || '',
+    },
+  };
+
+  // Prefer household-webhook contact fields (MAKE_HOUSEHOLD_DATA) when present,
+  // especially empty birthdate clears that member-lookup may not carry.
+  if (Object.prototype.hasOwnProperty.call(contact, 'birthdate')) {
+    profile.birthdate = contact.birthdate || '';
+    profile.additional = {
+      ...(profile.additional || {}),
+      birthdate: contact.birthdate || '',
+      age: Object.prototype.hasOwnProperty.call(contact, 'age') ? (contact.age || '') : (profile.additional?.age || ''),
+      gender: Object.prototype.hasOwnProperty.call(contact, 'gender') ? (contact.gender || '') : (profile.additional?.gender || profile.gender || ''),
+    };
+  }
 
   return {
     member: {
       ...contact,
       contactId,
+      firstName: pickFirstNonEmpty(contact.firstName, profileDetails?.firstName, ''),
+      lastName: pickFirstNonEmpty(contact.lastName, profileDetails?.lastName, ''),
       email: pickFirstNonEmpty(contact.email, profileDetails?.email, ''),
       phone: pickFirstNonEmpty(contact.phone, profile.mobile, profile.phone, profileDetails?.mobile, ''),
+      homePhone: pickFirstNonEmpty(contact.homePhone, profile.homePhone, ''),
       street: pickFirstNonEmpty(contact.street, profile.street, profileDetails?.street, ''),
       city: pickFirstNonEmpty(contact.city, profile.city, profileDetails?.city, ''),
       state: pickFirstNonEmpty(contact.state, profile.state, profileDetails?.state, ''),
       postalCode: pickFirstNonEmpty(contact.postalCode, profile.postalCode, profileDetails?.postalCode, ''),
       country: pickFirstNonEmpty(contact.country, profile.country, profileDetails?.country, ''),
+      birthdate: Object.prototype.hasOwnProperty.call(contact, 'birthdate')
+        ? (contact.birthdate || '')
+        : (profile.birthdate || profile.additional?.birthdate || ''),
+      hebrewBirthdate: pickFirstNonEmpty(contact.hebrewBirthdate, profile.hebrewBirthdate, profile.lifecycle?.hebrewBirthdate),
+      nextHebrewBirthday: pickFirstNonEmpty(contact.nextHebrewBirthday, profile.nextHebrewBirthday, profile.lifecycle?.nextHebrewBirthday),
+      weddingDate: pickFirstNonEmpty(contact.weddingDate, profile.weddingDate, profile.lifecycle?.weddingDate),
+      age: Object.prototype.hasOwnProperty.call(contact, 'age') ? (contact.age || '') : (profile.age || profile.additional?.age || ''),
+      gender: pickFirstNonEmpty(contact.gender, profile.gender, profile.additional?.gender),
+      hebrewName: pickFirstNonEmpty(contact.hebrewName, profile.hebrewName, profile.lifecycle?.hebrewName),
+      fathersHebrewName: pickFirstNonEmpty(contact.fathersHebrewName, profile.fathersHebrewName, profile.lifecycle?.fathersHebrewName),
+      mothersHebrewName: pickFirstNonEmpty(contact.mothersHebrewName, profile.mothersHebrewName, profile.lifecycle?.mothersHebrewName),
+      jewish: pickFirstNonEmpty(contact.jewish, profile.jewish, profile.lifecycle?.jewish),
+      lifecycleStatus: pickFirstNonEmpty(contact.lifecycleStatus, profile.lifecycleStatus, profile.lifecycle?.lifecycleStatus),
+      nickname: pickFirstNonEmpty(contact.nickname, profile.nickname),
+      title: pickFirstNonEmpty(contact.title, profile.title),
       profile,
     },
     sfData: mergedHousehold,
@@ -788,10 +866,17 @@ async function lookupSalesforcePortalData(email, contactId, memberDetails = null
         }
       }
 
-      portalData = {
-        ...portalData,
-        contacts: mergeContactsList(portalData.contacts, cachedContacts),
-      };
+      // Do not re-add members from in-memory cache after Salesforce removed them.
+      // portalData = {
+      //   ...portalData,
+      //   contacts: mergeContactsList(portalData.contacts, cachedContacts),
+      // };
+      if (!(portalData.fromSalesforce && Array.isArray(portalData.contacts) && portalData.contacts.length)) {
+        portalData = {
+          ...portalData,
+          contacts: mergeContactsList(portalData.contacts, cachedContacts),
+        };
+      }
 
       if (
         portalData.fromSalesforce
@@ -1477,7 +1562,7 @@ function stripeRecurringIntervalCount(frequency = 'Monthly') {
   return 1;
 }
 
-/** TEST MODE: compress billing cadence so schedules can be verified quickly. */
+/** TEST MODE: compress billing cadence so schedules can be verified quickly. Set false for production. */
 const ACCELERATED_SCHEDULE_TEST = true;
 
 function getAcceleratedRecurringDelayMinutes(frequency = 'Monthly') {
@@ -1485,18 +1570,21 @@ function getAcceleratedRecurringDelayMinutes(frequency = 'Monthly') {
   const normalized = String(frequency || '').trim().toLowerCase();
   if (normalized.includes('half') || normalized.includes('semi') || normalized.includes('install')) return 5;
   if (normalized.includes('year') || normalized.includes('annual')) return 10;
-  if (normalized.includes('month') || !normalized) return 1; // Monthly → 1 minute
-  return 0;
+  // Monthly (default)
+  return 1;
 }
 
 function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
-  const acceleratedDelayMinutes = getAcceleratedRecurringDelayMinutes(frequency);
-  if (acceleratedDelayMinutes > 0) {
-    const start = dateStr ? new Date(dateStr) : new Date();
-    const base = Number.isNaN(start.getTime()) ? new Date() : start;
-    base.setMinutes(base.getMinutes() + acceleratedDelayMinutes);
-    // Keep full timestamp so minute-level test cadence is preserved for CRM/Make.
-    return base.toISOString();
+  const accelMinutes = getAcceleratedRecurringDelayMinutes(frequency);
+  if (accelMinutes > 0) {
+    const base = dateStr ? new Date(`${String(dateStr).slice(0, 10)}T12:00:00`) : new Date();
+    if (Number.isNaN(base.getTime())) {
+      const fallback = new Date();
+      fallback.setMinutes(fallback.getMinutes() + accelMinutes);
+      return fallback.toISOString().split('T')[0];
+    }
+    base.setMinutes(base.getMinutes() + accelMinutes);
+    return base.toISOString().split('T')[0];
   }
 
   const base = (dateStr || new Date().toISOString().split('T')[0]).slice(0, 10);
@@ -3129,11 +3217,13 @@ app.post('/api/portal/update-profile', async (req, res) => {
           mothersHebrewName: merged.mothersHebrewName,
           jewish: merged.jewish,
           hebrewBirthdate: merged.hebrewBirthdate,
-          nextHebrewBirthday: merged.nextHebrewBirthday,
-          weddingDate: merged.weddingDate,
+          nextHebrewBirthday: nullableCrmDate(merged.nextHebrewBirthday),
+          weddingDate: nullableCrmDate(merged.weddingDate),
           lifecycleStatus: merged.lifecycleStatus,
-          birthdate: merged.birthdate,
-          age: merged.age,
+          birthdate: nullableCrmDate(merged.birthdate),
+          clearBirthdate: !String(merged.birthdate || '').trim(),
+          Birthdate: nullableCrmDate(merged.birthdate),
+          age: String(merged.birthdate || '').trim() ? merged.age : '',
           gender: merged.gender,
         };
 
@@ -3207,6 +3297,15 @@ app.post('/api/portal/update-profile', async (req, res) => {
   }
 });
 
+function nullableCrmDate(value) {
+  const text = String(value ?? '').trim();
+  if (!text || /^null$/i.test(text) || /^undefined$/i.test(text)) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const parsed = Date.parse(text);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
 app.post('/api/household/update-member', async (req, res) => {
   const auth = await resolveAuthedPortalMember(req);
   if (auth.error) {
@@ -3265,6 +3364,11 @@ app.post('/api/household/update-member', async (req, res) => {
     }
   }
 
+  // Empty date → null so Make/Salesforce clears Birthdate ("" is often ignored).
+  const birthdateValue = nullableCrmDate(birthdate);
+  const nextHebrewBirthdayValue = nullableCrmDate(nextHebrewBirthday);
+  const weddingDateValue = nullableCrmDate(weddingDate);
+
   // Update contact details in Salesforce via MAKE_PROFILE_UPDATE_WEBHOOK_URL
   if (process.env.MAKE_PROFILE_UPDATE_WEBHOOK_URL) {
     console.log(`Triggering profile update for household member: ${targetContactId}`);
@@ -3292,12 +3396,14 @@ app.post('/api/household/update-member', async (req, res) => {
           fathersHebrewName,
           mothersHebrewName,
           jewish,
-          hebrewBirthdate,
-          nextHebrewBirthday,
-          weddingDate,
+          hebrewBirthdate: String(hebrewBirthdate || '').trim(),
+          nextHebrewBirthday: nextHebrewBirthdayValue,
+          weddingDate: weddingDateValue,
           lifecycleStatus,
-          birthdate,
-          age,
+          birthdate: birthdateValue,
+          clearBirthdate: birthdateValue == null,
+          Birthdate: birthdateValue,
+          age: birthdateValue == null ? '' : age,
           gender,
           groups,
         }),

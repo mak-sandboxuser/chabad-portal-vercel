@@ -303,6 +303,43 @@ function extractAllContactsFromPayload(payload = {}) {
   return mergeContactsList(...sources.map((source) => unwrapMakeArray(source)));
 }
 
+/** Normalize SF/Make date values to yyyy-mm-dd (or '' when empty/cleared). */
+function toIsoDateOnly(value) {
+  if (value == null || value === '') return '';
+  const text = String(value).trim();
+  if (!text || /^null$/i.test(text) || /^undefined$/i.test(text)) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+
+  const parsed = Date.parse(text);
+  if (Number.isNaN(parsed)) return '';
+
+  // Salesforce date/datetime often arrives as UTC midnight — keep the calendar day.
+  if (/T\d{2}:\d{2}/.test(text) || /Z$/i.test(text) || /[+-]\d{2}:?\d{2}$/.test(text)) {
+    return new Date(parsed).toISOString().slice(0, 10);
+  }
+
+  const local = new Date(parsed);
+  const year = local.getFullYear();
+  const month = String(local.getMonth() + 1).padStart(2, '0');
+  const day = String(local.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function firstContactField(raw = {}, keys = []) {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
+    const value = raw[key];
+    if (value == null) return '';
+    return String(value).trim();
+  }
+  for (const key of keys) {
+    const value = raw[key];
+    if (value == null || value === '') continue;
+    return String(value).trim();
+  }
+  return '';
+}
+
 function normalizeContact(raw = {}, index = 0) {
   const contactId = String(
     raw.contactId
@@ -331,6 +368,50 @@ function normalizeContact(raw = {}, index = 0) {
     ?? raw.OneCRM__Secondary_Member__c,
   );
 
+  const birthdate = toIsoDateOnly(firstContactField(raw, [
+    'birthdate', 'Birthdate', 'BirthDate', 'birthDate',
+  ]));
+  const nextHebrewBirthday = toIsoDateOnly(firstContactField(raw, [
+    'nextHebrewBirthday',
+    'Civil Date of Next Hebrew Birthday',
+    'Next Civil Birthday',
+    'OneCRM__Civil_Date_of_Next_Hebrew_Birthday__c',
+  ]));
+  const weddingDate = toIsoDateOnly(firstContactField(raw, [
+    'weddingDate', 'Wedding Date', 'Anniversary Date', 'OneCRM__Wedding_Date__c',
+  ]));
+  const hebrewBirthdate = firstContactField(raw, [
+    'hebrewBirthdate',
+    'Birthdate (Hebrew)',
+    'OneCRM__Birthdate_Hebrew__c',
+    'OneCRM__Hebrew_Birthdate__c',
+  ]);
+  const hebrewName = firstContactField(raw, [
+    'hebrewName', 'Hebrew Name', 'OneCRM__Hebrew_Name__c',
+  ]);
+  const fathersHebrewName = firstContactField(raw, [
+    'fathersHebrewName', "Father's Hebrew Name", 'OneCRM__Father_s_Hebrew_Name__c',
+  ]);
+  const mothersHebrewName = firstContactField(raw, [
+    'mothersHebrewName', "Mother's Hebrew Name", 'OneCRM__Mother_s_Hebrew_Name__c',
+  ]);
+  const jewish = firstContactField(raw, ['jewish', 'Jewish', 'OneCRM__Jewish__c']);
+  const lifecycleStatus = firstContactField(raw, [
+    'lifecycleStatus', 'Status', 'status', 'OneCRM__Status__c',
+  ]);
+  const ageRaw = firstContactField(raw, ['age', 'Age', 'Stated Age', 'OneCRM__Age__c']);
+  // SF Age formula is often 0 when Birthdate is blank — treat that as empty in the portal.
+  const age = (!birthdate && (ageRaw === '' || ageRaw === '0')) ? '' : ageRaw;
+  const gender = firstContactField(raw, ['gender', 'Gender', 'OneCRM__Gender__c']);
+  const nickname = firstContactField(raw, ['nickname', 'Nickname', 'OneCRM__Nickname__c']);
+  const title = firstContactField(raw, ['title', 'Title', 'Salutation', 'salutation']);
+  const homePhone = firstContactField(raw, [
+    'homePhone', 'Home Phone', 'HomePhone', 'home_phone',
+  ]);
+  const mobilePhone = firstContactField(raw, [
+    'phone', 'mobile', 'MobilePhone', 'Mobile Phone', 'Phone', 'Business Phone',
+  ]);
+
   return {
     id: contactId || raw.id || `contact_${index}`,
     name: raw.name
@@ -338,18 +419,97 @@ function normalizeContact(raw = {}, index = 0) {
       || raw['Full Name']
       || [firstName, lastName].filter(Boolean).join(' ').trim()
       || 'Member',
+    firstName,
+    lastName,
     role: resolveContactRole({ ...raw, isPrimary, isSecondary }),
     isPrimary,
     isSecondary,
     contactId,
     email: raw.email || raw.Email || '',
-    phone: raw.phone || raw.mobile || raw.MobilePhone || raw.Phone || '',
-    street: raw.street || raw.MailingStreet || raw['Mailing Street'] || '',
-    city: raw.city || raw.MailingCity || raw['Mailing City'] || '',
-    state: raw.state || raw.MailingState || raw['Mailing State'] || '',
-    postalCode: raw.postalCode || raw.MailingPostalCode || raw['Mailing Postal Code'] || '',
-    country: raw.country || raw.MailingCountry || raw['Mailing Country'] || '',
+    phone: mobilePhone,
+    homePhone,
+    street: raw.street
+      || raw.MailingStreet
+      || raw['Mailing Street']
+      || raw['Primary Street']
+      || raw.primaryStreet
+      || '',
+    city: raw.city
+      || raw.MailingCity
+      || raw['Mailing City']
+      || raw['Primary City']
+      || raw.primaryCity
+      || '',
+    state: raw.state
+      || raw.MailingState
+      || raw['Mailing State']
+      || raw['Primary State']
+      || raw.primaryState
+      || '',
+    postalCode: raw.postalCode
+      || raw.MailingPostalCode
+      || raw['Mailing Postal Code']
+      || raw['Primary Postal Code']
+      || raw.primaryPostalCode
+      || '',
+    country: raw.country
+      || raw.MailingCountry
+      || raw['Mailing Country']
+      || raw['Primary Country']
+      || raw.primaryCountry
+      || '',
     groups: raw.groups || raw.Groups || raw.OneCRM__Groups__c || raw.OneCRM__Group__c || raw.group || raw.Group || '',
+    nickname,
+    title,
+    hebrewName,
+    fathersHebrewName,
+    mothersHebrewName,
+    jewish,
+    hebrewBirthdate,
+    nextHebrewBirthday,
+    weddingDate,
+    lifecycleStatus,
+    birthdate,
+    age,
+    gender,
+    profile: {
+      phone: mobilePhone,
+      mobile: mobilePhone,
+      homePhone,
+      street: raw.street || raw.MailingStreet || raw['Mailing Street'] || raw['Primary Street'] || '',
+      city: raw.city || raw.MailingCity || raw['Mailing City'] || raw['Primary City'] || '',
+      state: raw.state || raw.MailingState || raw['Mailing State'] || raw['Primary State'] || '',
+      postalCode: raw.postalCode || raw.MailingPostalCode || raw['Mailing Postal Code'] || raw['Primary Postal Code'] || '',
+      country: raw.country || raw.MailingCountry || raw['Mailing Country'] || raw['Primary Country'] || '',
+      nickname,
+      title,
+      hebrewName,
+      fathersHebrewName,
+      mothersHebrewName,
+      jewish,
+      hebrewBirthdate,
+      nextHebrewBirthday,
+      weddingDate,
+      lifecycleStatus,
+      birthdate,
+      age,
+      gender,
+      lifecycle: {
+        hebrewName,
+        fathersHebrewName,
+        mothersHebrewName,
+        jewish,
+        hebrewBirthdate,
+        nextHebrewBirthday,
+        weddingDate,
+        lifecycleStatus,
+      },
+      additional: {
+        birthdate,
+        age,
+        gender,
+      },
+    },
   };
 }
 
@@ -384,6 +544,17 @@ function markPrimaryHouseholdContact(contacts = [], memberDetails = {}) {
 function mergeHouseholdPortalData(portalData = {}, householdData = null) {
   if (!householdData) return portalData;
 
+  // Household webhook is the source of truth for who is on the account.
+  // Replacing (not union-merging) lets Salesforce removals drop off the portal.
+  // Previously this kept deleted members forever via:
+  // contacts: mergeContactsList(portalData.contacts, householdData.contacts),
+  const householdContacts = Array.isArray(householdData.contacts)
+    ? householdData.contacts
+    : [];
+  const useHouseholdContactsAsSourceOfTruth = Boolean(
+    householdData.fromSalesforce && Array.isArray(householdData.contacts),
+  );
+
   return {
     ...portalData,
     fromSalesforce: Boolean(portalData.fromSalesforce || householdData.fromSalesforce),
@@ -396,10 +567,18 @@ function mergeHouseholdPortalData(portalData = {}, householdData = null) {
     state: householdData.state || portalData.state || '',
     postalCode: householdData.postalCode || portalData.postalCode || '',
     country: householdData.country || portalData.country || '',
-    contacts: mergeContactsList(portalData.contacts, householdData.contacts),
-    relationships: householdData.relationships?.length
+    contacts: useHouseholdContactsAsSourceOfTruth
+      ? householdContacts
+      : mergeContactsList(portalData.contacts, householdContacts),
+    // Same for relationships: empty SF list must clear stale portal relationships.
+    // relationships: householdData.relationships?.length
+    //   ? householdData.relationships
+    //   : (portalData.relationships || []),
+    relationships: householdData.fromSalesforce && Array.isArray(householdData.relationships)
       ? householdData.relationships
-      : (portalData.relationships || []),
+      : (householdData.relationships?.length
+        ? householdData.relationships
+        : (portalData.relationships || [])),
   };
 }
 
@@ -616,12 +795,19 @@ function filterNormalizedRecurring(recurring = []) {
 }
 
 function paymentDedupeKey(payment = {}) {
-  // Dedupe on date + amount ONLY.
-  // Salesforce returns type/subType as null, and the same real payment
-  // generates multiple records with different methods (Cash vs null).
+  const id = String(payment.id || '').trim();
+  // Keep distinct Salesforce Income rows even when date + amount match
+  // (monthly installments posted on the same day all look identical otherwise).
+  // Old key collapsed real payment history:
+  // const amount = parseMoneyValue(payment.amount) || parseMoneyValue(payment.total);
+  // const date = String(payment.date || '').slice(0, 10);
+  // return `${date}|${amount.toFixed(2)}`;
+  if (id && !/^(payment_|local_|pending_)/i.test(id)) {
+    return `id:${id}`;
+  }
   const amount = parseMoneyValue(payment.amount) || parseMoneyValue(payment.total);
   const date = String(payment.date || '').slice(0, 10);
-  return `${date}|${amount.toFixed(2)}`;
+  return `${date}|${amount.toFixed(2)}|${id || 'anon'}`;
 }
 
 function compareFinancialRecordsByRecent(a, b) {
