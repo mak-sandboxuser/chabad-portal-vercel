@@ -1,27 +1,22 @@
 import { useState } from 'react';
-import { Lock, ArrowLeft } from 'lucide-react';
-import OnboardHeader from '../components/OnboardHeader';
-import OnboardStepper from '../components/OnboardStepper';
-import OnboardFooter from '../components/OnboardFooter';
-import SelectField from '../components/SelectField';
-import DateField from '../components/DateField';
-import PrimaryButton from '../components/PrimaryButton';
-import SecondaryButton from '../components/SecondaryButton';
+import { Lock, ArrowLeft, ArrowRight, Heart, Calendar } from 'lucide-react';
+import PreLoginOnboardLayout from '../components/PreLoginOnboardLayout';
 import useOnboardingTheme from '../hooks/useOnboardingTheme';
 import useOnboardingDraft from '../hooks/useOnboardingDraft';
 import {
   getStepById,
   MARITAL_INFORMATION_STEP_ID,
-  SPOUSE_INFORMATION_STEP_ID,
-  CHILDREN_STEP_ID,
+  HOUSEHOLD_STEP_ID,
+  ABOUT_YOU_STEP_ID,
 } from '../data/onboardingSteps';
-import { goToOnboardingPath } from '../utils/onboardingRoutes';
-import { isBlank, validateDateString } from '../utils/onboardingValidation';
-import '../onboard.css';
+import { goToOnboardingPath, ONBOARD_SUCCESS_PATH } from '../utils/onboardingRoutes';
+import { submitPreLoginOnboardingApplication } from '../utils/submitPreLoginOnboarding';
+import { readDraft } from '../utils/onboardingCookies';
+import { showToast } from '../../utils/toast';
+import { isBlank } from '../utils/onboardingValidation';
 
 const THIS_STEP_ID = MARITAL_INFORMATION_STEP_ID;
-const PREVIOUS_STEP_ID = SPOUSE_INFORMATION_STEP_ID;
-const NEXT_STEP_ID = CHILDREN_STEP_ID;
+const PREVIOUS_STEP_ID = HOUSEHOLD_STEP_ID;
 
 const MARITAL_STATUS_OPTIONS = [
   { value: 'Single', label: 'Single' },
@@ -32,10 +27,65 @@ const MARITAL_STATUS_OPTIONS = [
   { value: 'Separated', label: 'Separated' },
 ];
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+const CURRENT_YEAR = new Date().getFullYear();
+const YEARS = Array.from({ length: 100 }, (_, i) => CURRENT_YEAR - i);
+
 const EMPTY_MARITAL = {
   maritalStatus: '',
   anniversaryDate: '',
+  anniversaryMonth: '',
+  anniversaryDay: '',
+  anniversaryYear: '',
 };
+
+function partsToDateString(month, day, year) {
+  if (!month || !day || !year) return '';
+  const monthIndex = MONTHS.indexOf(month) + 1;
+  if (monthIndex < 1) return '';
+  const mm = String(monthIndex).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  // Store ISO for Salesforce Date fields (YYYY-MM-DD)
+  return `${year}-${mm}-${dd}`;
+}
+
+function dateStringToParts(value) {
+  const raw = String(value || '').trim();
+  // YYYY-MM-DD
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    const month = MONTHS[Number(iso[2]) - 1] || '';
+    return {
+      anniversaryMonth: month,
+      anniversaryDay: String(Number(iso[3])),
+      anniversaryYear: iso[1],
+    };
+  }
+  // MM/DD/YYYY
+  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slash) {
+    const monthNum = Number(slash[1]);
+    const day = String(Number(slash[2]));
+    const year = slash[3];
+    const month = MONTHS[monthNum - 1] || '';
+    return { anniversaryMonth: month, anniversaryDay: day, anniversaryYear: year };
+  }
+  // "June 15, 2015"
+  const named = raw.match(/^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$/);
+  if (named) {
+    const month = MONTHS.find((m) => m.toLowerCase() === named[1].toLowerCase()) || '';
+    return {
+      anniversaryMonth: month,
+      anniversaryDay: String(Number(named[2])),
+      anniversaryYear: named[3],
+    };
+  }
+  return { anniversaryMonth: '', anniversaryDay: '', anniversaryYear: '' };
+}
 
 function validateAll(marital) {
   const errors = {};
@@ -45,8 +95,22 @@ function validateAll(marital) {
   }
 
   if (marital.maritalStatus === 'Married') {
-    const dateError = validateDateString(marital.anniversaryDate, 'anniversary date');
-    if (dateError) errors.anniversaryDate = dateError;
+    const hasAny =
+      marital.anniversaryMonth || marital.anniversaryDay || marital.anniversaryYear;
+    if (!hasAny && !marital.anniversaryDate) {
+      errors.anniversaryDate = 'Enter your anniversary date.';
+    } else if (
+      marital.anniversaryMonth || marital.anniversaryDay || marital.anniversaryYear
+    ) {
+      if (!marital.anniversaryMonth || !marital.anniversaryDay || !marital.anniversaryYear) {
+        errors.anniversaryDate = 'Complete Anniversary Date or leave all fields blank.';
+      }
+    } else {
+      const iso = String(marital.anniversaryDate || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) && !/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(iso)) {
+        errors.anniversaryDate = 'Enter a valid anniversary date.';
+      }
+    }
   }
 
   return errors;
@@ -58,7 +122,18 @@ export default function MaritalInformation() {
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const marital = { ...EMPTY_MARITAL, ...draft.data.marital };
+  const saved = draft.data.marital || {};
+  const fromDate = !saved.anniversaryMonth && saved.anniversaryDate
+    ? dateStringToParts(saved.anniversaryDate)
+    : {};
+  const marital = {
+    ...EMPTY_MARITAL,
+    ...saved,
+    ...fromDate,
+    anniversaryMonth: saved.anniversaryMonth || fromDate.anniversaryMonth || '',
+    anniversaryDay: saved.anniversaryDay || fromDate.anniversaryDay || '',
+    anniversaryYear: saved.anniversaryYear || fromDate.anniversaryYear || '',
+  };
   const showAnniversary = marital.maritalStatus === 'Married';
 
   const updateMarital = (patch) => {
@@ -85,8 +160,6 @@ export default function MaritalInformation() {
     const value = event.target.value;
     updateMarital({ maritalStatus: value });
     clearErrorIfValid('maritalStatus', !isBlank(value));
-    // Marital status no longer "Married" — the anniversary date field is
-    // hidden and shouldn't block submission with a stale error.
     if (value !== 'Married') {
       setErrors((prev) => {
         if (!prev.anniversaryDate) return prev;
@@ -97,16 +170,33 @@ export default function MaritalInformation() {
     }
   };
 
-  const handleAnniversaryChange = (nextValue) => {
-    updateMarital({ anniversaryDate: nextValue });
-    clearErrorIfValid('anniversaryDate', !validateDateString(nextValue, 'anniversary date'));
+  const handleAnniversaryPartChange = (field) => (event) => {
+    const value = event.target.value;
+    const nextParts = {
+      anniversaryMonth: field === 'anniversaryMonth' ? value : marital.anniversaryMonth,
+      anniversaryDay: field === 'anniversaryDay' ? value : marital.anniversaryDay,
+      anniversaryYear: field === 'anniversaryYear' ? value : marital.anniversaryYear,
+    };
+    const anniversaryDate = partsToDateString(
+      nextParts.anniversaryMonth,
+      nextParts.anniversaryDay,
+      nextParts.anniversaryYear,
+    );
+    updateMarital({ ...nextParts, anniversaryDate });
+    if (errors.anniversaryDate) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.anniversaryDate;
+        return next;
+      });
+    }
   };
 
   const focusFirstInvalidField = (fieldErrors) => {
     if (fieldErrors.maritalStatus) {
       document.getElementById('maritalStatus')?.focus();
     } else if (fieldErrors.anniversaryDate) {
-      document.getElementById('anniversaryDate')?.focus();
+      document.getElementById('anniversaryMonth')?.focus();
     }
   };
 
@@ -119,11 +209,24 @@ export default function MaritalInformation() {
     goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
 
-    const nextErrors = validateAll(marital);
+    const anniversaryDate = showAnniversary
+      ? partsToDateString(
+        marital.anniversaryMonth,
+        marital.anniversaryDay,
+        marital.anniversaryYear,
+      ) || marital.anniversaryDate
+      : '';
+
+    const payloadMarital = {
+      ...marital,
+      anniversaryDate,
+    };
+
+    const nextErrors = validateAll(payloadMarital);
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
@@ -132,85 +235,173 @@ export default function MaritalInformation() {
     }
 
     setIsSubmitting(true);
-    persistNow({
-      ...draft,
-      currentStep: NEXT_STEP_ID,
-      data: { ...draft.data, marital },
-    });
-    goToOnboardingPath(getStepById(NEXT_STEP_ID).path);
+    try {
+      persistNow({
+        ...draft,
+        currentStep: THIS_STEP_ID,
+        data: { ...draft.data, marital: payloadMarital },
+      });
+
+      const latest = readDraft() || draft;
+      const primaryMember = latest.data?.primaryMember || {};
+      const household = latest.data?.household || {};
+
+      if (!primaryMember.email || !primaryMember.firstName || !primaryMember.lastName) {
+        showToast({
+          message: 'Primary member details are missing. Please go back to About You.',
+          type: 'error',
+        });
+        goToOnboardingPath(getStepById(ABOUT_YOU_STEP_ID).path);
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!household.addressLine1 || !household.city) {
+        showToast({
+          message: 'Household details are missing. Please go back to Household.',
+          type: 'error',
+        });
+        goToOnboardingPath(getStepById(HOUSEHOLD_STEP_ID).path);
+        setIsSubmitting(false);
+        return;
+      }
+
+      await submitPreLoginOnboardingApplication({
+        primaryMember,
+        household,
+        marital: latest.data?.marital || payloadMarital,
+      });
+
+      showToast({ message: 'Registration & Membership assigned successfully!', type: 'success' });
+      window.location.assign(ONBOARD_SUCCESS_PATH);
+    } catch (err) {
+      if (err?.code === 'email_registered') {
+        setErrors((prev) => ({
+          ...prev,
+          maritalStatus: prev.maritalStatus || 'This email is already registered. Please log in.',
+        }));
+      }
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="onboard-root" data-onboard-theme={theme}>
-      <div className="onboard-about-page">
-        <div className="onboard-about-watermark" aria-hidden="true" />
+    <PreLoginOnboardLayout
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      footerNote="Your information is secure and will only be used for membership purposes."
+    >
+      <div className="ay-card">
+        <div className="ay-card-head">
+          <div>
+            <h2>Marital Information</h2>
+            <p>Please let us know your current marital status.</p>
+          </div>
+          <div className="ay-secure-note">
+            <Lock size={14} />
+            Your information is secure and encrypted.
+          </div>
+        </div>
 
-        <OnboardHeader
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          title="Membership Onboarding"
-          subtitle="Join our community in a few simple steps."
-        />
+        <form onSubmit={handleSubmit} noValidate>
+          <p className="ay-section-label">Marital Details</p>
 
-        <OnboardStepper currentStepId={THIS_STEP_ID} />
-
-        <main>
-          <form className="onboard-about-card" onSubmit={handleSubmit} noValidate>
-            <div className="onboard-about-header">
-              <div>
-                <h2 className="onboard-about-title">Marital Information</h2>
-                <p className="onboard-about-subtitle">Please let us know your current marital status.</p>
+          <div className="ay-row">
+            <div className="ay-field">
+              <label className="ay-label" htmlFor="maritalStatus">
+                Marital Status<span>*</span>
+              </label>
+              <div className={`ay-input-wrap ${errors.maritalStatus ? 'has-error' : ''}`}>
+                <Heart size={16} />
+                <select
+                  id="maritalStatus"
+                  value={marital.maritalStatus}
+                  onChange={handleStatusChange}
+                >
+                  <option value="">Marital Status</option>
+                  {MARITAL_STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               </div>
-              <span className="onboard-about-security-note">
-                <Lock size={14} aria-hidden="true" />
-                Your information is secure and encrypted.
-              </span>
+              {errors.maritalStatus && (
+                <span className="ay-input-error">{errors.maritalStatus}</span>
+              )}
             </div>
 
-            <div className="onboard-form-field-full">
-              <SelectField
-                standalone
-                id="maritalStatus"
-                label="Marital Status"
-                required
-                value={marital.maritalStatus}
-                onChange={handleStatusChange}
-                options={MARITAL_STATUS_OPTIONS}
-                error={errors.maritalStatus}
-              />
-            </div>
-
-            {showAnniversary && (
-              <div className="onboard-conditional-panel">
-                <h3 className="onboard-conditional-panel-title">Anniversary Date</h3>
-                <p className="onboard-conditional-panel-description">
-                  Please enter your wedding anniversary date.
-                </p>
-
-                <DateField
-                  id="anniversaryDate"
-                  label="Anniversary Date"
-                  required
-                  value={marital.anniversaryDate}
-                  onChange={handleAnniversaryChange}
-                  error={errors.anniversaryDate}
-                />
+            {showAnniversary ? (
+              <div className="ay-field">
+                <label className="ay-label">
+                  Anniversary Date<span>*</span>
+                </label>
+                <div className="ay-birth-row">
+                  <div className={`ay-input-wrap ${errors.anniversaryDate ? 'has-error' : ''}`}>
+                    <Calendar size={16} />
+                    <select
+                      id="anniversaryMonth"
+                      value={marital.anniversaryMonth}
+                      onChange={handleAnniversaryPartChange('anniversaryMonth')}
+                    >
+                      <option value="">Month</option>
+                      {MONTHS.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={`ay-input-wrap ${errors.anniversaryDate ? 'has-error' : ''}`}>
+                    <select
+                      id="anniversaryDay"
+                      value={marital.anniversaryDay}
+                      onChange={handleAnniversaryPartChange('anniversaryDay')}
+                    >
+                      <option value="">Day</option>
+                      {DAYS.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={`ay-input-wrap ${errors.anniversaryDate ? 'has-error' : ''}`}>
+                    <select
+                      id="anniversaryYear"
+                      value={marital.anniversaryYear}
+                      onChange={handleAnniversaryPartChange('anniversaryYear')}
+                    >
+                      <option value="">Year</option>
+                      {YEARS.map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {errors.anniversaryDate && (
+                  <span className="ay-input-error">{errors.anniversaryDate}</span>
+                )}
               </div>
+            ) : (
+              <div className="ay-field" aria-hidden="true" />
             )}
+          </div>
 
-            <div className="onboard-form-actions">
-              <SecondaryButton variant="navy" icon={ArrowLeft} onClick={handleBack}>
-                Back
-              </SecondaryButton>
-              <PrimaryButton type="submit" loading={isSubmitting}>
-                Continue
-              </PrimaryButton>
-            </div>
-          </form>
-        </main>
+          {showAnniversary && (
+            <p className="ay-helper-hint">
+              Please enter your wedding anniversary date.
+            </p>
+          )}
 
-        <OnboardFooter securityNote="Your information is secure and will only be used for membership purposes." />
+          <div className="ay-actions">
+            <button type="button" className="ay-btn-outline" onClick={handleBack}>
+              <ArrowLeft size={16} /> Back
+            </button>
+            <button type="submit" className="ay-btn-solid" disabled={isSubmitting}>
+              {isSubmitting ? 'Please wait…' : (
+                <>
+                  Confirm &amp; Continue <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
-    </div>
+    </PreLoginOnboardLayout>
   );
 }

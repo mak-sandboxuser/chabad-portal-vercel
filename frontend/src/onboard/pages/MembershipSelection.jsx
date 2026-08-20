@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Heart, ArrowLeft, LogOut, Loader2 } from 'lucide-react';
+import { Users, Heart, ArrowLeft, LogOut } from 'lucide-react';
 import { fetchPortalApi } from '../../utils/portalApi';
 import { showToast } from '../../utils/toast';
 import OnboardHeader from '../components/OnboardHeader';
@@ -23,7 +23,7 @@ import {
   getPreviousPreferenceStepId,
   isFirstPreferenceStep,
 } from '../utils/householdPreferences';
-import { signOutFromOnboarding } from '../utils/postLoginStepper';
+import { signOutFromOnboarding, isPostLoginStepperPending, dismissPostLoginStepperPending } from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = MEMBERSHIP_STEP_ID;
@@ -102,7 +102,6 @@ export default function MembershipSelection() {
   const { draft, updateDraft, persistNow } = useOnboardingDraft();
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [confirmingPayment, setConfirmingPayment] = useState(false);
 
   const prefs = getHouseholdPreferences(draft);
   const isFirstForm = isFirstPreferenceStep(THIS_STEP_ID, prefs);
@@ -122,39 +121,23 @@ export default function MembershipSelection() {
 
   useEffect(() => {
     if (paymentStatus === 'success' && sessionId) {
-      setConfirmingPayment(true);
-      const confirm = async () => {
-        try {
-          await fetchPortalApi('/api/payments/confirm-checkout', {
-            method: 'POST',
-            body: { sessionId },
-          });
-
-          showToast({ message: 'Payment confirmed & membership assigned!', type: 'success' });
-          window.history.replaceState({}, document.title, window.location.pathname);
-
-          sessionStorage.setItem('show_onboarding_complete', 'true');
-          persistNow({
-            ...draft,
-            currentStep: 99,
-            data: {
-              ...draft.data,
-              membership: {
-                ...draft.data.membership,
-                paymentSessionId: sessionId,
-                isPaid: true,
-              },
-            },
-          });
-          window.location.replace('/');
-        } catch (err) {
-          setError(err.message || 'Failed to verify payment with Salesforce.');
-          setConfirmingPayment(false);
-        }
-      };
-      confirm();
+      // Stripe now returns to /payment-success; keep a safety redirect if an
+      // old success URL still lands on this page.
+      const next = new URLSearchParams({ payment: 'success', session_id: sessionId });
+      window.location.replace(`/payment-success?${next.toString()}`);
     }
   }, [paymentStatus, sessionId]);
+
+  if (paymentStatus === 'success') {
+    return (
+      <div className="verify-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: '16px' }}>
+        <div className="spinner"></div>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '16px', fontWeight: '500' }}>
+          Confirming payment & updating membership...
+        </p>
+      </div>
+    );
+  }
 
   const handleSelectTier = async (tier) => {
     setIsSubmitting(true);
@@ -181,6 +164,16 @@ export default function MembershipSelection() {
   };
 
   const handleBack = () => {
+    if (isPostLoginStepperPending() || new URLSearchParams(window.location.search).get('mode') === 'renew') {
+      dismissPostLoginStepperPending();
+      try {
+        sessionStorage.removeItem('is_portal_renewal_mode');
+      } catch {
+        // ignore
+      }
+      window.location.replace('/');
+      return;
+    }
     if (isFirstForm) {
       signOutFromOnboarding();
       return;
@@ -206,8 +199,8 @@ export default function MembershipSelection() {
         <OnboardHeader
           theme={theme}
           onToggleTheme={toggleTheme}
-          title="Membership Onboarding"
-          subtitle="Join our community in a few simple steps."
+          title={isPostLoginStepperPending() ? "Membership Renewal" : "Membership Onboarding"}
+          subtitle={isPostLoginStepperPending() ? "Select your membership tier to renew your account." : "Join our community in a few simple steps."}
         />
 
         <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
@@ -220,13 +213,7 @@ export default function MembershipSelection() {
         />
 
         <main>
-          {confirmingPayment ? (
-            <div className="onboard-about-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', textAlign: 'center' }}>
-              <Loader2 size={40} className="onboard-search-spinner" style={{ animation: 'spin 1s linear infinite', marginBottom: '16px' }} />
-              <h3 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--onboard-navy)', marginBottom: '8px' }}>Confirming Payment</h3>
-              <p style={{ fontSize: '14px', color: 'var(--onboard-text-secondary)' }}>We are confirming your payment and assigning your group in Salesforce. Please do not close or reload this page.</p>
-            </div>
-          ) : isPaid ? (
+          {isPaid ? (
             <div className="onboard-about-card">
               <div className="onboard-about-header">
                 <div>
@@ -250,10 +237,10 @@ export default function MembershipSelection() {
               <div className="onboard-form-actions">
                 <SecondaryButton
                   variant="navy"
-                  icon={isFirstForm ? LogOut : ArrowLeft}
+                  icon={isPostLoginStepperPending() ? ArrowLeft : (isFirstForm ? LogOut : ArrowLeft)}
                   onClick={handleBack}
                 >
-                  {isFirstForm ? 'Sign Out' : 'Back'}
+                  {isPostLoginStepperPending() ? 'Back to Portal' : (isFirstForm ? 'Sign Out' : 'Back')}
                 </SecondaryButton>
                 <PrimaryButton onClick={handleContinuePaid}>
                   Continue
@@ -317,10 +304,10 @@ export default function MembershipSelection() {
               <div className="onboard-form-actions">
                 <SecondaryButton
                   variant="navy"
-                  icon={isFirstForm ? LogOut : ArrowLeft}
+                  icon={isPostLoginStepperPending() ? ArrowLeft : (isFirstForm ? LogOut : ArrowLeft)}
                   onClick={handleBack}
                 >
-                  {isFirstForm ? 'Sign Out' : 'Back'}
+                  {isPostLoginStepperPending() ? 'Back to Portal' : (isFirstForm ? 'Sign Out' : 'Back')}
                 </SecondaryButton>
               </div>
             </div>

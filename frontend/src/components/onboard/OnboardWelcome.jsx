@@ -20,9 +20,10 @@ import {
   Wheat,
 } from 'lucide-react';
 import ChabadLogo from '../shared/ChabadLogo';
-import { SUPPORT_EMAIL } from '../../constants/supportContact';
+import ContactSupportModal from '../shared/ContactSupportModal';
 import heroImage from './onboard-hero.jpg';
 import { ONBOARD_PATH, ONBOARD_ABOUT_YOU_PATH } from './routes';
+import { clearDraft } from '../../onboard/utils/onboardingCookies';
 
 export { ONBOARD_PATH };
 
@@ -48,6 +49,7 @@ const STEPS = [
 
 export default function OnboardWelcome() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [showContactModal, setShowContactModal] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('light-theme', theme === 'light');
@@ -59,6 +61,8 @@ export default function OnboardWelcome() {
   };
 
   const handleBeginApplication = () => {
+    // Fresh onboarding — do not carry previous applicant draft into About You.
+    clearDraft();
     window.location.href = ONBOARD_ABOUT_YOU_PATH;
   };
 
@@ -433,14 +437,22 @@ export default function OnboardWelcome() {
           font-size: 13px;
           color: var(--text-secondary);
         }
-        .onboard-footer a {
+        .onboard-footer a,
+        .onboard-footer-contact {
           color: var(--color-accent);
           font-weight: 600;
           text-decoration: none;
           margin-left: 4px;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 0;
+          font: inherit;
         }
-        .onboard-footer a:hover {
+        .onboard-footer a:hover,
+        .onboard-footer-contact:hover {
           text-decoration: underline;
+          color: var(--color-accent);
         }
         @media (max-width: 860px) {
           .onboard-panel {
@@ -469,7 +481,7 @@ export default function OnboardWelcome() {
 
       <header className="onboard-header">
         <div className="onboard-header-left">
-          <ChabadLogo className="chabad-logo" size={72} alt="Chabad Bedford" />
+          <ChabadLogo className="chabad-logo" theme={theme} size={72} alt="Chabad Bedford" />
           <div className="onboard-logo-text">
             <strong>CHABAD</strong>
             <span>BEDFORD</span>
@@ -484,9 +496,14 @@ export default function OnboardWelcome() {
           >
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
-          <a href={`mailto:${SUPPORT_EMAIL}`} className="onboard-help-link">
+          <button
+            type="button"
+            className="onboard-help-link"
+            onClick={() => setShowContactModal(true)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}
+          >
             <HelpCircle size={16} /> Need Help?
-          </a>
+          </button>
         </div>
       </header>
 
@@ -575,8 +592,19 @@ export default function OnboardWelcome() {
 
       <footer className="onboard-footer">
         Questions? We're here to help.
-        <a href={`mailto:${SUPPORT_EMAIL}`}>Contact Us →</a>
+        <button
+          type="button"
+          className="onboard-footer-contact"
+          onClick={() => setShowContactModal(true)}
+        >
+          Contact Us →
+        </button>
       </footer>
+
+      <ContactSupportModal
+        open={showContactModal}
+        onClose={() => setShowContactModal(false)}
+      />
     </div>
   );
 }

@@ -42,55 +42,21 @@ export default function EditFamilyMemberModal({
   });
 
   const [submitting, setSubmitting] = useState(false);
-  const [loadingDetails, setLoadingDetails] = useState(false);
 
   useEffect(() => {
     if (!open || !member) return;
 
-    let cancelled = false;
-    const contactId = member.contactId || member.id;
+    const profileForm = sfDataToProfileForm(member, member.email);
     const mType = member.isPrimary ? 'primary' : member.isSecondary ? 'secondary' : 'child';
 
-    const applyMember = (source) => {
-      const profileForm = sfDataToProfileForm(source, source?.email || member.email);
-      setForm({
-        ...profileForm,
-        memberType: mType,
-        groups: source?.groups || source?.group || member.groups || member.group || '',
-      });
-    };
-
-    // Seed from list row, then refresh from household member-details.
-    applyMember(member);
+    setForm({
+      ...profileForm,
+      memberType: mType,
+      groups: member.groups || member.group || '',
+    });
     setActiveTab('general');
     setSubmitting(false);
-
-    if (!contactId?.startsWith('003') || !getAuthToken) {
-      return undefined;
-    }
-
-    setLoadingDetails(true);
-    (async () => {
-      try {
-        const data = await fetchPortalApi('/api/household/member-details', {
-          getAuthToken,
-          method: 'POST',
-          body: { contactId },
-        });
-        if (!cancelled && data?.member) {
-          applyMember(data.member);
-        }
-      } catch {
-        // Keep seeded form values if detail refresh fails.
-      } finally {
-        if (!cancelled) setLoadingDetails(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, member, getAuthToken]);
+  }, [open, member]);
 
   const household = useMemo(() => getHouseholdAccountContext(sfData), [sfData]);
   const accountName = household.accountName;
@@ -231,10 +197,10 @@ export default function EditFamilyMemberModal({
         aria-labelledby="edit-member-title"
         style={{ maxWidth: '750px', width: '90%' }}
       >
-        {(submitting || loadingDetails) && (
+        {submitting && (
           <div className="add-family-loading-overlay" aria-live="polite">
             <Loader2 size={32} className="add-family-spinner" />
-            <span>{loadingDetails ? 'Loading member details…' : 'Updating Member Details..'}</span>
+            <span>Updating Member Details..</span>
           </div>
         )}
         <div className="portal-modal-header">

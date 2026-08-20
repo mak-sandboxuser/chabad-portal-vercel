@@ -3,6 +3,7 @@ import { FIRST_FORM_STEP, CONTRIBUTION_SCHEDULE_STEP_ID } from '../data/onboardi
 export const ONBOARD_PATH = '/onboard';
 export const ONBOARD_FIRST_FORM_PATH = FIRST_FORM_STEP.path;
 export const ONBOARD_EXIT_PATH = '/';
+export const ONBOARD_SUCCESS_PATH = '/onboard/success';
 /** After the post-login stepper finishes, return to the Member Portal dashboard. */
 export const ONBOARD_CONFIRMATION_PATH = '/';
 

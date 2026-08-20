@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,8 +13,10 @@ import {
   Languages,
   Lock,
   Mail,
+  Moon,
   Phone,
   Star,
+  Sun,
   User,
   Users,
   Wallet,
@@ -26,11 +28,16 @@ import {
   CreditCard as CardIcon
 } from 'lucide-react';
 import ChabadLogo from '../shared/ChabadLogo';
+import ContactSupportModal from '../shared/ContactSupportModal';
+import useOnboardingTheme from '../../onboard/hooks/useOnboardingTheme';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '../../constants/supportContact';
 import { showToast } from '../../utils/toast';
 import { fetchPortalApi } from '../../utils/portalApi';
 import { SALUTATIONS, GENDER_OPTIONS } from '../../constants/householdMembers';
 import { apiUrl } from '../../config/api';
+import { createEmptyDraft, readDraft, writeDraft } from '../../onboard/utils/onboardingCookies';
+import { getStepById, HOUSEHOLD_STEP_ID } from '../../onboard/data/onboardingSteps';
+import { goToOnboardingPath } from '../../onboard/utils/onboardingRoutes';
 
 export const ONBOARD_ABOUT_YOU_PATH = '/onboard/about-you';
 
@@ -146,10 +153,12 @@ function YesNoToggle({ value, onChange }) {
 }
 
 export default function OnboardAboutYou() {
+  const [theme, toggleTheme] = useOnboardingTheme();
   const [currentStep, setCurrentStep] = useState(0); // 0: About You, 1: Membership, 2: Payment, 3: Confirm, 4: Success
   const [communityOpen, setCommunityOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
   
   const [form, setForm] = useState({
     // Step 1: About You
@@ -202,9 +211,26 @@ export default function OnboardAboutYou() {
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
-    // Sync dark/light theme on mount
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    document.documentElement.classList.toggle('light-theme', savedTheme === 'light');
+    const draft = readDraft();
+    const saved = draft?.data?.primaryMember;
+    if (!saved || typeof saved !== 'object') return;
+    setForm((f) => ({
+      ...f,
+      salutation: saved.salutation || f.salutation,
+      gender: saved.gender || f.gender,
+      firstName: saved.firstName || f.firstName,
+      lastName: saved.lastName || f.lastName,
+      email: saved.email || f.email,
+      mobilePhone: saved.mobilePhone || f.mobilePhone,
+      birthMonth: saved.birthMonth || saved.birthDate?.month || f.birthMonth,
+      birthDay: saved.birthDay || saved.birthDate?.day || f.birthDay,
+      birthYear: saved.birthYear || saved.birthDate?.year || f.birthYear,
+      hebrewName: saved.hebrewName || f.hebrewName,
+      fatherHebrewName: saved.fathersHebrewName || saved.fatherHebrewName || f.fatherHebrewName,
+      motherHebrewName: saved.mothersHebrewName || saved.motherHebrewName || f.motherHebrewName,
+      occupation: saved.occupation || f.occupation,
+      membershipTier: saved.membershipTier || f.membershipTier,
+    }));
   }, []);
 
   const update = (field) => (e) => {
@@ -505,44 +531,40 @@ export default function OnboardAboutYou() {
       }, 0);
       return;
     }
-    setIsSubmitting(true);
-    
-    try {
-      const checkRes = await fetch(apiUrl('/api/auth/check-member'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: form.email.trim().toLowerCase() }),
-      });
-      if (checkRes.ok) {
-        const checkData = await checkRes.json();
-        if (checkData.allowed) {
-          setErrors((prev) => ({ ...prev, email: 'This email is already registered. Please log in.' }));
-          showToast({ message: 'This email is already registered. Please log in.', type: 'error' });
-          setIsSubmitting(false);
-          return;
-        }
-      }
-    } catch (checkErr) {
-      console.error('Error checking email registration status:', checkErr);
-    }
-    
-    try {
-      await submitOnboardingApplication();
-      try {
-        localStorage.setItem('pending_post_login_membership_stepper', '1');
-        localStorage.removeItem('completed_post_login_membership_stepper');
-      } catch {
-        // ignore storage failures
-      }
-      showToast({ message: 'Registration & Membership assigned successfully! Redirecting to login...', type: 'success' });
-      setTimeout(() => {
-        window.location.href = '/';
-      }, 1500);
-    } catch (err) {
-      // Error handled in submitOnboardingApplication
-    } finally {
-      setIsSubmitting(false);
-    }
+
+    // Next only — no webhook. Persist About You data and open Household.
+    const existing = readDraft() || createEmptyDraft(form.email);
+    writeDraft({
+      ...existing,
+      ownerEmail: String(form.email || '').trim().toLowerCase(),
+      currentStep: HOUSEHOLD_STEP_ID,
+      data: {
+        ...existing.data,
+        primaryMember: {
+          ...existing.data.primaryMember,
+          salutation: form.salutation,
+          gender: form.gender,
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          email: form.email.trim().toLowerCase(),
+          mobilePhone: form.mobilePhone.trim(),
+          birthMonth: form.birthMonth,
+          birthDay: form.birthDay,
+          birthYear: form.birthYear,
+          hebrewName: form.hebrewName,
+          fathersHebrewName: form.fatherHebrewName,
+          mothersHebrewName: form.motherHebrewName,
+          fatherHebrewName: form.fatherHebrewName,
+          motherHebrewName: form.motherHebrewName,
+          occupation: form.occupation,
+          membershipTier: form.membershipTier,
+          hasSpouse: form.hasSpouse,
+          hasChildren: form.hasChildren,
+          addYahrzeit: form.addYahrzeit,
+        },
+      },
+    });
+    goToOnboardingPath(getStepById(HOUSEHOLD_STEP_ID).path);
   };
 
   const selectedTierObj = MEMBERSHIP_TIERS.find((t) => t.id === form.membershipTier) || MEMBERSHIP_TIERS[0];
@@ -593,6 +615,27 @@ export default function OnboardAboutYou() {
         }
         .ay-help-link:hover {
           text-decoration: underline;
+        }
+        .ay-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .ay-theme-toggle {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          border-radius: 999px;
+          border: 1px solid var(--border-color);
+          background: var(--bg-card, transparent);
+          color: var(--text-primary);
+          cursor: pointer;
+        }
+        .ay-theme-toggle:hover {
+          border-color: var(--color-accent);
+          color: var(--color-accent);
         }
         .ay-main {
           max-width: 1000px;
@@ -1185,14 +1228,30 @@ export default function OnboardAboutYou() {
       `}</style>
 
       <header className="ay-header">
-        <ChabadLogo className="chabad-logo" size={90} alt="Chabad Bedford" />
+        <ChabadLogo className="chabad-logo" theme={theme} size={90} alt="Chabad of Bedford" />
         <div className="ay-header-title">
           <h1>Membership Onboarding</h1>
           <p>Join our community in a few simple steps.</p>
         </div>
-        <a href={`mailto:${SUPPORT_EMAIL}`} className="ay-help-link">
-          <HelpCircle size={16} /> Need Help?
-        </a>
+        <div className="ay-header-actions">
+          <button
+            type="button"
+            className="ay-theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            title="Toggle Theme"
+          >
+            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+          <button
+            type="button"
+            className="ay-help-link"
+            onClick={() => setShowContactModal(true)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}
+          >
+            <HelpCircle size={16} /> Need Help?
+          </button>
+        </div>
       </header>
 
       <main className="ay-main">
@@ -1322,7 +1381,41 @@ export default function OnboardAboutYou() {
                 {errors.birthDate && <span className="ay-input-error">{errors.birthDate}</span>}
               </div>
 
-              {/* HIDDEN — About You shows only Salutation, Gender, Name, Email, Mobile, optional Birth Date */}
+              <div className="ay-row">
+                <div className="ay-field">
+                  <label className="ay-label">Hebrew Name</label>
+                  <div className="ay-input-wrap">
+                    <Languages size={16} />
+                    <input type="text" placeholder="Hebrew Name" value={form.hebrewName} onChange={update('hebrewName')} />
+                  </div>
+                </div>
+                <div className="ay-field">
+                  <label className="ay-label">Father's Hebrew Name</label>
+                  <div className="ay-input-wrap">
+                    <Languages size={16} />
+                    <input type="text" placeholder="Father's Hebrew Name" value={form.fatherHebrewName} onChange={update('fatherHebrewName')} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="ay-row">
+                <div className="ay-field">
+                  <label className="ay-label">Mother's Hebrew Name</label>
+                  <div className="ay-input-wrap">
+                    <Languages size={16} />
+                    <input type="text" placeholder="Mother's Hebrew Name" value={form.motherHebrewName} onChange={update('motherHebrewName')} />
+                  </div>
+                </div>
+                <div className="ay-field">
+                  <label className="ay-label">Occupation</label>
+                  <div className="ay-input-wrap">
+                    <Briefcase size={16} />
+                    <input type="text" placeholder="Occupation" value={form.occupation} onChange={update('occupation')} />
+                  </div>
+                </div>
+              </div>
+
+              {/* HIDDEN — spouse/children/yahrzeit toggles (handled in later post-login steps) */}
               {false && (
               <div className="ay-section-head" onClick={() => setCommunityOpen((v) => !v)}>
                 <div className="ay-section-head-text">
@@ -1335,39 +1428,6 @@ export default function OnboardAboutYou() {
 
               {false && communityOpen && (
                 <>
-                  <div className="ay-row">
-                    <div className="ay-field">
-                      <label className="ay-label">Hebrew Name</label>
-                      <div className="ay-input-wrap">
-                        <Languages size={16} />
-                        <input type="text" placeholder="Hebrew Name" value={form.hebrewName} onChange={update('hebrewName')} />
-                      </div>
-                    </div>
-                    <div className="ay-field">
-                      <label className="ay-label">Father's Hebrew Name</label>
-                      <div className="ay-input-wrap">
-                        <Languages size={16} />
-                        <input type="text" placeholder="Father's Hebrew Name" value={form.fatherHebrewName} onChange={update('fatherHebrewName')} />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="ay-row">
-                    <div className="ay-field">
-                      <label className="ay-label">Mother's Hebrew Name</label>
-                      <div className="ay-input-wrap">
-                        <Languages size={16} />
-                        <input type="text" placeholder="Mother's Hebrew Name" value={form.motherHebrewName} onChange={update('motherHebrewName')} />
-                      </div>
-                    </div>
-                    <div className="ay-field">
-                      <label className="ay-label">Occupation</label>
-                      <div className="ay-input-wrap">
-                        <Briefcase size={16} />
-                        <input type="text" placeholder="Occupation" value={form.occupation} onChange={update('occupation')} />
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="ay-helper-box">
                     <p className="ay-helper-title">Help Us Know You Better (Optional)</p>
                     <div className="ay-helper-grid">
@@ -1521,13 +1581,7 @@ export default function OnboardAboutYou() {
 
               <div className="ay-actions ay-actions-end">
                 <button type="submit" className="ay-btn-solid" disabled={isSubmitting}>
-                  {isSubmitting ? (
-                    <>Submitting Application...</>
-                  ) : (
-                    <>
-                      Confirm & Submit <Check size={16} />
-                    </>
-                  )}
+                  Next <ArrowRight size={16} />
                 </button>
               </div>
             </form>
@@ -1824,8 +1878,21 @@ export default function OnboardAboutYou() {
       </main>
 
       <footer className="ay-footer">
-        Need help? Contact us at <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> | {SUPPORT_PHONE_DISPLAY}
+        Need help?{' '}
+        <button
+          type="button"
+          onClick={() => setShowContactModal(true)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', color: 'inherit', padding: 0, textDecoration: 'underline' }}
+        >
+          Contact Us
+        </button>
+        {' '}at <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> | {SUPPORT_PHONE_DISPLAY}
       </footer>
+
+      <ContactSupportModal
+        open={showContactModal}
+        onClose={() => setShowContactModal(false)}
+      />
     </div>
   );
 }

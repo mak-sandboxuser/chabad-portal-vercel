@@ -8,27 +8,163 @@ function stripTrailingCommas(jsonText) {
   return jsonText.replace(/,\s*([}\]])/g, '$1');
 }
 
-/** Make Array Aggregator sometimes returns `{...}, {...}` instead of `[{...},{...}]` */
-function repairMakeArrayFieldsJson(text) {
+/** Make sometimes embeds raw newlines inside JSON string values (e.g. street). */
+function escapeNewlinesInJsonStrings(text) {
   if (!text || typeof text !== 'string') return text;
 
-  const fields = ['relationships', 'payments', 'pledges', 'recurring', 'contacts', 'paymentPrograms'];
-  let result = text;
+  let result = '';
+  let inString = false;
+  let escaped = false;
 
-  for (const field of fields) {
-    const after = fields.filter((f) => f !== field).map((f) => `"${f}"`).join('|');
-    const lookAhead = after ? `(?=\\s*(?:${after}|\\}))` : `(?=\\s*\\})`;
-    result = result.replace(
-      new RegExp(`"${field}"\\s*:\\s*((?:\\{[\\s\\S]*?\\}\\s*,?\\s*)+)${lookAhead}`),
-      (_, block) => {
-        const trimmed = block.trim().replace(/,\s*$/, '');
-        if (trimmed.startsWith('[')) return `"${field}": ${trimmed},`;
-        return `"${field}": [${trimmed}],`;
-      },
-    );
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        result += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        result += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        result += ch;
+        inString = false;
+        continue;
+      }
+      if (ch === '\n') {
+        result += '\\n';
+        continue;
+      }
+      if (ch === '\r') {
+        result += '\\r';
+        continue;
+      }
+      if (ch === '\t') {
+        result += '\\t';
+        continue;
+      }
+      result += ch;
+      continue;
+    }
+
+    if (ch === '"') inString = true;
+    result += ch;
   }
 
   return result;
+}
+
+/**
+ * Make Array Aggregator sometimes returns `"contacts": {...}, {...}` instead of
+ * `"contacts": [{...},{...}]`. Wrap consecutive bare objects into a JSON array.
+ */
+function wrapBareObjectListFields(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  const fields = ['relationships', 'payments', 'pledges', 'recurring', 'contacts', 'paymentPrograms', 'members', 'householdMembers'];
+  let result = text;
+
+  for (const field of fields) {
+    const key = `"${field}"`;
+    let searchFrom = 0;
+
+    while (searchFrom < result.length) {
+      const idx = result.indexOf(key, searchFrom);
+      if (idx === -1) break;
+
+      let i = idx + key.length;
+      while (i < result.length && /\s/.test(result[i])) i += 1;
+      if (result[i] !== ':') {
+        searchFrom = idx + key.length;
+        continue;
+      }
+      i += 1;
+      while (i < result.length && /\s/.test(result[i])) i += 1;
+
+      // Already a proper array / scalar — leave alone.
+      if (result[i] !== '{') {
+        searchFrom = i + 1;
+        continue;
+      }
+
+      const objects = [];
+      while (i < result.length && result[i] === '{') {
+        const start = i;
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+
+        for (; i < result.length; i += 1) {
+          const ch = result[i];
+          if (inString) {
+            if (escaped) {
+              escaped = false;
+            } else if (ch === '\\') {
+              escaped = true;
+            } else if (ch === '"') {
+              inString = false;
+            }
+            continue;
+          }
+          if (ch === '"') {
+            inString = true;
+          } else if (ch === '{') {
+            depth += 1;
+          } else if (ch === '}') {
+            depth -= 1;
+            if (depth === 0) {
+              i += 1;
+              objects.push(result.slice(start, i));
+              break;
+            }
+          }
+        }
+
+        while (i < result.length && /\s/.test(result[i])) i += 1;
+        if (result[i] === ',') {
+          const afterComma = i + 1;
+          let j = afterComma;
+          while (j < result.length && /\s/.test(result[j])) j += 1;
+          if (result[j] === '{') {
+            i = j;
+          } else {
+            // Trailing comma before the next object key — leave it for the suffix/rest.
+            break;
+          }
+        } else {
+          break;
+        }
+      }
+
+      if (!objects.length) {
+        searchFrom = idx + key.length;
+        continue;
+      }
+
+      // Keep a separating comma when the next field key follows
+      // (Make often emits ` {...}, {...}, "nextField": ...`).
+      let suffix = '';
+      const peek = i;
+      if (result[peek] === '"' || /[}\]]/.test(result[peek] || '')) {
+        suffix = ',';
+      }
+
+      const replacement = `${key}: [${objects.join(', ')}]${suffix}`;
+      result = `${result.slice(0, idx)}${replacement}${result.slice(i)}`;
+      searchFrom = idx + replacement.length;
+    }
+  }
+
+  return result;
+}
+
+/** Make Array Aggregator sometimes returns `{...}, {...}` instead of `[{...},{...}]` */
+function repairMakeArrayFieldsJson(text) {
+  if (!text || typeof text !== 'string') return text;
+  return wrapBareObjectListFields(escapeNewlinesInJsonStrings(text));
 }
 
 function repairMakePortalJson(text) {
@@ -58,8 +194,10 @@ function parseMakePayload(rawText) {
 
   const attempts = [
     text,
+    escapeNewlinesInJsonStrings(text),
     repairMakeRelationshipsJson(text),
     stripTrailingCommas(text),
+    stripTrailingCommas(escapeNewlinesInJsonStrings(text)),
     stripTrailingCommas(repairMakeRelationshipsJson(text)),
     stripTrailingCommas(text.replace(/\\"/g, '"')),
     stripTrailingCommas(repairMakeRelationshipsJson(text.replace(/\\"/g, '"'))),
@@ -165,43 +303,6 @@ function extractAllContactsFromPayload(payload = {}) {
   return mergeContactsList(...sources.map((source) => unwrapMakeArray(source)));
 }
 
-/** Normalize SF/Make date values to yyyy-mm-dd (or '' when empty/cleared). */
-function toIsoDateOnly(value) {
-  if (value == null || value === '') return '';
-  const text = String(value).trim();
-  if (!text || /^null$/i.test(text) || /^undefined$/i.test(text)) return '';
-  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
-
-  const parsed = Date.parse(text);
-  if (Number.isNaN(parsed)) return '';
-
-  // Salesforce date/datetime often arrives as UTC midnight — keep the calendar day.
-  if (/T\d{2}:\d{2}/.test(text) || /Z$/i.test(text) || /[+-]\d{2}:?\d{2}$/.test(text)) {
-    return new Date(parsed).toISOString().slice(0, 10);
-  }
-
-  const local = new Date(parsed);
-  const year = local.getFullYear();
-  const month = String(local.getMonth() + 1).padStart(2, '0');
-  const day = String(local.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function firstContactField(raw = {}, keys = []) {
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
-    const value = raw[key];
-    if (value == null) return '';
-    return String(value).trim();
-  }
-  for (const key of keys) {
-    const value = raw[key];
-    if (value == null || value === '') continue;
-    return String(value).trim();
-  }
-  return '';
-}
-
 function normalizeContact(raw = {}, index = 0) {
   const contactId = String(
     raw.contactId
@@ -230,50 +331,6 @@ function normalizeContact(raw = {}, index = 0) {
     ?? raw.OneCRM__Secondary_Member__c,
   );
 
-  const birthdate = toIsoDateOnly(firstContactField(raw, [
-    'birthdate', 'Birthdate', 'BirthDate', 'birthDate',
-  ]));
-  const nextHebrewBirthday = toIsoDateOnly(firstContactField(raw, [
-    'nextHebrewBirthday',
-    'Civil Date of Next Hebrew Birthday',
-    'Next Civil Birthday',
-    'OneCRM__Civil_Date_of_Next_Hebrew_Birthday__c',
-  ]));
-  const weddingDate = toIsoDateOnly(firstContactField(raw, [
-    'weddingDate', 'Wedding Date', 'Anniversary Date', 'OneCRM__Wedding_Date__c',
-  ]));
-  const hebrewBirthdate = firstContactField(raw, [
-    'hebrewBirthdate',
-    'Birthdate (Hebrew)',
-    'OneCRM__Birthdate_Hebrew__c',
-    'OneCRM__Hebrew_Birthdate__c',
-  ]);
-  const hebrewName = firstContactField(raw, [
-    'hebrewName', 'Hebrew Name', 'OneCRM__Hebrew_Name__c',
-  ]);
-  const fathersHebrewName = firstContactField(raw, [
-    'fathersHebrewName', "Father's Hebrew Name", 'OneCRM__Father_s_Hebrew_Name__c',
-  ]);
-  const mothersHebrewName = firstContactField(raw, [
-    'mothersHebrewName', "Mother's Hebrew Name", 'OneCRM__Mother_s_Hebrew_Name__c',
-  ]);
-  const jewish = firstContactField(raw, ['jewish', 'Jewish', 'OneCRM__Jewish__c']);
-  const lifecycleStatus = firstContactField(raw, [
-    'lifecycleStatus', 'Status', 'status', 'OneCRM__Status__c',
-  ]);
-  const ageRaw = firstContactField(raw, ['age', 'Age', 'Stated Age', 'OneCRM__Age__c']);
-  // SF Age formula is often 0 when Birthdate is blank — treat that as empty in the portal.
-  const age = (!birthdate && (ageRaw === '' || ageRaw === '0')) ? '' : ageRaw;
-  const gender = firstContactField(raw, ['gender', 'Gender', 'OneCRM__Gender__c']);
-  const nickname = firstContactField(raw, ['nickname', 'Nickname', 'OneCRM__Nickname__c']);
-  const title = firstContactField(raw, ['title', 'Title', 'Salutation', 'salutation']);
-  const homePhone = firstContactField(raw, [
-    'homePhone', 'Home Phone', 'HomePhone', 'home_phone',
-  ]);
-  const mobilePhone = firstContactField(raw, [
-    'phone', 'mobile', 'MobilePhone', 'Mobile Phone', 'Phone', 'Business Phone',
-  ]);
-
   return {
     id: contactId || raw.id || `contact_${index}`,
     name: raw.name
@@ -281,113 +338,51 @@ function normalizeContact(raw = {}, index = 0) {
       || raw['Full Name']
       || [firstName, lastName].filter(Boolean).join(' ').trim()
       || 'Member',
-    firstName,
-    lastName,
     role: resolveContactRole({ ...raw, isPrimary, isSecondary }),
     isPrimary,
     isSecondary,
     contactId,
     email: raw.email || raw.Email || '',
-    phone: mobilePhone,
-    homePhone,
-    street: raw.street
-      || raw.MailingStreet
-      || raw['Mailing Street']
-      || raw['Primary Street']
-      || raw.primaryStreet
-      || '',
-    city: raw.city
-      || raw.MailingCity
-      || raw['Mailing City']
-      || raw['Primary City']
-      || raw.primaryCity
-      || '',
-    state: raw.state
-      || raw.MailingState
-      || raw['Mailing State']
-      || raw['Primary State']
-      || raw.primaryState
-      || '',
-    postalCode: raw.postalCode
-      || raw.MailingPostalCode
-      || raw['Mailing Postal Code']
-      || raw['Primary Postal Code']
-      || raw.primaryPostalCode
-      || '',
-    country: raw.country
-      || raw.MailingCountry
-      || raw['Mailing Country']
-      || raw['Primary Country']
-      || raw.primaryCountry
-      || '',
+    phone: raw.phone || raw.mobile || raw.MobilePhone || raw.Phone || '',
+    street: raw.street || raw.MailingStreet || raw['Mailing Street'] || '',
+    city: raw.city || raw.MailingCity || raw['Mailing City'] || '',
+    state: raw.state || raw.MailingState || raw['Mailing State'] || '',
+    postalCode: raw.postalCode || raw.MailingPostalCode || raw['Mailing Postal Code'] || '',
+    country: raw.country || raw.MailingCountry || raw['Mailing Country'] || '',
     groups: raw.groups || raw.Groups || raw.OneCRM__Groups__c || raw.OneCRM__Group__c || raw.group || raw.Group || '',
-    nickname,
-    title,
-    hebrewName,
-    fathersHebrewName,
-    mothersHebrewName,
-    jewish,
-    hebrewBirthdate,
-    nextHebrewBirthday,
-    weddingDate,
-    lifecycleStatus,
-    birthdate,
-    age,
-    gender,
-    profile: {
-      phone: mobilePhone,
-      mobile: mobilePhone,
-      homePhone,
-      street: raw.street || raw.MailingStreet || raw['Mailing Street'] || raw['Primary Street'] || '',
-      city: raw.city || raw.MailingCity || raw['Mailing City'] || raw['Primary City'] || '',
-      state: raw.state || raw.MailingState || raw['Mailing State'] || raw['Primary State'] || '',
-      postalCode: raw.postalCode || raw.MailingPostalCode || raw['Mailing Postal Code'] || raw['Primary Postal Code'] || '',
-      country: raw.country || raw.MailingCountry || raw['Mailing Country'] || raw['Primary Country'] || '',
-      nickname,
-      title,
-      hebrewName,
-      fathersHebrewName,
-      mothersHebrewName,
-      jewish,
-      hebrewBirthdate,
-      nextHebrewBirthday,
-      weddingDate,
-      lifecycleStatus,
-      birthdate,
-      age,
-      gender,
-      lifecycle: {
-        hebrewName,
-        fathersHebrewName,
-        mothersHebrewName,
-        jewish,
-        hebrewBirthdate,
-        nextHebrewBirthday,
-        weddingDate,
-        lifecycleStatus,
-      },
-      additional: {
-        birthdate,
-        age,
-        gender,
-      },
-    },
   };
+}
+
+function markPrimaryHouseholdContact(contacts = [], memberDetails = {}) {
+  if (!Array.isArray(contacts) || !contacts.length) return contacts;
+
+  const ownerId = String(memberDetails.contactId || '').trim();
+  const ownerEmail = String(memberDetails.email || '').trim().toLowerCase();
+  let found = false;
+
+  const next = contacts.map((contact) => {
+    const id = String(contact.contactId || contact.id || '').trim();
+    const email = String(contact.email || '').trim().toLowerCase();
+    const isOwner = (ownerId && id === ownerId) || (ownerEmail && email && email === ownerEmail);
+    if (!isOwner) return contact;
+    found = true;
+    return {
+      ...contact,
+      isPrimary: true,
+      role: contact.role && contact.role !== 'Member' ? contact.role : 'Parent',
+    };
+  });
+
+  if (found) return next;
+  return next.map((contact, index) => (
+    index === 0
+      ? { ...contact, isPrimary: true, role: contact.role && contact.role !== 'Member' ? contact.role : 'Parent' }
+      : contact
+  ));
 }
 
 function mergeHouseholdPortalData(portalData = {}, householdData = null) {
   if (!householdData) return portalData;
-
-  // Household webhook is the source of truth for who is on the account.
-  // Replacing (not union-merging) lets Salesforce removals drop off the portal.
-  // Previously this kept deleted members forever via:
-  // contacts: mergeContactsList(portalData.contacts, householdData.contacts),
-  const householdContacts = Array.isArray(householdData.contacts)
-    ? householdData.contacts
-    : [];
-  const useHouseholdContactsAsSourceOfTruth = Boolean(
-    householdData.fromSalesforce && Array.isArray(householdData.contacts),
-  );
 
   return {
     ...portalData,
@@ -401,18 +396,10 @@ function mergeHouseholdPortalData(portalData = {}, householdData = null) {
     state: householdData.state || portalData.state || '',
     postalCode: householdData.postalCode || portalData.postalCode || '',
     country: householdData.country || portalData.country || '',
-    contacts: useHouseholdContactsAsSourceOfTruth
-      ? householdContacts
-      : mergeContactsList(portalData.contacts, householdContacts),
-    // Same for relationships: empty SF list must clear stale portal relationships.
-    // relationships: householdData.relationships?.length
-    //   ? householdData.relationships
-    //   : (portalData.relationships || []),
-    relationships: householdData.fromSalesforce && Array.isArray(householdData.relationships)
+    contacts: mergeContactsList(portalData.contacts, householdData.contacts),
+    relationships: householdData.relationships?.length
       ? householdData.relationships
-      : (householdData.relationships?.length
-        ? householdData.relationships
-        : (portalData.relationships || [])),
+      : (portalData.relationships || []),
   };
 }
 
@@ -520,23 +507,32 @@ function isSendInvoicesRecord(raw = {}) {
 function isSalesforcePaymentRecord(raw = {}) {
   if (isSendInvoicesRecord(raw)) return false;
 
-  const paymentType = String(raw.OneCRM__Payment_Type__c || raw['Payment Type'] || '').trim().toLowerCase();
-  const rawAmount = Number(raw.OneCRM__Amount__c ?? raw.Amount ?? 0);
-  const paid = parseMoneyValue(raw.OneCRM__Paid__c ?? raw['Paid Amount'] ?? raw.paid);
-  const outstanding = parseMoneyValue(raw.OneCRM__Amount_Outstanding__c ?? raw['Outstanding Amount'] ?? raw.outstanding);
+  const status = String(raw.status || raw.Status || raw['Processing Status'] || raw.OneCRM__Status__c || '').trim().toLowerCase();
+  const paymentType = String(raw.OneCRM__Payment_Type__c || raw['Payment Type'] || raw.type || raw.Type || '').trim().toLowerCase();
+  const rawAmount = getRawPaymentAmount(raw);
+  const paid = parseMoneyValue(raw.paid ?? raw['Paid Amount'] ?? raw.OneCRM__Paid__c ?? raw.paidAmount);
+  const outstanding = parseMoneyValue(raw.outstanding ?? raw['Outstanding Amount'] ?? raw.OneCRM__Amount_Outstanding__c ?? raw.outstandingBalance);
 
+  if (status === 'paid' || status === 'success' || status === 'completed') return true;
   if (rawAmount < 0 && paymentType === 'cash') return true;
-  if (rawAmount >= 0 && paid > 0 && outstanding === 0) return true;
+  if (rawAmount > 0 && (paid > 0 || status === 'paid') && outstanding === 0) return true;
+  if (paymentType === 'cash') return true;
 
   return false;
 }
 
 function isIncomePledgeRecord(raw = {}) {
   if (isSendInvoicesRecord(raw)) return false;
+
+  const status = String(raw.status || raw.Status || raw['Processing Status'] || raw.OneCRM__Status__c || '').trim().toLowerCase();
+  if (status === 'paid' || status === 'success' || status === 'completed') return false;
+
   if (isSalesforcePaymentRecord(raw)) return false;
 
   const amount = resolvePledgeAmount(raw) || getRawPaymentAmount(raw);
-  return amount > 0;
+  const outstanding = parseMoneyValue(raw.outstanding ?? raw['Outstanding Amount'] ?? raw.OneCRM__Amount_Outstanding__c ?? raw.outstandingBalance);
+
+  return amount > 0 && (outstanding > 0 || status === 'active' || status === 'pledged');
 }
 
 /** Match ChabadOne Contact → Financials → Payments tab. */
@@ -550,19 +546,28 @@ function shouldIncludePaymentRecord(raw = {}, normalized = {}) {
     raw.OneCRM__Payment_Type__c ?? raw['Payment Type'] ?? raw.method ?? normalized.method ?? '',
   ).trim().toLowerCase();
   const method = String(normalized.method || raw.method || '').trim().toLowerCase();
+  const status = String(normalized.status || raw.status || raw.Status || '').trim().toLowerCase();
 
+  if (status === 'paid' || status === 'success' || status === 'completed') return true;
   if (paymentType === 'cash' || method === 'cash') return true;
   if (method.includes('stripe')) return true;
   if (method.includes('bank') || method.includes('transfer') || method.includes('ach')) return true;
   if (isSalesforcePaymentRecord(raw)) return true;
 
-  return false;
+  return true;
 }
 
 function shouldIncludePledgeRecord(raw = {}, normalized = {}) {
   const paymentType = String(raw.OneCRM__Payment_Type__c || raw['Payment Type'] || normalized.method || '').trim().toLowerCase();
   if (paymentType === 'cash') return false;
   if (paymentType === 'send invoices') return false;
+
+  const status = String(normalized.status || raw.status || raw.Status || '').trim().toLowerCase();
+  const outstanding = parseMoneyValue(normalized.outstanding || raw.outstanding);
+
+  if ((status === 'paid' || status === 'success' || status === 'completed') && outstanding === 0) {
+    return false;
+  }
 
   const amount = resolvePledgeAmount(raw)
     || parseMoneyValue(normalized.amount)
@@ -611,27 +616,12 @@ function filterNormalizedRecurring(recurring = []) {
 }
 
 function paymentDedupeKey(payment = {}) {
-<<<<<<< HEAD
-  const id = String(payment.id || '').trim();
-  // Keep distinct Salesforce Income rows even when date + amount match
-  // (monthly installments posted on the same day all look identical otherwise).
-  // Old key collapsed real payment history:
-  // const amount = parseMoneyValue(payment.amount) || parseMoneyValue(payment.total);
-  // const date = String(payment.date || '').slice(0, 10);
-  // return `${date}|${amount.toFixed(2)}`;
-  if (id && !/^(payment_|local_|pending_)/i.test(id)) {
-    return `id:${id}`;
-  }
-=======
->>>>>>> parent of 6654812 (fix 1)
+  // Dedupe on date + amount ONLY.
+  // Salesforce returns type/subType as null, and the same real payment
+  // generates multiple records with different methods (Cash vs null).
   const amount = parseMoneyValue(payment.amount) || parseMoneyValue(payment.total);
-  const method = String(payment.method || payment.type || '').trim().toLowerCase();
   const date = String(payment.date || '').slice(0, 10);
-<<<<<<< HEAD
-  return `${date}|${amount.toFixed(2)}|${id || 'anon'}`;
-=======
-  return `${date}|${amount.toFixed(2)}|${method}`;
->>>>>>> parent of 6654812 (fix 1)
+  return `${date}|${amount.toFixed(2)}`;
 }
 
 function compareFinancialRecordsByRecent(a, b) {
@@ -652,11 +642,15 @@ function compareFinancialRecordsByRecent(a, b) {
 
 function filterNormalizedPayments(payments = []) {
   const seen = new Set();
+  const hasRealSfPayments = payments.some((p) => p.id && !p.id.startsWith('payment_'));
+
   return payments
     .filter((payment) => {
+      if (hasRealSfPayments && payment.id && payment.id.startsWith('payment_')) return false;
       const amount = parseMoneyValue(payment.amount) || parseMoneyValue(payment.total);
       if (amount <= 0) return false;
-      if (!isDateInPortalFiscalYear(payment.sortDate || payment.date)) return false;
+      // Always use content-based key for deduplication — never rely on ID alone
+      // because Salesforce can return the same payment with different record IDs
       const key = paymentDedupeKey(payment);
       if (seen.has(key)) return false;
       seen.add(key);
@@ -695,8 +689,21 @@ function normalizePayment(raw = {}, index = 0) {
     sortDate,
     outstanding: formatMoneyField(outstanding) || '$0.00',
     payer: raw.payer || raw.payerName || raw.parent || raw.accountName || raw['Payer / Parent'] || raw['Parent Account'] || raw['Related Contact'] || '',
-    type: raw.OneCRM__Type__c || raw.type || raw.paymentType || raw.Type || raw['Payment Type'] || raw['Recognition Type'] || 'Pledge',
-    subType: raw.OneCRM__Sub_Type__c || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type'] || 'Annual Membership',
+    type: (() => {
+      const fromName = String(raw.Name || raw.name || '');
+      const namedType = fromName.includes(':') ? fromName.split(':')[0].trim() : '';
+      return raw.OneCRM__Type__c || raw.type || raw.paymentType || raw.Type || raw['Payment Type'] || raw['Recognition Type']
+        || namedType
+        || 'Campaign';
+    })(),
+    subType: (() => {
+      const fromName = String(raw.Name || raw.name || '');
+      const namedSubType = fromName.includes(':') ? fromName.split(':').slice(1).join(':').trim() : fromName;
+      return raw.OneCRM__Sub_Type__c || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type']
+        || raw['Income Name'] || raw.IncomeName || raw.purpose
+        || namedSubType
+        || 'Membership';
+    })(),
     method: raw.method || raw.paymentMethod || raw['Payment Method'] || raw['Payment Plan'] || raw.OneCRM__Payment_Type__c
       || (parseMoneyValue(raw.OneCRM__Paid__c ?? raw['Paid Amount']) > 0 ? 'Cash' : ''),
     status: (() => {
@@ -716,6 +723,7 @@ function normalizePledge(raw = {}, index = 0) {
   let outstandingVal = parseMoneyValue(raw.outstanding ?? raw.Outstanding ?? raw.OneCRM__Amount_Outstanding__c);
 
   const purpose = raw.OneCRM__Sub_Type__c || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type']
+    || raw['Income Name'] || raw.IncomeName
     || raw.purpose || raw.Purpose || raw.OneCRM__Purpose__c
     || raw.name || raw.pledgeName || raw.Name || raw['Pledge Name']
     || raw.OneCRM__Type__c || raw.type || raw.Type
@@ -788,9 +796,12 @@ function normalizeMembership(raw = {}) {
   if (!raw || typeof raw !== 'object') return null;
   const keys = Object.keys(raw);
   if (!keys.length) return null;
+  const rawTier = String(raw.tier || raw.membershipTier || '').trim();
+  const isBareTier = !rawTier || /^(member|guest|prospect|contact)$/i.test(rawTier);
   return {
-    tier: raw.tier || raw.membershipTier || 'Member',
-    status: raw.status || raw.membershipStatus || 'Active',
+    // Do not invent "Member" / "Active" for contacts who have not chosen a tier.
+    tier: isBareTier ? '' : rawTier,
+    status: isBareTier ? '' : (raw.status || raw.membershipStatus || ''),
     memberSince: raw.memberSince || raw.memberSinceDate || '',
     renewalDate: raw.renewalDate || raw.nextRenewalDate || '',
     annualCommitment: raw.annualCommitment || raw.annualAmount || '',
@@ -831,13 +842,36 @@ function extractPortalDataFromPayload(payload, memberDetails = {}) {
     };
   }
 
+  // MAKE_PAYMENTS_WEBHOOK_URL often returns a bare Salesforce Income__c array:
+  // [ { Id, Name, OneCRM__Amount__c, ... } ]
+  // Normalize that shape so the rest of the mapper can find payment records.
+  if (Array.isArray(payload)) {
+    payload = { records: payload, payments: payload };
+  }
+
   const contacts = extractAllContactsFromPayload(payload);
   const relationships = unwrapMakeArray(payload.relationships || payload.householdRelationships)
     .map(normalizeRelationship);
-  const rawAllIncome = unwrapMakeArray(payload.payments || payload.incomePayments);
-  const explicitPledges = unwrapMakeArray(payload.pledges || payload.incomePledges);
+
+  // New Make payments hook may return a Salesforce query shape:
+  // { totalSize, done, records: [ OneCRM__Income__c, ... ] }
+  const sfIncomeRecords = unwrapMakeArray(payload.records).filter((record) => {
+    if (!record || typeof record !== 'object') return false;
+    const type = String(record.attributes?.type || record.type || '').toLowerCase();
+    if (!type) return true;
+    return type.includes('income') || type.includes('onecrm__income');
+  });
+
+  const explicitPayments = unwrapMakeArray(
+    payload.payments
+    || payload.incomePayments
+    || payload.financials?.payments
+    || (sfIncomeRecords.length ? sfIncomeRecords : null),
+  );
+  const explicitPledges = unwrapMakeArray(payload.pledges || payload.incomePledges || payload.financials?.pledges);
+  const rawAllIncome = mergePledgeRecords(explicitPayments, explicitPledges);
   const incomePledges = rawAllIncome.filter(isIncomePledgeRecord);
-  const rawPledgeRecords = mergePledgeRecords(explicitPledges, incomePledges);
+  const rawPledgeRecords = mergePledgeRecords(explicitPledges.filter(isIncomePledgeRecord), incomePledges);
   const pledgeIdSet = new Set(
     rawPledgeRecords.map((record) => record.Id || record.id || record['Record ID']).filter(Boolean),
   );
@@ -888,7 +922,9 @@ function extractPortalDataFromPayload(payload, memberDetails = {}) {
     state: payload.state || payload.shippingState || memberDetails.state || '',
     postalCode: payload.postalCode || payload.shippingPostalCode || memberDetails.postalCode || '',
     country: payload.country || payload.shippingCountry || memberDetails.country || '',
-    contacts: contacts.length ? contacts : buildContactsFromMemberDetails(memberDetails),
+    contacts: contacts.length
+      ? markPrimaryHouseholdContact(contacts, memberDetails)
+      : buildContactsFromMemberDetails(memberDetails),
     relationships,
     payments,
     pledges,

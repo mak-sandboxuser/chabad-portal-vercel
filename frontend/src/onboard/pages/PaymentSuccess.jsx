@@ -8,7 +8,7 @@ import { navigateApp } from '../../utils/navigateApp';
 import { readDraft } from '../utils/onboardingCookies';
 import { getMembershipTierById } from '../data/membershipTiers';
 import { clearPostLoginStepperPending } from '../utils/postLoginStepper';
-import { markRecentMembershipPayment, storePendingPortalPayment } from '../../utils/portalData';
+import { markRecentMembershipPayment } from '../../utils/portalData';
 import '../onboard.css';
 
 export const PAYMENT_SUCCESS_PATH = '/payment-success';
@@ -124,7 +124,9 @@ export default function PaymentSuccess() {
 
         const draft = readDraft();
         const draftAmount = Number(draft?.data?.contributionSchedule?.amount) || 0;
-        const amount = Number(confirmResult?.paymentAmount) || draftAmount;
+        const confirmAmount = Number(confirmResult?.paymentAmount) || 0;
+        // Prefer the charged installment; never invent a full-year pending payment.
+        const amount = confirmAmount > 0 ? confirmAmount : draftAmount;
         const paymentDate = confirmResult?.paymentDate || new Date().toISOString().slice(0, 10);
         const subType = confirmResult?.subType
           || resolveMembershipName()
@@ -139,18 +141,6 @@ export default function PaymentSuccess() {
           status: 'Paid',
           id: sessionId ? `stripe_${sessionId}` : undefined,
         } : null);
-
-        if (!(amount > 0) && draftAmount > 0) {
-          storePendingPortalPayment({
-            email,
-            amount: draftAmount,
-            date: paymentDate,
-            subType,
-            purpose: subType,
-            method: 'Stripe',
-            status: 'Paid',
-          });
-        }
       } catch {
         // ignore
       }
