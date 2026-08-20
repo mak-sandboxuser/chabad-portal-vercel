@@ -94,7 +94,7 @@ export default function PortalSidebar({ activeTab, onNavigate, isOpen, theme, pa
   return (
     <aside className={`portal-sidebar ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-brand">
-        <ChabadSidebarLogo theme={theme} />
+        <ChabadSidebarLogo />
       </div>
 
       <div className="sidebar-body">
@@ -120,22 +120,7 @@ export default function PortalSidebar({ activeTab, onNavigate, isOpen, theme, pa
           <BuildingSketch theme={theme} className="sidebar-sketch-bg" />
           <div className="sidebar-help-card">
             <Headphones size={20} className="sidebar-help-icon" />
-            <button
-              type="button"
-              className="sidebar-help-title-btn"
-              onClick={onContactSupport}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: 0,
-                font: 'inherit',
-                color: 'inherit',
-                textAlign: 'left',
-              }}
-            >
-              <h4>Need Help?</h4>
-            </button>
+            <h4>Need Help?</h4>
             <p>Our support team is here to help.</p>
             <button type="button" className="sidebar-help-link" onClick={onContactSupport} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               Contact Support

@@ -10,15 +10,11 @@ import Portal from './components/Portal';
 import ToastHost from './components/shared/ToastHost';
 import OnboardWelcome, { ONBOARD_PATH } from './components/onboard/OnboardWelcome';
 import OnboardAboutYou, { ONBOARD_ABOUT_YOU_PATH } from './components/onboard/OnboardAboutYou';
-import OnboardingSuccess, { ONBOARD_SUCCESS_PATH } from './onboard/pages/OnboardingSuccess';
-import PaymentSuccess, { PAYMENT_SUCCESS_PATH } from './onboard/pages/PaymentSuccess';
 import SpouseInformation from './onboard/pages/SpouseInformation';
-import HouseholdInformation from './onboard/pages/HouseholdInformation';
-import MaritalInformation from './onboard/pages/MaritalInformation';
+// HIDDEN forms (code kept): MaritalInformation, PaymentMethod, ProcessingApplication
 import ChildrenInformation from './onboard/pages/ChildrenInformation';
 // HIDDEN — Yahrzeit is toggle-only (no form). Code kept in YahrzeitInformation.jsx.
 // import YahrzeitInformation from './onboard/pages/YahrzeitInformation';
-// HIDDEN forms (code kept): PaymentMethod, ProcessingApplication
 import MembershipSelection from './onboard/pages/MembershipSelection';
 import ContributionSchedule from './onboard/pages/ContributionSchedule';
 // import PaymentMethod from './onboard/pages/PaymentMethod';
@@ -38,9 +34,6 @@ import {
 } from './onboard/data/onboardingSteps';
 import { getHouseholdPreferences, getRedirectPathIfStepDisallowed } from './onboard/utils/householdPreferences';
 import { readDraft, clearDraft } from './onboard/utils/onboardingCookies';
-import { isPostLoginStepperPending } from './onboard/utils/postLoginStepper';
-import { markRecentMembershipPayment } from './utils/portalData';
-import { navigateApp } from './utils/navigateApp';
 
 const ONBOARD_SPOUSE_INFORMATION_PATH = getStepById(SPOUSE_INFORMATION_STEP_ID).path;
 const ONBOARD_HOUSEHOLD_PATH = getStepById(HOUSEHOLD_STEP_ID).path;
@@ -68,7 +61,7 @@ function LoadingScreen({ message }) {
 
 function RedirectToPath({ path }) {
   useEffect(() => {
-    navigateApp(path);
+    window.location.replace(path);
   }, [path]);
 
   return <LoadingScreen message="Redirecting..." />;
@@ -184,63 +177,30 @@ export default function App() {
       return null;
     }
   });
-  const [path, setPath] = useState(() => window.location.pathname);
-
-  useEffect(() => {
-    const syncPath = () => setPath(window.location.pathname);
-    window.addEventListener('popstate', syncPath);
-    window.addEventListener('app:navigate', syncPath);
-    return () => {
-      window.removeEventListener('popstate', syncPath);
-      window.removeEventListener('app:navigate', syncPath);
-    };
-  }, []);
 
   const handleSfLogout = () => {
     localStorage.removeItem('sf_user_session');
     try {
       localStorage.removeItem('pending_post_login_membership_stepper');
-      localStorage.removeItem('completed_post_login_membership_stepper');
-      localStorage.removeItem('dismissed_post_login_membership_stepper');
-      localStorage.removeItem('recent_membership_payment');
-      localStorage.removeItem('pending_portal_payments');
     } catch {
       // ignore
     }
     clearDraft();
     setSfUser(null);
-    navigateApp('/');
+    window.location.replace('/');
   };
 
-  // When Stripe returns from checkout, confirm payment then show the celebratory
-  // payment-success page (which auto-redirects to the dashboard).
+  // Redirect onboarding returns to the onboarding membership page if they hit the home page with payment params
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const payment = query.get('payment');
-    const sessionId = query.get('session_id');
-    const onPaymentSuccessPage = path === PAYMENT_SUCCESS_PATH;
-
-    if (payment === 'success') {
-      if (onPaymentSuccessPage) return;
-
-      try {
-        localStorage.removeItem('pending_post_login_membership_stepper');
-        localStorage.setItem('completed_post_login_membership_stepper', '1');
-        markRecentMembershipPayment(sfUser?.email || '');
-      } catch {
-        // ignore
+    if (payment && (payment === 'success' || payment === 'cancel')) {
+      if (window.location.pathname !== '/onboard/membership') {
+        const draftData = readDraft();
+        if (draftData && draftData.currentStep) {
+          window.location.replace(`/onboard/membership${window.location.search}`);
+        }
       }
-
-      const next = new URLSearchParams();
-      next.set('payment', 'success');
-      if (sessionId) next.set('session_id', sessionId);
-      window.location.replace(`${PAYMENT_SUCCESS_PATH}?${next.toString()}`);
-      return;
-    }
-
-    if (payment === 'cancel') {
-      showToast({ message: 'Stripe checkout cancelled.', type: 'warning' });
-      window.location.replace('/');
     }
   }, []);
 
@@ -276,7 +236,7 @@ export default function App() {
   }, [sfUser]);
 
   // Existing pre-login onboarding — unchanged (public).
-  if (path === ONBOARD_PATH) {
+  if (window.location.pathname === ONBOARD_PATH) {
     return (
       <>
         <ToastHost />
@@ -285,7 +245,7 @@ export default function App() {
     );
   }
 
-  if (path === ONBOARD_ABOUT_YOU_PATH) {
+  if (window.location.pathname === ONBOARD_ABOUT_YOU_PATH) {
     return (
       <>
         <ToastHost />
@@ -294,45 +254,10 @@ export default function App() {
     );
   }
 
-  // Pre-login continuation: About You → Household → Marital (public, no auth).
-  if (path === ONBOARD_HOUSEHOLD_PATH) {
-    return (
-      <>
-        <ToastHost />
-        <HouseholdInformation />
-      </>
-    );
-  }
-
-  if (path === ONBOARD_MARITAL_INFORMATION_PATH) {
-    return (
-      <>
-        <ToastHost />
-        <MaritalInformation />
-      </>
-    );
-  }
-
-  if (path === ONBOARD_SUCCESS_PATH) {
-    return (
-      <>
-        <ToastHost />
-        <OnboardingSuccess />
-      </>
-    );
-  }
-
-  if (path === PAYMENT_SUCCESS_PATH) {
-    return (
-      <>
-        <ToastHost />
-        <PaymentSuccess />
-      </>
-    );
-  }
-
   const isPostLoginStepperPath = [
     ONBOARD_SPOUSE_INFORMATION_PATH,
+    ONBOARD_HOUSEHOLD_PATH,
+    ONBOARD_MARITAL_INFORMATION_PATH,
     ONBOARD_CHILDREN_PATH,
     ONBOARD_YAHRZEIT_PATH,
     ONBOARD_MEMBERSHIP_PATH,
@@ -340,15 +265,7 @@ export default function App() {
     ONBOARD_PAYMENT_METHOD_PATH,
     ONBOARD_REVIEW_PATH,
     ONBOARD_PROCESSING_PATH,
-  ].includes(path);
-
-  // sfUser.groups is NOT set (Make.com check-member doesn't return it). Use role only.
-  const isMemberUser = Boolean(sfUser) && sfUser.role === 'Member';
-
-  // Active members who are not in a pending onboarding stepper should never land on onboarding URLs.
-  if (isPostLoginStepperPath && isMemberUser && !isPostLoginStepperPending()) {
-    return <RedirectToPath path="/" />;
-  }
+  ].includes(window.location.pathname);
 
   // Zip stepper requires login — send unauthenticated visitors to the login page.
   // Commented out clerk auth.authenticated check for direct JWT session check
@@ -376,7 +293,7 @@ export default function App() {
   }
 
   // Post-login zip stepper (Welcome + Primary Member removed from UI).
-  if (path === ONBOARD_SPOUSE_INFORMATION_PATH) {
+  if (window.location.pathname === ONBOARD_SPOUSE_INFORMATION_PATH) {
     const prefs = getHouseholdPreferences(readDraft());
     const redirect = getRedirectPathIfStepDisallowed(SPOUSE_INFORMATION_STEP_ID, prefs);
     if (redirect) {
@@ -395,7 +312,26 @@ export default function App() {
     );
   }
 
-  if (path === ONBOARD_CHILDREN_PATH) {
+  if (window.location.pathname === ONBOARD_HOUSEHOLD_PATH) {
+    return (
+      <>
+        <ToastHost />
+        <RedirectToPath path={ONBOARD_CHILDREN_PATH} />
+      </>
+    );
+  }
+
+  // Marital Information form hidden — skip to Children.
+  if (window.location.pathname === ONBOARD_MARITAL_INFORMATION_PATH) {
+    return (
+      <>
+        <ToastHost />
+        <RedirectToPath path={ONBOARD_CHILDREN_PATH} />
+      </>
+    );
+  }
+
+  if (window.location.pathname === ONBOARD_CHILDREN_PATH) {
     const prefs = getHouseholdPreferences(readDraft());
     const redirect = getRedirectPathIfStepDisallowed(CHILDREN_STEP_ID, prefs);
     if (redirect) {
@@ -415,7 +351,7 @@ export default function App() {
   }
 
   // Yahrzeit form hidden — preference toggle only; always skip to Membership.
-  if (path === ONBOARD_YAHRZEIT_PATH) {
+  if (window.location.pathname === ONBOARD_YAHRZEIT_PATH) {
     return (
       <>
         <ToastHost />
@@ -424,7 +360,7 @@ export default function App() {
     );
   }
 
-  if (path === ONBOARD_MEMBERSHIP_PATH) {
+  if (window.location.pathname === ONBOARD_MEMBERSHIP_PATH) {
     return (
       <>
         <ToastHost />
@@ -433,7 +369,7 @@ export default function App() {
     );
   }
 
-  if (path === ONBOARD_CONTRIBUTION_SCHEDULE_PATH) {
+  if (window.location.pathname === ONBOARD_CONTRIBUTION_SCHEDULE_PATH) {
     return (
       <>
         <ToastHost />
@@ -443,7 +379,7 @@ export default function App() {
   }
 
   // Payment Method form hidden — return to portal.
-  if (path === ONBOARD_PAYMENT_METHOD_PATH) {
+  if (window.location.pathname === ONBOARD_PAYMENT_METHOD_PATH) {
     return (
       <>
         <ToastHost />
@@ -452,7 +388,7 @@ export default function App() {
     );
   }
 
-  if (path === ONBOARD_REVIEW_PATH) {
+  if (window.location.pathname === ONBOARD_REVIEW_PATH) {
     return (
       <>
         <ToastHost />
@@ -462,7 +398,7 @@ export default function App() {
   }
 
   // Processing form hidden — return to portal.
-  if (path === ONBOARD_PROCESSING_PATH) {
+  if (window.location.pathname === ONBOARD_PROCESSING_PATH) {
     return (
       <>
         <ToastHost />

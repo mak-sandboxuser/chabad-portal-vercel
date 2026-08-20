@@ -12,7 +12,7 @@ import {
   profileFormToPayload,
   sfDataToProfileForm,
 } from '../../utils/profileForm';
-import { formatMembershipDisplayName, getMembership } from '../../utils/portalData';
+import { getMembership } from '../../utils/portalData';
 
 const PROFILE_TABS = [
   { id: 'general', label: 'General Details', icon: User },
@@ -395,15 +395,8 @@ export default function ProfilePage({
     ],
     membership: (() => {
       const membership = getMembership(sfData);
-      const rawGroup = assignedGroup
-        || membership.tier
-        || sfData?.account?.groups
-        || sfData?.groups
-        || sfData?.profile?.groups
-        || form.groups
-        || '';
-      const activeGroup = formatMembershipDisplayName(rawGroup) || 'No Group Assigned Yet';
-      const hasActiveGroup = Boolean(rawGroup && activeGroup !== 'No Group Assigned Yet');
+      const activeGroup = assignedGroup || sfData?.account?.groups || sfData?.groups || sfData?.profile?.groups || form.groups || membership.tier || 'Member';
+      const hasActiveGroup = Boolean(activeGroup && activeGroup !== 'No Group Assigned Yet');
 
       return (
         <div className="profile-field--full" style={{ gridColumn: '1 / -1' }}>
@@ -413,7 +406,7 @@ export default function ProfilePage({
               <Star size={18} /> Current Assigned Group / Membership
             </h4>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: '#d4af37', color: '#000', padding: '10px 20px', borderRadius: '24px', fontWeight: '800', fontSize: '16px' }}>
-              <CheckCircle size={20} /> {activeGroup}
+              <CheckCircle size={20} /> {activeGroup || 'No Group Assigned Yet'}
             </div>
           </div>
 

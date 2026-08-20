@@ -5,79 +5,36 @@ import sharp from 'sharp';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
+const sourcePath = path.join(publicDir, 'chabad-bedford-logo-source.png');
 
-const VARIANTS = [
-  {
-    source: 'chabad-bedford-logo-light-source.png',
-    output: 'chabad-bedford-logo-light.png',
-    mode: 'light',
-  },
-  {
-    source: 'chabad-bedford-logo-dark-source.png',
-    output: 'chabad-bedford-logo-dark.png',
-    mode: 'dark',
-  },
-];
-
-function sampleCornerAverage(data, width, height, channels) {
-  const points = [
-    [2, 2],
-    [width - 3, 2],
-    [2, height - 3],
-    [width - 3, height - 3],
-  ];
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  for (const [x, y] of points) {
-    const i = (y * width + x) * channels;
-    r += data[i];
-    g += data[i + 1];
-    b += data[i + 2];
-  }
-  return [r / points.length, g / points.length, b / points.length];
-}
-
-function colorDistance(r1, g1, b1, r2, g2, b2) {
-  const dr = r1 - r2;
-  const dg = g1 - g2;
-  const db = b1 - b2;
-  return Math.sqrt(dr * dr + dg * dg + db * db);
-}
-
-function applyTransparentBackground(data, width, height, channels) {
-  const [br, bg, bb] = sampleCornerAverage(data, width, height, channels);
-  // Soft-key the solid canvas background; gold logo strokes stay opaque.
-  const fullClear = 28;
-  const softClear = 52;
-
+function applyTransparentBackground(data, channels) {
   for (let i = 0; i < data.length; i += channels) {
-    const dist = colorDistance(data[i], data[i + 1], data[i + 2], br, bg, bb);
-    if (dist <= fullClear) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    if (luminance >= 245) {
       data[i + 3] = 0;
       continue;
     }
-    if (dist <= softClear) {
-      data[i + 3] = Math.round(((dist - fullClear) / (softClear - fullClear)) * 255);
+
+    if (luminance >= 225) {
+      data[i + 3] = Math.round(((245 - luminance) / 20) * 255);
     }
   }
 }
 
-async function processVariant({ source, output }) {
-  const sourcePath = path.join(publicDir, source);
-  if (!fs.existsSync(sourcePath)) {
-    throw new Error(`Missing source logo: ${source}`);
-  }
-
+async function main() {
   const { data, info } = await sharp(sourcePath)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
 
   const rgba = Buffer.from(data);
-  applyTransparentBackground(rgba, info.width, info.height, info.channels);
+  applyTransparentBackground(rgba, info.channels);
 
-  const pngPath = path.join(publicDir, output);
+  const pngPath = path.join(publicDir, 'chabad-bedford-logo.png');
   const meta = await sharp(rgba, {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
@@ -85,29 +42,14 @@ async function processVariant({ source, output }) {
     .png()
     .toFile(pngPath);
 
-  console.log(`${output}: ${meta.width}x${meta.height}`);
-  return meta;
-}
-
-async function main() {
-  const results = [];
-  for (const variant of VARIANTS) {
-    results.push(await processVariant(variant));
-  }
-
-  // Keep legacy filenames pointing at the light logo for favicon / old refs.
-  const lightPng = path.join(publicDir, 'chabad-bedford-logo-light.png');
-  const legacyPng = path.join(publicDir, 'chabad-bedford-logo.png');
-  fs.copyFileSync(lightPng, legacyPng);
-
-  const { width, height } = results[0];
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Chabad of Bedford">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${meta.width} ${meta.height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Chabad of Bedford">
   <title>Chabad of Bedford</title>
-  <image width="${width}" height="${height}" href="/chabad-bedford-logo-light.png" xlink:href="/chabad-bedford-logo-light.png" />
+  <image width="${meta.width}" height="${meta.height}" href="/chabad-bedford-logo.png" xlink:href="/chabad-bedford-logo.png" />
 </svg>`;
 
   fs.writeFileSync(path.join(publicDir, 'chabad-bedford-logo.svg'), svg, 'utf8');
+  console.log(`Logo PNG: ${meta.width}x${meta.height}`);
   console.log('Wrote chabad-bedford-logo.png and chabad-bedford-logo.svg');
 }
 

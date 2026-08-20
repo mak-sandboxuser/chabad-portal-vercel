@@ -1,4 +1,4 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -25,17 +25,13 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkeyformagiclinks';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5174';
-const CHECKOUT_SUCCESS_URL = `${FRONTEND_URL}/payment-success?payment=success&session_id={CHECKOUT_SESSION_ID}`;
+const CHECKOUT_SUCCESS_URL = `${FRONTEND_URL}/?payment=success&session_id={CHECKOUT_SESSION_ID}`;
 const CHECKOUT_CANCEL_URL = `${FRONTEND_URL}/?payment=cancel`;
 const processedCheckoutSessions = new Set();
 const processingCheckoutSessions = new Set();
 const SESSION_CLOCK_SKEW_MS = Number.parseInt(process.env.SESSION_CLOCK_SKEW_MS || '300000', 10);
 const DEV_LOCALHOST_ORIGIN = /^https?:\/\/localhost(?::\d+)?$/;
 const VERCEL_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*vercel\.app$/i;
-
-console.log('[ENV] MAKE_PAYMENTS_WEBHOOK_URL =', process.env.MAKE_PAYMENTS_WEBHOOK_URL || '(missing)');
-console.log('[ENV] MAKE_QUICK_PAYMENT_WEBHOOK_URL =', process.env.MAKE_QUICK_PAYMENT_WEBHOOK_URL || '(missing)');
-console.log('[ENV] MAKE_STRIPE_PAYMENT_WEBHOOK_URL =', process.env.MAKE_STRIPE_PAYMENT_WEBHOOK_URL || '(missing)');
 
 function isAllowedCorsOrigin(origin) {
   if (!origin) return true;
@@ -377,7 +373,7 @@ function deriveMembershipSummary(membership, financials, profile) {
   const paymentTotal = payments.reduce((sum, item) => sum + parseMoney(item.amount || item.total), 0);
   const pledges = financials?.pledges || [];
   const recurring = financials?.recurring || [];
-
+  
   const membershipPledge = pledges.find(
     (p) => (p.type || '').toLowerCase() === 'membership'
       || (p.purpose || '').toLowerCase().includes('membership')
@@ -388,10 +384,12 @@ function deriveMembershipSummary(membership, financials, profile) {
 
   const membershipPledgeAmt = membershipPledge ? parseMoney(membershipPledge.total || membershipPledge.amount) : 0;
   const annualFromPledges = pledges.reduce((sum, item) => sum + parseMoney(item.total || item.amount), 0);
+  const pledgeOutstanding = pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
+  const membershipOutstandingVal = membershipPledge ? parseMoney(membershipPledge.outstanding) : 0;
   const activeRecurring = recurring.find((item) => (item.status || '').toLowerCase() === 'active') || recurring[0];
 
   const derivedAutoRenewal = activeRecurring ? 'Enabled' : 'Disabled';
-  const derivedPaymentMethod = activeRecurring?.method || '';
+  const derivedPaymentMethod = activeRecurring?.method || 'Cash';
   const derivedPaymentMethodExpiry = activeRecurring?.cardExpiry || '';
 
   const annual = membershipPledgeAmt > 0
@@ -405,73 +403,56 @@ function deriveMembershipSummary(membership, financials, profile) {
 
   const formattedOutstanding = formatMoney(Math.max(annual - contributed, 0));
 
-  const rawTier = String(membership?.tier || '').trim();
-  const isBareTier = !rawTier || /^(member|guest|prospect|contact)$/i.test(rawTier);
-  const hasPaidEvidence = annual > 0 || paymentTotal > 0 || Boolean(activeRecurring);
-  const resolvedTier = isBareTier ? (hasPaidEvidence ? rawTier : '') : rawTier;
-  const resolvedStatus = resolvedTier
-    ? (membership?.status || profile?.lifecycleStatus || 'Active')
-    : '';
-
   if (membership && Object.keys(membership).length) {
     return {
-      tier: resolvedTier,
-      status: resolvedStatus,
+      tier: membership.tier || 'Member',
+      status: membership.status || profile?.lifecycleStatus || 'Active',
       memberSince: membership.memberSince || '',
       renewalDate: membership.renewalDate || activeRecurring?.nextDate || '',
       annualCommitment: formattedAnnual,
       contributedYtd: formatMoney(contributed),
       outstanding: formattedOutstanding,
       autoRenewal: membership.autoRenewal || derivedAutoRenewal,
-      paymentMethod: membership.paymentMethod || derivedPaymentMethod || '—',
+      paymentMethod: membership.paymentMethod || derivedPaymentMethod,
       paymentMethodExpiry: membership.paymentMethodExpiry || derivedPaymentMethodExpiry,
       notes: membership.notes || '',
     };
   }
 
+  const annualCommitment = annual > 0 ? annual : parseMoney(profile?.householdDonationTotal);
+
   return {
-    tier: '',
-    status: '',
+    tier: 'Member',
+    status: profile?.lifecycleStatus || 'Active',
     memberSince: '',
     renewalDate: activeRecurring?.nextDate || '',
-    annualCommitment: annual > 0 ? formatMoney(annual) : '$0.00',
+    annualCommitment: annualCommitment ? formatMoney(annualCommitment) : '$0.00',
     contributedYtd: formatMoney(contributed),
     outstanding: formattedOutstanding,
     autoRenewal: activeRecurring ? 'Enabled' : 'Disabled',
-    paymentMethod: activeRecurring?.method || '—',
+    paymentMethod: activeRecurring?.method || 'Cash',
     paymentMethodExpiry: activeRecurring?.cardExpiry || '',
     notes: '',
   };
 }
 
 async function fetchFinancialsFromWebhook(webhookUrl, email, contactId, memberDetails = null) {
-  const body = {
-    email: email.toLowerCase(),
-    contactId: contactId || '',
-    accountId: memberDetails?.accountId || '',
-    fetchPayments: true,
-    fetchFinancials: true,
-    fetchPledges: true,
-    fetchRecurring: true,
-    pledgesLimit: 100,
-    paymentsLimit: 100,
-    sortBy: 'date',
-    sortDirection: 'DESC',
-  };
-  // Make Custom Webhook scenarios often expose the raw body as Bundle → Collection → value.
-  // Send JSON both as top-level fields and as `value` string so either mapping works.
-  const valueJson = JSON.stringify(body);
-  const makeBody = {
-    ...body,
-    value: valueJson,
-  };
-  console.log(`[FINANCIALS] POST ${webhookUrl}`);
-  console.log(`[FINANCIALS] body=`, valueJson);
-
   const response = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(makeBody),
+    body: JSON.stringify({
+      email: email.toLowerCase(),
+      contactId: contactId || '',
+      accountId: memberDetails?.accountId || '',
+      fetchPayments: true,
+      fetchFinancials: true,
+      fetchPledges: true,
+      fetchRecurring: true,
+      pledgesLimit: 100,
+      paymentsLimit: 100,
+      sortBy: 'date',
+      sortDirection: 'DESC',
+    }),
   });
 
   if (!response.ok) {
@@ -483,11 +464,7 @@ async function fetchFinancialsFromWebhook(webhookUrl, email, contactId, memberDe
   console.log(`Make.com financials for ${email}:`, text.slice(0, 800));
   const payload = parseMakePayload(text);
   if (!payload) {
-    console.warn(
-      `Make.com financials JSON parse failed for ${email}. `
-      + 'Webhook must return JSON (e.g. Salesforce { totalSize, records }). '
-      + `Raw response: ${JSON.stringify(text.slice(0, 200))}`,
-    );
+    console.warn(`Make.com financials JSON parse failed for ${email}`);
     return { fromSalesforce: false, payments: [], pledges: [], recurring: [] };
   }
   const parsed = extractPortalDataFromPayload(payload, memberDetails || {});
@@ -501,8 +478,7 @@ async function fetchFinancialsFromWebhook(webhookUrl, email, contactId, memberDe
       parsed.fromSalesforce
       || parsed.payments.length
       || parsed.pledges.length
-      || parsed.recurring.length
-      || (Array.isArray(payload.records) && payload.records.length),
+      || parsed.recurring.length,
     ),
     payments: parsed.payments || [],
     pledges: parsed.pledges || [],
@@ -1181,59 +1157,10 @@ async function getTransporter() {
 // Ensure transporter is set up on boot
 getTransporter();
 
-// Helper function to send emails via SendGrid/Nodemailer
-async function sendEmail({ to, subject, html, text }) {
-  try {
-    const mailer = await getTransporter();
-    const fromAddress = process.env.EMAIL_FROM || '"Chabad Bedford" <info@chabadbedford.com>';
-    const info = await mailer.sendMail({
-      from: fromAddress,
-      to,
-      subject,
-      text: text || '',
-      html: html || '',
-    });
-    console.log(`[Email Sent] Message ID: ${info.messageId} to ${to}`);
-    return { success: true, messageId: info.messageId };
-  } catch (err) {
-    console.error(`[Email Error] Failed to send email to ${to}:`, err.message);
-    return { success: false, error: err.message };
-  }
-}
-
-
 // Endpoint to fetch dev helper link
 app.get('/api/auth/dev-last-link', (req, res) => {
   res.json({ link: devLastLink, emailUrl: devLastEmailUrl });
 });
-
-// Endpoint to test sending a Welcome Email via SendGrid
-app.post('/api/test-welcome-email', async (req, res) => {
-  const { email, name } = req.body || {};
-  const targetEmail = email || 'rohitjainltp59@gmail.com';
-  const userName = name || 'Member';
-
-  const result = await sendEmail({
-    to: targetEmail,
-    subject: 'Welcome to Chabad Bedford Member Portal!',
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <h2 style="color: #1e3a8a;">Shalom & Welcome, ${userName}!</h2>
-        <p>Thank you for connecting with <strong>Chabad Bedford</strong>.</p>
-        <p>Your member portal account is active. You can view your membership, manage pledges, and update family details anytime.</p>
-        <br/>
-        <p>Warm regards,<br/><strong>Chabad Bedford Team</strong></p>
-      </div>
-    `,
-  });
-
-  if (result.success) {
-    res.json({ success: true, message: `Welcome email sent successfully to ${targetEmail}` });
-  } else {
-    res.status(500).json({ success: false, error: result.error });
-  }
-});
-
 
 // Frontend auth flow tracing — logs appear in this terminal
 app.post('/api/auth/trace', (req, res) => {
@@ -1285,7 +1212,7 @@ app.post('/api/auth/check-member', async (req, res) => {
     return res.status(403).json({
       allowed: false,
       error: lookup.error || 'unauthorized_member',
-      message: 'Please click "Join the Chabad of Bedford Family" button below',
+      message: 'You are not authorised to login to the member portal.',
     });
   }
 
@@ -1323,7 +1250,6 @@ app.post('/api/auth/check-member', async (req, res) => {
 
   cacheMemberLookup(emailLower, lookup.memberDetails);
 
-  console.log(`[LOGIN DEBUG] email=${emailLower} | role=${lookup.memberDetails.role} | groups="${lookup.memberDetails.groups}"`);
   res.json({ allowed: true, token, member: lookup.memberDetails });
 });
 
@@ -1362,7 +1288,7 @@ app.get('/api/portal/dashboard', async (req, res) => {
       authLog('DASHBOARD_DENIED', { email, reason: 'not_in_salesforce' });
       return res.status(403).json({
         error: 'unauthorized_member',
-        message: 'Please click "Join the Chabad of Bedford Family" button below',
+        message: 'You are not authorised to login to the member portal.',
       });
     }
 
@@ -1562,6 +1488,7 @@ function stripeRecurringIntervalCount(frequency = 'Monthly') {
   return 1;
 }
 
+<<<<<<< HEAD
 /** TEST MODE: compress billing cadence so schedules can be verified quickly. Set false for production. */
 const ACCELERATED_SCHEDULE_TEST = true;
 
@@ -1587,6 +1514,16 @@ function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
     return base.toISOString().split('T')[0];
   }
 
+=======
+function makeTestScheduleDelayMinutes(frequency = 'Monthly') {
+  if (frequency === 'Monthly') return 1;
+  if (frequency === 'Half Yearly' || frequency === 'Semi-Annual') return 5;
+  if (frequency === 'Yearly' || frequency === 'Annual') return 10;
+  return 0;
+}
+
+function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
+>>>>>>> parent of 6654812 (fix 1)
   const base = (dateStr || new Date().toISOString().split('T')[0]).slice(0, 10);
   const date = new Date(`${base}T12:00:00`);
   if (frequency === 'Quarterly') {
@@ -1601,51 +1538,6 @@ function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
   return date.toISOString().split('T')[0];
 }
 
-function normalizeFrequency(freqStr = '') {
-  const s = String(freqStr || '').toLowerCase().trim();
-  if (s.includes('half') || s.includes('semi') || s.includes('bi-annual') || s.includes('biannual') || s.includes('installment') || s === '2') {
-    return 'Half Yearly';
-  }
-  if (s.includes('quarter')) return 'Quarterly';
-  if (s.includes('year') || s.includes('annual')) return 'Annual';
-  if (s.includes('week')) return 'Weekly';
-  return 'Monthly';
-}
-
-function toSalesforceFrequency(frequency = '') {
-  const norm = normalizeFrequency(frequency);
-  if (norm === 'Half Yearly') return 'Semi-Annual';
-  if (norm === 'Annual') return 'Annual';
-  if (norm === 'Quarterly') return 'Quarterly';
-  if (norm === 'Weekly') return 'Weekly';
-  return 'Monthly';
-}
-
-function resolveMembershipGroupAnnualPrice(payload = {}) {
-  const fields = [
-    payload.groups,
-    payload.membershipTier,
-    payload.subType,
-    payload.paymentSubType,
-    payload.purpose,
-    payload.memo,
-  ].filter(Boolean);
-
-  for (const field of fields) {
-    const s = String(field).toLowerCase();
-    if (s.includes('chai leadership')) return 36000;
-    if (s.includes('chai rabbi')) return 18000;
-    if (s.includes('chai partner')) return 10000;
-    if (s.includes('chai donor')) return 5000;
-    if (s.includes('upgraded')) return 3000;
-    if (s.includes('senior')) return 1800;
-    if (s.includes('single parent') || (s.includes('membership 26-27') && !s.includes('family') && !s.includes('single') && !s.includes('senior') && !s.includes('upgraded'))) return 1560;
-    if (s.includes('family') && !s.includes('single')) return 2244;
-    if (s.includes('single') && !s.includes('parent')) return 1128;
-  }
-  return 0;
-}
-
 function enrichFinancialPayload(payload = {}) {
   let pledgeAmount = parseFloat(payload.pledgeAmount) || 0;
   const paymentAmount = parseFloat(payload.paymentAmount) || 0;
@@ -1656,10 +1548,9 @@ function enrichFinancialPayload(payload = {}) {
   const stripePaid = payload.stripePaymentStatus === 'paid'
     || Boolean(payload.stripeSubscriptionId);
 
-  const groupAnnualPrice = resolveMembershipGroupAnnualPrice(payload);
-  if (groupAnnualPrice > 0) {
-    pledgeAmount = groupAnnualPrice;
-  } else if (isRecurring) {
+  // Auto-calculate annual pledge from recurring payment/pledge amount.
+  // Whether monthly, half-yearly, or weekly, pledgeAmount MUST be the full annual amount commitment.
+  if (isRecurring) {
     const freqLower = frequency.toLowerCase();
     let multiplier = 1;
     if (freqLower.includes('half') || freqLower.includes('semi')) {
@@ -1673,11 +1564,10 @@ function enrichFinancialPayload(payload = {}) {
     }
 
     if (multiplier > 1) {
-      const annualizedFromPayment = paymentAmount * multiplier;
+      const annualizedFromPayment = paymentAmount > 0 ? paymentAmount * multiplier : 0;
+      // Keep this idempotent: if pledgeAmount is already annualized, do not multiply it again.
       if (annualizedFromPayment > 0 && pledgeAmount < annualizedFromPayment) {
         pledgeAmount = annualizedFromPayment;
-      } else if (pledgeAmount > 0 && pledgeAmount < (pledgeAmount * multiplier)) {
-        pledgeAmount = pledgeAmount * multiplier;
       }
     }
   }
@@ -1688,13 +1578,11 @@ function enrichFinancialPayload(payload = {}) {
   else if (pledgeAmount > 0) action = 'pledge';
   else if (paymentAmount > 0) action = 'payment';
 
-  const fullAnnualPledge = pledgeAmount > 0 ? pledgeAmount : (recurringAmount > 0 ? recurringAmount * 2 : 0);
-
   const recurringFields = isRecurring && recurringAmount > 0 ? {
     chargeStartDate: paymentDate,
     nextChargeDate: addRecurringIntervalToDate(paymentDate, frequency),
     initialRecurrences: stripePaid ? 1 : 0,
-    totalEstimatedRevenue: fullAnnualPledge > 0 ? fullAnnualPledge : recurringAmount,
+    totalEstimatedRevenue: recurringAmount,
     chargesRemaining: 0,
     paymentProcessorId: payload.stripeSubscriptionId || payload.stripePaymentIntentId || '',
     recurringInvoiceName: process.env.RECURRING_INVOICE_NAME || '',
@@ -1702,12 +1590,16 @@ function enrichFinancialPayload(payload = {}) {
   } : {};
 
   const method = payload.method || (payload.paymentMethodType === 'us_bank_account' ? 'Bank Transfer' : 'Stripe');
-  const rawType = String(payload.paymentType || payload.type || '').toLowerCase();
-  const rawSubType = String(payload.subType || '').toLowerCase();
-  const isMembershipPayload = rawType.includes('member') || rawType.includes('campaign') || rawSubType.includes('member') || !payload.paymentType;
-
-  const typeVal = isMembershipPayload ? 'Campaign' : (payload.paymentType || payload.type || 'Campaign');
-  const subTypeVal = isMembershipPayload ? 'Membership' : (payload.subType || 'Membership');
+  const typeVal = payload.paymentType || payload.type || 'Membership';
+  const subTypeVal = payload.subType || 'Family Membership';
+  const annualPledgeAmount = pledgeAmount > 0 ? pledgeAmount : 0;
+  const paidThisCharge = paymentAmount > 0 ? paymentAmount : 0;
+  const pledgeOutstandingAmount = Math.max(annualPledgeAmount - paidThisCharge, 0);
+  // For monthly/recurring pledge creation workflows: create pledge at remaining balance,
+  // while still sending full annual commitment as masterPledgeAmount.
+  const pledgeCreateAmount = isRecurring && annualPledgeAmount > 0
+    ? pledgeOutstandingAmount
+    : annualPledgeAmount;
 
   return {
     ...payload,
@@ -1715,15 +1607,16 @@ function enrichFinancialPayload(payload = {}) {
     type: typeVal,
     paymentType: typeVal,
     OneCRM__Type__c: typeVal,
-    Type: typeVal,
     subType: subTypeVal,
-    paymentSubType: subTypeVal,
     OneCRM__Sub_Type__c: subTypeVal,
-    Sub_Type: subTypeVal,
     action,
     method,
-    pledgeAmount: pledgeAmount > 0 ? pledgeAmount : 0,
-    createPledge: pledgeAmount > 0,
+    pledgeAmount: annualPledgeAmount,
+    masterPledgeAmount: annualPledgeAmount,
+    pledgeCreateAmount,
+    pledgeOutstandingAmount,
+    pledgePaidAmount: paidThisCharge,
+    createPledge: pledgeAmount > 0 && pledgeAmount > paymentAmount,
     createPayment: paymentAmount > 0,
     createRecurring: isRecurring && recurringAmount > 0,
     paymentOnly: pledgeAmount <= 0 && paymentAmount > 0 && !isRecurring,
@@ -1755,6 +1648,10 @@ function buildStripeCheckoutMetadata(payload, contactId, email) {
     paymentDateIso: toSalesforceDateIso(payload.paymentDate),
     donorId: payload.accountId || '',
     pledgeAmount: String(pledgeAmount > 0 ? pledgeAmount : 0),
+    masterPledgeAmount: String(enriched.masterPledgeAmount || 0),
+    pledgeCreateAmount: String(enriched.pledgeCreateAmount || 0),
+    pledgeOutstandingAmount: String(enriched.pledgeOutstandingAmount || 0),
+    pledgePaidAmount: String(enriched.pledgePaidAmount || 0),
     paymentAmount: String(paymentAmount),
     action: enriched.action,
     createPledge: enriched.createPledge ? 'true' : 'false',
@@ -1806,14 +1703,20 @@ async function createStripeCheckoutSession(payload, contactId, email) {
   const paymentAmount = parseFloat(payload.paymentAmount) || 0;
   const isRecurring = payload.billingMode === 'recurring';
   const checkoutLabel = [payload.paymentType, payload.subType].filter(Boolean).join(' — ');
-  const metadata = buildStripeCheckoutMetadata(payload, contactId, email);
+  const metadata = buildStripeCheckoutMetadata(
+    { ...payload, paymentAmount },
+    contactId,
+    email,
+  );
 
   const paymentMethodType = payload.paymentMethodType || 'card';
   const paymentMethodTypes = paymentMethodType === 'us_bank_account' ? ['us_bank_account'] : ['card'];
   const customerId = await getOrCreateStripeCustomer(email);
 
   const isOnboarding = payload.source === 'onboarding';
-  const successUrl = CHECKOUT_SUCCESS_URL;
+  const successUrl = isOnboarding
+    ? `${FRONTEND_URL}/onboard/membership?payment=success&session_id={CHECKOUT_SESSION_ID}`
+    : CHECKOUT_SUCCESS_URL;
   const cancelUrl = isOnboarding
     ? `${FRONTEND_URL}/onboard/membership?payment=cancel`
     : CHECKOUT_CANCEL_URL;
@@ -2019,63 +1922,39 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
 
   const paymentUrl = process.env.MAKE_STRIPE_PAYMENT_WEBHOOK_URL;
   const pledgeRecurringUrl = process.env.MAKE_QUICK_PAYMENT_WEBHOOK_URL;
+  const masterPledgeAmount = parseFloat(enriched.pledgeAmount) || 0;
+  const paymentAmount = parseFloat(enriched.paymentAmount) || 0;
+  const remainingPledgeAmount = Math.max(0, masterPledgeAmount - (enriched.createPayment ? paymentAmount : 0));
 
-  const sfFrequency = toSalesforceFrequency(enriched.frequency);
-  const fullPledgeVal = enriched.createPledge && enriched.pledgeAmount > 0 ? enriched.pledgeAmount : 0;
-  const paidCharge = enriched.createPayment ? (parseFloat(enriched.paymentAmount) || 0) : 0;
   const webhookPayload = {
     ...enriched,
-    frequency: sfFrequency,
-    OneCRM__Frequency__c: sfFrequency,
-    Frequency: sfFrequency,
-    pledgeAmount: fullPledgeVal,
-    pledge: fullPledgeVal,
-    annualCommitment: fullPledgeVal,
-    annualPrice: fullPledgeVal,
-    totalPledge: fullPledgeVal,
-    totalCommitment: fullPledgeVal,
-    totalEstimatedRevenue: fullPledgeVal > 0 ? fullPledgeVal : enriched.totalEstimatedRevenue,
-    pledgeTotal: fullPledgeVal,
-    annualPledge: fullPledgeVal,
-    // Keep pledge total and paid charge distinct — Make must not treat pledge total as Charge Paid = 0.
-    paymentAmount: paidCharge,
-    chargePaidAmount: paidCharge,
-    lineItemAmount: paidCharge > 0 ? -Math.abs(paidCharge) : 0,
-    OneCRM__Amount__c: fullPledgeVal > 0 ? fullPledgeVal : paidCharge,
-    OneCRM__Pledge_Amount__c: fullPledgeVal,
-    OneCRM__Annual_Commitment__c: fullPledgeVal,
-    OneCRM__Total__c: fullPledgeVal,
-    OneCRM__Paid__c: paidCharge,
-    amount: fullPledgeVal > 0 ? fullPledgeVal : paidCharge,
+<<<<<<< Updated upstream
+    // Send the full annual amount as pledgeAmount for master-pledge creation.
+    // Use pledgePaidAmount / pledgeOutstandingAmount for the paid/outstanding math.
+    pledgeAmount: enriched.createPledge ? enriched.masterPledgeAmount : 0,
+=======
+    // Send pledgeAmount as remaining annual commitment after this payment.
+    pledgeAmount: remainingPledgeAmount,
+    // Keep annual commitment available for master pledge create/upsert mapping.
+    masterPledgeAmount,
+    pledgePaidAmount: enriched.createPayment ? paymentAmount : 0,
+    pledgeOutstandingAmount: remainingPledgeAmount,
+>>>>>>> Stashed changes
     createPledge: Boolean(enriched.createPledge),
-    createPayment: Boolean(enriched.createPayment && paidCharge > 0),
     paymentOnly: Boolean(enriched.paymentOnly),
+    scheduleDelayMinutes: makeTestScheduleDelayMinutes(enriched.frequency || 'Monthly'),
+    // Explicit aliases for Make.com field mapping (Charge Paid must NOT be 0 on payment-only).
+    chargePaidAmount: enriched.createPayment ? enriched.paymentAmount : 0,
+    lineItemAmount: enriched.createPayment ? -Math.abs(enriched.paymentAmount) : 0,
     doNotCreatePledge: !enriched.createPledge,
   };
 
   const calls = [];
-  if (webhookPayload.createPayment && paymentUrl) {
-    // Payment scenario: send the Stripe charge amount as the primary amount fields.
-    calls.push(postToMakeWebhook(paymentUrl, {
-      ...webhookPayload,
-      amount: paidCharge,
-      OneCRM__Amount__c: paidCharge,
-      paymentOnly: true,
-      createPledge: false,
-      doNotCreatePledge: true,
-    }, 'MAKE_STRIPE_PAYMENT_WEBHOOK_URL'));
+  if (enriched.createPayment && paymentUrl) {
+    calls.push(postToMakeWebhook(paymentUrl, webhookPayload, 'MAKE_STRIPE_PAYMENT_WEBHOOK_URL'));
   }
   if ((enriched.createPledge || enriched.createRecurring) && pledgeRecurringUrl) {
     calls.push(postToMakeWebhook(pledgeRecurringUrl, webhookPayload, 'MAKE_QUICK_PAYMENT_WEBHOOK_URL'));
-  }
-
-  // If payment was collected but only the pledge URL is configured, still send payment
-  // fields on that webhook so Charge Paid is not dropped.
-  if (webhookPayload.createPayment && !paymentUrl && pledgeRecurringUrl) {
-    console.warn('[FINANCIAL] MAKE_STRIPE_PAYMENT_WEBHOOK_URL missing — sending payment fields on pledge webhook');
-    if (!calls.length) {
-      calls.push(postToMakeWebhook(pledgeRecurringUrl, webhookPayload, 'MAKE_QUICK_PAYMENT_WEBHOOK_URL'));
-    }
   }
 
   if (!calls.length) {
@@ -2088,7 +1967,7 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
     await Promise.all(calls);
   }
 
-  console.log(`[FINANCIAL] action=${enriched.action}, contactId=${webhookPayload.contactId}, accountId=${webhookPayload.accountId}, pledge=${webhookPayload.pledgeAmount}, payment=${paidCharge}, recurring=${enriched.recurringAmount}, paymentOnly=${webhookPayload.paymentOnly}, paymentWebhook=${Boolean(webhookPayload.createPayment && paymentUrl)}, pledgeRecurringWebhook=${Boolean((enriched.createPledge || enriched.createRecurring) && pledgeRecurringUrl)}`);
+  console.log(`[FINANCIAL] action=${enriched.action}, contactId=${webhookPayload.contactId}, accountId=${webhookPayload.accountId}, pledge=${webhookPayload.pledgeAmount}, payment=${enriched.paymentAmount}, recurring=${enriched.recurringAmount}, paymentOnly=${webhookPayload.paymentOnly}, paymentWebhook=${Boolean(enriched.createPayment && paymentUrl)}, pledgeRecurringWebhook=${Boolean((enriched.createPledge || enriched.createRecurring) && pledgeRecurringUrl)}`);
   return enriched;
 }
 
@@ -2229,7 +2108,7 @@ app.post('/api/payments/confirm-checkout', async (req, res) => {
     processingCheckoutSessions.add(sessionId);
     try {
       await triggerFinancialWebhook(payload, authHeader);
-
+      
       // Auto-assign group if present in checkout session metadata
       const assignedGroup = payload.groups;
       if (assignedGroup) {
@@ -2268,16 +2147,7 @@ app.post('/api/payments/confirm-checkout', async (req, res) => {
           ? 'Pledge synced to ChabadOne CRM.'
           : 'Payment synced to ChabadOne CRM.';
     console.log(`[PAYMENT] confirm-checkout OK for ${payload.email}, action=${payload.action}, accountId=${payload.accountId || '(missing)'}`);
-    res.json({
-      success: true,
-      message,
-      action: payload.action,
-      paymentAmount: parseFloat(payload.paymentAmount) || 0,
-      pledgeAmount: parseFloat(payload.pledgeAmount) || 0,
-      paymentDate: payload.paymentDate || new Date().toISOString().split('T')[0],
-      subType: payload.subType || 'Membership',
-      email: payload.email,
-    });
+    res.json({ success: true, message, action: payload.action });
   } catch (error) {
     console.error('Error confirming Stripe checkout:', error);
     res.status(500).json({ error: error.message });
@@ -2381,7 +2251,7 @@ async function resolveAuthedPortalMember(req) {
     return {
       error: {
         status: 403,
-        message: 'Please click "Join the Chabad of Bedford Family" button below',
+        message: 'You are not authorised to login to the member portal.',
         code: 'unauthorized_member',
       },
     };
@@ -2509,22 +2379,6 @@ function buildAccountFamilyMemberPayload(auth, body, mode) {
     mobilePhone: String(body.mobilePhone || body.phone || '').trim(),
     contactEmail: String(body.contactEmail || body.memberEmail || '').trim(),
     groups: body.groups || body.group || '',
-    // Pre-login About You → Household → Marital (flat fields only)
-    hebrewName: String(body.hebrewName || '').trim(),
-    fathersHebrewName: String(body.fathersHebrewName || body.fatherHebrewName || '').trim(),
-    mothersHebrewName: String(body.mothersHebrewName || body.motherHebrewName || '').trim(),
-    occupation: String(body.occupation || '').trim(),
-    birthdate: String(body.birthdate || body.birthDate || '').trim(),
-    street: String(body.street || '').trim(),
-    city: String(body.city || '').trim(),
-    state: String(body.state || '').trim(),
-    postalCode: String(body.postalCode || body.zipCode || '').trim(),
-    country: String(body.country || '').trim(),
-    homePhone: String(body.homePhone || '').trim(),
-    workPhone: String(body.workPhone || '').trim(),
-    maritalStatus: String(body.maritalStatus || '').trim(),
-    anniversaryDate: String(body.anniversaryDate || '').trim(),
-    weddingDate: String(body.weddingDate || body.anniversaryDate || '').trim(),
   };
 }
 

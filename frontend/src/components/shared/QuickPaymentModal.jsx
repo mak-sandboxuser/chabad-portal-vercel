@@ -5,11 +5,11 @@ import {
 import { fetchPortalApi } from '../../utils/portalApi';
 import { showToast } from '../../utils/toast';
 import { ALL_MEMBERSHIP_TIERS } from '../../onboard/data/membershipTiers';
-import { getMembership, getRecurring, parseMoney } from '../../utils/portalData';
+import { getMembership, getRecurring, parseMoney, markLastPaymentNow } from '../../utils/portalData';
 
 const TYPE_OPTIONS = [
-  { id: 'Campaign', label: 'Campaign' },
   { id: 'Donation', label: 'Donation' },
+  { id: 'Membership', label: 'Membership' },
 ];
 
 const MEMBERSHIP_SUB_TYPES = ALL_MEMBERSHIP_TIERS.map((tier) => ({
@@ -18,11 +18,6 @@ const MEMBERSHIP_SUB_TYPES = ALL_MEMBERSHIP_TIERS.map((tier) => ({
 }));
 
 const SUB_TYPES = {
-  Campaign: [
-    { id: 'Membership', label: 'Membership' },
-    { id: 'Building Campaign', label: 'Building Campaign' },
-    { id: 'Capital Campaign', label: 'Capital Campaign' },
-  ],
   Donation: [
     { id: 'General Donation', label: 'General Donation' },
     { id: 'Holiday Contribution', label: 'Holiday Contribution' },
@@ -30,6 +25,7 @@ const SUB_TYPES = {
     { id: 'Administration', label: 'Administration' },
     { id: 'Miscellaneous', label: 'Miscellaneous' },
   ],
+  Membership: MEMBERSHIP_SUB_TYPES,
 };
 
 const DEDICATION_TYPES = [
@@ -150,7 +146,6 @@ export default function QuickPaymentModal({
   readOnly = false,
   pledgeAmount = 0,
   theme,
-  onBeforeCheckout,
 }) {
   const [billingMode, setBillingMode] = useState('one-time'); // 'one-time' or 'recurring'
   const [paymentType, setPaymentType] = useState('Donation');
@@ -165,10 +160,14 @@ export default function QuickPaymentModal({
   const [paymentMethodType, setPaymentMethodType] = useState('us_bank_account'); // 'card' or 'us_bank_account'
   const amountInputRef = useRef(null);
 
+<<<<<<< HEAD
   const isMembership = (paymentType === 'Campaign' && subType === 'Membership') || paymentType === 'Membership';
+=======
+  const isMembership = paymentType === 'Membership';
+>>>>>>> parent of 6654812 (fix 1)
 
-  const applyMembershipAmount = (tierName, nextFrequency) => {
-    const tier = findMembershipTier(tierName || defaultSubType || groups || sfData?.account?.groups || 'Family Membership');
+  const applyMembershipAmount = (nextSubType, nextFrequency) => {
+    const tier = findMembershipTier(nextSubType);
     if (!tier) return;
     const nextAmount = getMembershipPaymentAmount(tier.annualPrice, nextFrequency);
     if (nextAmount > 0) setAmount(nextAmount.toFixed(2));
@@ -177,19 +176,11 @@ export default function QuickPaymentModal({
   useEffect(() => {
     if (!open) return;
 
-    let nextType = defaultType || 'Campaign';
-    let nextSubType = defaultSubType || 'Membership';
-
-    if (nextType === 'Membership') {
-      nextType = 'Campaign';
-      nextSubType = 'Membership';
-    }
-
+    const nextType = defaultType || 'Donation';
     const nextBillingMode = defaultBillingMode === 'recurring' ? 'recurring' : 'one-time';
 
     setBillingMode(nextBillingMode);
     setPaymentType(nextType);
-    setSubType(nextSubType);
     setStartDate(todayIsoDate());
     setDedicationType(readOnly ? 'None' : 'In Honor Of');
     setDedicationName('');
@@ -197,23 +188,26 @@ export default function QuickPaymentModal({
     setPaymentMethodType('us_bank_account');
     setLoading(false);
 
-    if (nextType === 'Campaign' && nextSubType === 'Membership') {
+    if (nextType === 'Membership') {
       const membershipDefaults = resolveMembershipDefaults({
         sfData,
-        defaultSubType: defaultSubType === 'Membership' ? null : defaultSubType,
+        defaultSubType,
         groups,
         defaultAmount,
         defaultFrequency,
       });
+      setSubType(membershipDefaults.subType);
       setFrequency(membershipDefaults.frequency);
       setAmount(membershipDefaults.amount);
       if (nextBillingMode === 'one-time' && !defaultFrequency) {
+        // Keep one-time amount as full annual when opened as one-time membership pay.
         const tier = findMembershipTier(membershipDefaults.subType);
         if (tier && !defaultAmount) {
           setAmount(tier.annualPrice.toFixed(2));
         }
       }
     } else {
+      setSubType(defaultSubType || 'General Donation');
       setAmount(defaultAmount || '100.00');
       setFrequency(defaultFrequency || 'Monthly');
     }
@@ -223,8 +217,7 @@ export default function QuickPaymentModal({
 
   const handleTypeChange = (typeVal) => {
     setPaymentType(typeVal);
-    if (typeVal === 'Campaign') {
-      setSubType('Membership');
+    if (typeVal === 'Membership') {
       const membershipDefaults = resolveMembershipDefaults({
         sfData,
         defaultSubType,
@@ -232,6 +225,7 @@ export default function QuickPaymentModal({
         defaultAmount,
         defaultFrequency: frequency,
       });
+      setSubType(membershipDefaults.subType);
       setFrequency(membershipDefaults.frequency);
       setAmount(membershipDefaults.amount);
       return;
@@ -246,15 +240,15 @@ export default function QuickPaymentModal({
 
   const handleSubTypeChange = (nextSubType) => {
     setSubType(nextSubType);
-    if ((paymentType === 'Campaign' && nextSubType === 'Membership') || paymentType === 'Membership') {
-      applyMembershipAmount(defaultSubType || groups || 'Family Membership', frequency);
+    if (paymentType === 'Membership') {
+      applyMembershipAmount(nextSubType, frequency);
     }
   };
 
   const handleFrequencyChange = (nextFrequency) => {
     setFrequency(nextFrequency);
-    if ((paymentType === 'Campaign' && subType === 'Membership') || paymentType === 'Membership') {
-      applyMembershipAmount(defaultSubType || groups || 'Family Membership', nextFrequency);
+    if (paymentType === 'Membership') {
+      applyMembershipAmount(subType, nextFrequency);
     }
   };
 
@@ -279,9 +273,6 @@ export default function QuickPaymentModal({
 
     setLoading(true);
     try {
-      const payloadType = paymentType === 'Membership' ? 'Campaign' : paymentType;
-      const payloadSubType = paymentType === 'Membership' ? 'Membership' : subType;
-
       const data = await fetchPortalApi('/api/payments/quick-payment', {
         getAuthToken,
         method: 'POST',
@@ -289,11 +280,9 @@ export default function QuickPaymentModal({
           email: user?.email,
           contactId: sfData?.contactId || '',
           accountId: sfData?.accountId || sfData?.account?.id || '',
-          purpose: paymentType === 'Membership' ? `Campaign — Membership` : subType,
-          type: payloadType,
-          paymentType: payloadType,
-          subType: payloadSubType,
-          membershipTier: subType,
+          purpose: paymentType === 'Membership' ? `Membership — ${subType}` : subType,
+          paymentType: paymentType,
+          subType: subType,
           memo: note || dedicationName ? `${dedicationType}: ${dedicationName}. Note: ${note}` : '',
           pledgeAmount: pledgeAmount || 0,
           paymentAmount: parsedAmount,
@@ -307,25 +296,14 @@ export default function QuickPaymentModal({
       });
 
       if (data.url) {
-        try {
-          if (typeof onBeforeCheckout === 'function') onBeforeCheckout();
-          if (isMembership) {
-            const label = groups || subType || defaultSubType || 'Membership';
-            const tier = findMembershipTier(label);
-            sessionStorage.setItem(
-              'pending_paid_membership_name',
-              tier?.name || (label.includes('Membership') ? label : `${label}`)
-            );
-          }
-        } catch {
-          // ignore
-        }
+        markLastPaymentNow();
         showToast({ message: 'Redirecting to secure Stripe checkout...', type: 'success', duration: 2500 });
         window.location.href = data.url;
         return;
       }
 
       if (data.success) {
+        markLastPaymentNow();
         showToast({
           message: data.message || 'Saved to ChabadOne CRM successfully.',
           type: 'success',

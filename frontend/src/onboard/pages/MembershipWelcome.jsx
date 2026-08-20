@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo } from 'react';
 import {
   Heart,
   Clock,
@@ -18,7 +18,6 @@ import OnboardHeader from '../components/OnboardHeader';
 import PrimaryButton from '../components/PrimaryButton';
 import SecurityNotice from '../components/SecurityNotice';
 import MenorahIcon from '../components/icons/MenorahIcon';
-import ContactSupportModal from '../../components/shared/ContactSupportModal';
 import useOnboardingTheme from '../hooks/useOnboardingTheme';
 import useOnboardingDraft from '../hooks/useOnboardingDraft';
 import { getStepById, ABOUT_YOU_STEP_ID } from '../data/onboardingSteps';
@@ -51,7 +50,6 @@ const APPLICATION_PROCESS_PREVIEW = [
 
 export default function MembershipWelcome() {
   const [theme, toggleTheme] = useOnboardingTheme();
-  const [showContactModal, setShowContactModal] = useState(false);
   const { draft, hasSavedDraft, persistNow } = useOnboardingDraft();
   const benefitsHeadingId = useId();
   const processHeadingId = useId();
@@ -194,23 +192,13 @@ export default function MembershipWelcome() {
 
           <footer className="onboard-welcome-footer">
             <span>Questions? We&apos;re here to help.</span>
-            <button
-              type="button"
-              className="onboard-footer-contact"
-              onClick={() => setShowContactModal(true)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}
-            >
+            <a href="mailto:info@chabadbedford.com" className="onboard-footer-contact">
               Contact Us
               <ArrowRight size={14} aria-hidden="true" />
-            </button>
+            </a>
           </footer>
         </main>
       </div>
-
-      <ContactSupportModal
-        open={showContactModal}
-        onClose={() => setShowContactModal(false)}
-      />
     </div>
   );
 }

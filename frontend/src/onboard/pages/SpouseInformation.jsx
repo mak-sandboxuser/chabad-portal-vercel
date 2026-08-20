@@ -7,7 +7,6 @@ import KnowYouBetterPanel from '../components/KnowYouBetterPanel';
 import FormField from '../components/FormField';
 import PhoneField from '../components/PhoneField';
 import SelectField from '../components/SelectField';
-import BirthDateGroup from '../components/BirthDateGroup';
 import PrimaryButton from '../components/PrimaryButton';
 import SecondaryButton from '../components/SecondaryButton';
 import useOnboardingTheme from '../hooks/useOnboardingTheme';
@@ -44,11 +43,6 @@ const EMPTY_SPOUSE = {
   lastName: '',
   email: '',
   phone: { country: 'US', number: '' },
-  hebrewName: '',
-  fathersHebrewName: '',
-  mothersHebrewName: '',
-  occupation: '',
-  birthDate: { month: '', day: '', year: '' },
 };
 
 const FIELD_ORDER = ['firstName', 'lastName', 'email', 'phone'];
@@ -84,7 +78,6 @@ export default function SpouseInformation() {
     ...EMPTY_SPOUSE,
     ...draft.data.spouse,
     phone: { ...EMPTY_SPOUSE.phone, ...draft.data.spouse?.phone },
-    birthDate: { ...EMPTY_SPOUSE.birthDate, ...draft.data.spouse?.birthDate },
   };
 
   const fingerprint = fingerprintFamilyMember({
@@ -132,10 +125,6 @@ export default function SpouseInformation() {
   const handlePhoneChange = (nextPhone) => {
     updateSpouse({ phone: nextPhone });
     clearErrorIfValid('phone', isValidPhoneForCountry(nextPhone.number, nextPhone.country));
-  };
-
-  const handleBirthDateChange = (nextBirthDate) => {
-    updateSpouse({ birthDate: nextBirthDate });
   };
 
   const handleRemoveSpouse = () => {
@@ -208,11 +197,6 @@ export default function SpouseInformation() {
           gender: spouse.gender,
           contactEmail: spouse.email,
           mobilePhone: spouse.phone?.number || '',
-          hebrewName: spouse.hebrewName,
-          fathersHebrewName: spouse.fathersHebrewName,
-          mothersHebrewName: spouse.mothersHebrewName,
-          occupation: spouse.occupation,
-          birthDate: spouse.birthDate,
         });
         showToast({ message: 'Spouse contact created successfully.', type: 'success' });
       }
@@ -371,47 +355,6 @@ export default function SpouseInformation() {
                       error={errors.phone}
                     />
                   </div>
-
-                  <div className="onboard-form-grid">
-                    <FormField
-                      id="hebrewName"
-                      label="Hebrew Name"
-                      placeholder="Hebrew Name"
-                      value={spouse.hebrewName}
-                      onChange={handleTextChange('hebrewName')}
-                    />
-                    <FormField
-                      id="fathersHebrewName"
-                      label="Father's Hebrew Name"
-                      placeholder="Father's Hebrew Name"
-                      value={spouse.fathersHebrewName}
-                      onChange={handleTextChange('fathersHebrewName')}
-                    />
-                  </div>
-
-                  <div className="onboard-form-grid">
-                    <FormField
-                      id="mothersHebrewName"
-                      label="Mother's Hebrew Name"
-                      placeholder="Mother's Hebrew Name"
-                      value={spouse.mothersHebrewName}
-                      onChange={handleTextChange('mothersHebrewName')}
-                    />
-                    <FormField
-                      id="occupation"
-                      label="Occupation"
-                      placeholder="Occupation"
-                      value={spouse.occupation}
-                      onChange={handleTextChange('occupation')}
-                    />
-                  </div>
-
-                  <BirthDateGroup
-                    groupId="spouseBirthDate"
-                    label="Birth Date"
-                    value={spouse.birthDate}
-                    onChange={handleBirthDateChange}
-                  />
 
                   <div className="onboard-form-actions">
                     <SecondaryButton

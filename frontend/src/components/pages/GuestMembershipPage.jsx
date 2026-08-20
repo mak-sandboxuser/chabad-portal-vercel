@@ -10,7 +10,7 @@ import {
 import PortalPageLayout from '../shared/PortalPageLayout';
 import ChabadLogo from '../shared/ChabadLogo';
 import { ONBOARD_FIRST_FORM_PATH } from '../../onboard/utils/onboardingRoutes';
-import { markPostLoginStepperPending, getPostLoginStepperEntryPath } from '../../onboard/utils/postLoginStepper';
+import { markPostLoginStepperPending } from '../../onboard/utils/postLoginStepper';
 
 const MEMBERSHIP_BENEFITS = [
   {
@@ -45,9 +45,12 @@ export default function GuestMembershipPage({ theme, onNavigate, user, sfData })
 
   const handleBecomeMember = () => {
     markPostLoginStepperPending();
-    window.location.assign(getPostLoginStepperEntryPath());
+    window.location.assign(ONBOARD_FIRST_FORM_PATH);
   };
 
+  const handleLearnMore = () => {
+    benefitsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <PortalPageLayout
@@ -66,7 +69,7 @@ export default function GuestMembershipPage({ theme, onNavigate, user, sfData })
             <div className="guest-membership-arch-leaf guest-membership-arch-leaf--left" />
             <div className="guest-membership-arch-leaf guest-membership-arch-leaf--right" />
             <div className="guest-membership-logo-pedestal">
-              <ChabadLogo className="guest-membership-logo" theme={theme} width={120} />
+              <ChabadLogo className="guest-membership-logo" width={120} />
             </div>
           </div>
         </div>
@@ -88,7 +91,15 @@ export default function GuestMembershipPage({ theme, onNavigate, user, sfData })
             <ArrowRight size={18} aria-hidden="true" />
           </button>
 
+          <div className="guest-membership-or-divider" role="presentation">
+            <span />
+            <span>OR</span>
+            <span />
+          </div>
 
+          <button type="button" className="guest-membership-secondary-btn" onClick={handleLearnMore}>
+            Learn More About Membership
+          </button>
         </div>
       </section>
 

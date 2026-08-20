@@ -6,7 +6,6 @@ import OnboardFooter from '../components/OnboardFooter';
 import KnowYouBetterPanel from '../components/KnowYouBetterPanel';
 import FormField from '../components/FormField';
 import SelectField from '../components/SelectField';
-import BirthDateGroup from '../components/BirthDateGroup';
 import InfoPanel from '../components/InfoPanel';
 import AddItemButton from '../components/AddItemButton';
 import PrimaryButton from '../components/PrimaryButton';
@@ -52,21 +51,9 @@ function createEmptyChild() {
     firstName: '',
     lastName: '',
     name: '',
-    birthDate: { month: '', day: '', year: '' },
+    birthDate: '',
     syncFingerprint: '',
   };
-}
-
-function normalizeChildBirthDate(birthDate) {
-  if (birthDate && typeof birthDate === 'object') {
-    return {
-      month: String(birthDate.month || ''),
-      day: String(birthDate.day || ''),
-      year: String(birthDate.year || ''),
-    };
-  }
-  // Legacy string dates are ignored in the UI; webhook can still use ISO if stored later.
-  return { month: '', day: '', year: '' };
 }
 
 /** A row the applicant hasn't started filling in yet. */
@@ -134,7 +121,6 @@ export default function ChildrenInformation() {
       ...child,
       id: child.id || createChildId(),
       firstName: child.firstName || child.name || '',
-      birthDate: normalizeChildBirthDate(child.birthDate),
     })),
   );
   // Only real children count toward the cap — the trailing blank row doesn't.
@@ -192,7 +178,6 @@ export default function ChildrenInformation() {
         gender: child.gender,
         contactEmail: '',
         mobilePhone: '',
-        birthDate: child.birthDate,
       });
       nextList[index] = { ...child, syncFingerprint: fingerprint };
       created += 1;
@@ -293,12 +278,6 @@ export default function ChildrenInformation() {
     const value = event.target.value;
     updateChildren(children.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
     if (validator) clearChildFieldError(id, field, validator(value));
-  };
-
-  const handleChildBirthDateChange = (id) => (nextBirthDate) => {
-    updateChildren(
-      children.map((c) => (c.id === id ? { ...c, birthDate: nextBirthDate } : c)),
-    );
   };
 
   const handleBack = () => {
@@ -475,13 +454,6 @@ export default function ChildrenInformation() {
                         error={errors[child.id]?.lastName}
                       />
                     </div>
-
-                    <BirthDateGroup
-                      groupId={`child-${child.id}-birthDate`}
-                      label="Birth Date"
-                      value={child.birthDate}
-                      onChange={handleChildBirthDateChange(child.id)}
-                    />
                   </div>
                 );
               })}

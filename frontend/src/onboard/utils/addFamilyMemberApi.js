@@ -24,7 +24,6 @@ export function getOnboardingSfSession() {
 /** Stable fingerprint so Save & Continue can skip the webhook when fields are unchanged. */
 export function fingerprintFamilyMember(person = {}) {
   const phoneRaw = person.phone?.number ?? person.mobilePhone ?? '';
-  const birth = person.birthDate || {};
   return JSON.stringify({
     salutation: String(person.salutation || '').trim(),
     gender: String(person.gender || '').trim(),
@@ -32,26 +31,9 @@ export function fingerprintFamilyMember(person = {}) {
     lastName: String(person.lastName || '').trim().toLowerCase(),
     email: String(person.email || person.contactEmail || '').trim().toLowerCase(),
     phone: String(phoneRaw).replace(/\D/g, ''),
-    hebrewName: String(person.hebrewName || '').trim().toLowerCase(),
-    fathersHebrewName: String(person.fathersHebrewName || '').trim().toLowerCase(),
-    mothersHebrewName: String(person.mothersHebrewName || '').trim().toLowerCase(),
-    occupation: String(person.occupation || '').trim().toLowerCase(),
-    birthDate: {
-      month: String(birth.month || '').trim(),
-      day: String(birth.day || '').trim(),
-      year: String(birth.year || '').trim(),
-    },
     contactId: person.contactId || '',
     isLinked: Boolean(person.isLinked),
   });
-}
-
-function toIsoBirthdate(birthDate = {}) {
-  const month = Number(birthDate.month);
-  const day = Number(birthDate.day);
-  const year = Number(birthDate.year);
-  if (!month || !day || !year) return '';
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 /**
@@ -66,12 +48,6 @@ export async function createFamilyMemberViaWebhook({
   gender = '',
   contactEmail = '',
   mobilePhone = '',
-  hebrewName = '',
-  fathersHebrewName = '',
-  mothersHebrewName = '',
-  occupation = '',
-  birthDate = null,
-  birthdate = '',
 }) {
   const session = getOnboardingSfSession();
   if (!session?.email) {
@@ -79,7 +55,6 @@ export async function createFamilyMemberViaWebhook({
   }
 
   const householdAccountId = session.householdAccountId || '';
-  const isoBirthdate = birthdate || toIsoBirthdate(birthDate || {});
 
   return fetchPortalApi('/api/household/add-family-member', {
     method: 'POST',
@@ -95,11 +70,6 @@ export async function createFamilyMemberViaWebhook({
       gender: String(gender || '').trim(),
       contactEmail: String(contactEmail || '').trim(),
       mobilePhone: String(mobilePhone || '').trim(),
-      hebrewName: String(hebrewName || '').trim(),
-      fathersHebrewName: String(fathersHebrewName || '').trim(),
-      mothersHebrewName: String(mothersHebrewName || '').trim(),
-      occupation: String(occupation || '').trim(),
-      birthdate: isoBirthdate,
       memberType,
       groups: '',
     },

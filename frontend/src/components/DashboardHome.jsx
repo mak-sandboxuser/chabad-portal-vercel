@@ -1,14 +1,5 @@
 import React from 'react';
-import {
-  DollarSign,
-  Calendar,
-  TrendingUp,
-  ArrowUpRight,
-  ShieldCheck,
-  Handshake,
-  Star,
-  Heart,
-} from 'lucide-react';
+import { DollarSign, Calendar, TrendingUp, ArrowUpRight, ShieldCheck } from 'lucide-react';
 import PaymentActionButton from './shared/PaymentActionButton';
 import BuildingSketch from './shared/BuildingSketch';
 import {
@@ -21,68 +12,6 @@ import {
   getPayments,
   isPaymentWindowOpen,
 } from '../utils/portalData';
-import {
-  markPostLoginStepperPending,
-  getPostLoginStepperEntryPath,
-} from '../onboard/utils/postLoginStepper';
-
-function GuestMembershipInviteBanner({ firstName, onBecomeMember }) {
-  return (
-    <div className="renewed-membership-banner guest-membership-invite-banner">
-      <div className="renewed-banner-left">
-        <div className="renewed-banner-icon-wrapper">
-          <span className="renewed-banner-sparkle sp-top-left">✦</span>
-          <span className="renewed-banner-sparkle sp-top-right">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-left">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-right">✦</span>
-          <div className="renewed-banner-shield-circle">
-            <Handshake size={38} strokeWidth={2.2} />
-          </div>
-        </div>
-
-        <div className="renewed-banner-body">
-          <h2 className="renewed-banner-title">Join Our Community, {firstName}!</h2>
-          <p className="renewed-banner-sub">
-            You haven&apos;t selected a membership yet. Choose a plan to unlock payments,
-            household benefits, and full access to Chabad of Bedford.
-          </p>
-          <div className="renewed-banner-pill">
-            <div className="renewed-pill-icon">
-              <Heart size={18} />
-            </div>
-            <div className="renewed-pill-text">
-              <strong>Membership unlocks payments and community benefits</strong>
-              <span>Select your tier in a few quick steps to get started.</span>
-            </div>
-          </div>
-          <div className="expired-banner-actions">
-            <button
-              type="button"
-              className="dash-btn-primary expired-renew-btn"
-              onClick={onBecomeMember}
-            >
-              Become a Member
-              <ArrowUpRight size={16} style={{ marginLeft: 6 }} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="renewed-banner-right">
-        <div className="renewed-right-divider" aria-hidden="true" />
-        <div className="renewed-right-content">
-          <div className="renewed-right-badge">
-            <Star size={16} />
-          </div>
-          <p className="renewed-right-text">
-            Your support helps us strengthen our community and make a lasting impact.
-          </p>
-          <span className="renewed-script-note">We can&apos;t wait to welcome you! ♡</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function DashboardHome({
   theme,
@@ -109,11 +38,6 @@ export default function DashboardHome({
   const contributedYtd = summary.contributedYtd || totalContributed || '$2824.00';
   const canPayNow = isPaymentWindowOpen(sfData);
 
-  const handleBecomeMember = () => {
-    markPostLoginStepperPending();
-    window.location.assign(getPostLoginStepperEntryPath());
-  };
-
   if (paymentsDisabled) {
     return (
       <div className="member-dashboard" style={{ width: '100%' }}>
@@ -126,10 +50,20 @@ export default function DashboardHome({
             <BuildingSketch theme={theme} className="dash-welcome-sketch" />
           </div>
 
-          <GuestMembershipInviteBanner
-            firstName={firstName}
-            onBecomeMember={handleBecomeMember}
-          />
+          <div className="guest-payment-only-card glass-panel">
+            <div className="guest-payment-only-copy">
+              <h3>Payments</h3>
+              <p>Payment features are available after you become a member.</p>
+            </div>
+            <PaymentActionButton
+              paymentsDisabled
+              className="dash-btn-gold-action"
+              onClick={onDonate}
+            >
+              Make Payment
+              <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+            </PaymentActionButton>
+          </div>
         </div>
       </div>
     );

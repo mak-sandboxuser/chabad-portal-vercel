@@ -2,13 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { readThemeCookie, writeThemeCookie } from '../utils/onboardingCookies';
 
 function getPreferredTheme() {
-  if (typeof window !== 'undefined') {
-    const localTheme = localStorage.getItem('theme');
-    if (localTheme === 'dark' || localTheme === 'light') {
-      return localTheme;
-    }
-  }
-
   const saved = readThemeCookie();
   if (saved) return saved;
 
@@ -20,27 +13,16 @@ function getPreferredTheme() {
 }
 
 /**
- * Onboarding-scoped theme. Inherits from login/portal theme if set,
- * and syncs data-theme and light-theme DOM attributes.
+ * Onboarding-scoped theme (independent from the portal's own `theme`
+ * localStorage flag) so the public onboarding flow keeps working the same
+ * way for signed-out applicants regardless of what a signed-in member last
+ * chose on the dashboard.
  */
 export default function useOnboardingTheme() {
   const [theme, setTheme] = useState(getPreferredTheme);
 
   useEffect(() => {
     writeThemeCookie(theme);
-    try {
-      localStorage.setItem('theme', theme);
-      const root = document.documentElement;
-      if (theme === 'light') {
-        root.classList.add('light-theme');
-        root.setAttribute('data-theme', 'light');
-      } else {
-        root.classList.remove('light-theme');
-        root.setAttribute('data-theme', 'dark');
-      }
-    } catch {
-      // ignore
-    }
   }, [theme]);
 
   const toggleTheme = useCallback(() => {
