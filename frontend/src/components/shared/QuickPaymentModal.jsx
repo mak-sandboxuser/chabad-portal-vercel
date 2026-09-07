@@ -11,6 +11,7 @@ import {
   parseMoney,
   getPaymentScheduleSummary,
   getFinancialSummary,
+  markRecentMembershipPayment,
 } from '../../utils/portalData';
 
 const TYPE_OPTIONS = [
@@ -395,6 +396,11 @@ export default function QuickPaymentModal({
               'pending_paid_membership_name',
               tier?.name || (label.includes('Membership') ? label : `${label}`)
             );
+            markRecentMembershipPayment(user?.email || '', {
+              amount: parsedAmount,
+              billingMode: billingMode === 'recurring' ? 'recurring' : 'one-time',
+              frequency,
+            });
           }
         } catch {
           // ignore
@@ -405,6 +411,13 @@ export default function QuickPaymentModal({
       }
 
       if (data.success) {
+        if (isMembership) {
+          markRecentMembershipPayment(user?.email || '', {
+            amount: parsedAmount,
+            billingMode: billingMode === 'recurring' ? 'recurring' : 'one-time',
+            frequency,
+          });
+        }
         showToast({
           message: data.message || 'Saved to ChabadOne CRM successfully.',
           type: 'success',

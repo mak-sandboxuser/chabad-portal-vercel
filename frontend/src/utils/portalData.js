@@ -747,7 +747,13 @@ export function markRecentMembershipPayment(email = '', paymentDetails = null) {
     }
     localStorage.setItem(
       RECENT_MEMBERSHIP_PAYMENT_KEY,
-      JSON.stringify({ email: fallbackEmail, at: Date.now() }),
+      JSON.stringify({
+        email: fallbackEmail,
+        at: Date.now(),
+        billingMode: paymentDetails?.billingMode || '',
+        amount: parseMoney(paymentDetails?.amount || paymentDetails?.total || 0),
+        frequency: paymentDetails?.frequency || '',
+      }),
     );
 
     // Promote local session role so header/nav stop showing GUEST immediately.
@@ -1100,16 +1106,100 @@ function toIsoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-/** TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Yearly/full → 10 min. */
+/** TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Yearly/full renewal → 10 min. */
 const ACCELERATED_SCHEDULE_TEST = true;
 
 function getAcceleratedScheduleDelayMinutes(frequency = '') {
   if (!ACCELERATED_SCHEDULE_TEST) return 0;
   const freq = String(frequency || '').toLowerCase().trim();
   if (freq.includes('half') || freq.includes('semi') || freq.includes('install')) return 5;
-  if (freq.includes('annual') || freq.includes('yearly') || freq.includes('year') || freq === 'full') return 10;
+  // Full / one-time / annual: next membership renewal after 10 minutes (test).
+  if (
+    freq.includes('annual')
+    || freq.includes('yearly')
+    || freq.includes('year')
+    || freq === 'full'
+    || freq.includes('one')
+  ) {
+    return 10;
+  }
   if (freq.includes('month') || freq === 'monthly' || !freq) return 1;
   return 1;
+}
+
+function readRecentMembershipPaymentRecord(sfData) {
+  try {
+    const raw = localStorage.getItem(RECENT_MEMBERSHIP_PAYMENT_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    const email = String(sfData?.email || '').trim().toLowerCase();
+    if (email && data.email && data.email !== email) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function readRecentMembershipPaymentAt(sfData) {
+  return Number(readRecentMembershipPaymentRecord(sfData)?.at) || 0;
+}
+
+function getLatestMembershipPaymentTimestamp(sfData) {
+  let latest = 0;
+  getPayments(sfData).filter(isMembershipRelatedItem).forEach((payment) => {
+    const ts = parseSortableDate(payment.sortDate || payment.date);
+    if (ts > latest) latest = ts;
+  });
+  const recentAt = readRecentMembershipPaymentAt(sfData);
+  if (recentAt > latest) latest = recentAt;
+  return latest || getLatestPaymentTimestamp(sfData);
+}
+
+/**
+ * TEST MODE: 10 minutes after a full/one-time membership payment = 1 membership year complete.
+ * Dashboard should then open Membership Renewal (not an installment Make Payment).
+ */
+export function isAcceleratedMembershipRenewalDue(sfData) {
+  if (!sfData || !ACCELERATED_SCHEDULE_TEST) return false;
+  const summary = getFinancialSummary(sfData);
+  const annual = parseMoney(summary.annual);
+  const outstanding = parseMoney(summary.outstanding);
+  if (!(annual > 0) || outstanding > 0) return false;
+
+  const recent = readRecentMembershipPaymentRecord(sfData);
+  const recentBilling = String(recent?.billingMode || '').toLowerCase();
+  const recentFreq = String(recent?.frequency || '').toLowerCase();
+  const recentAmount = parseMoney(recent?.amount);
+  const recentWasInstallment = recentBilling === 'recurring'
+    && (
+      recentFreq.includes('month')
+      || recentFreq.includes('half')
+      || recentFreq.includes('semi')
+      || (recentAmount > 0 && annual > 0 && recentAmount < annual * 0.85)
+    );
+
+  const activeRecurring = getActiveMembershipRecurring(sfData);
+  const recurringFreq = String(activeRecurring?.frequency || '').toLowerCase();
+  const recurringLooksInstallment = (recurringFreq.includes('month') && !recurringFreq.includes('semi'))
+    || recurringFreq.includes('half')
+    || recurringFreq.includes('semi');
+
+  const membershipPayments = getPayments(sfData).filter(isMembershipRelatedItem);
+  const lastAmt = parseMoney(membershipPayments[0]?.amount || membershipPayments[0]?.total);
+  const paidFullAmount = (lastAmt > 0 && (amountsMatch(lastAmt, annual) || lastAmt >= annual * 0.9))
+    || (recentAmount > 0 && (amountsMatch(recentAmount, annual) || recentAmount >= annual * 0.9));
+
+  // Monthly / half-yearly installment path uses 1/5 min cadence — not year renewal.
+  if (recentWasInstallment) return false;
+  if (recurringLooksInstallment && !paidFullAmount) return false;
+
+  const delayMinutes = getAcceleratedScheduleDelayMinutes('Annual');
+  if (!(delayMinutes > 0)) return false;
+
+  // Prefer checkout timestamp so CRM date-only rows don't fire renewal immediately.
+  const latestAt = readRecentMembershipPaymentAt(sfData) || getLatestMembershipPaymentTimestamp(sfData);
+  if (!latestAt) return false;
+  return Date.now() >= (latestAt + delayMinutes * 60 * 1000);
 }
 
 function addFrequencyInterval(baseDate, frequency) {
@@ -1253,7 +1343,7 @@ export function getPaymentScheduleSummary(sfData) {
   // - Half Yearly (Installments): 2nd installment is ALWAYS scheduled on 1st of December.
   // - Monthly: 1st of every upcoming month.
   // - Full payment (paid in full): upcoming renewal = Sept 1 after membership year.
-  // TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Yearly/full → 10 min.
+  // TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Yearly/full renewal → 10 min.
   let nextPaymentDate = '';
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -1261,25 +1351,23 @@ export function getPaymentScheduleSummary(sfData) {
   const accelMinutes = getAcceleratedScheduleDelayMinutes(
     frequency || (scheduleKind === 'monthly' ? 'Monthly' : scheduleKind === 'installments' ? 'Half Yearly' : 'Annual'),
   );
+  const useAcceleratedNextPay = accelMinutes > 0
+    && summary.outstanding > 0
+    && (scheduleKind === 'monthly' || scheduleKind === 'installments');
 
-  if (accelMinutes > 0) {
+  const latestMembershipPaymentAt = () => {
     let latestAt = 0;
     membershipPayments.forEach((payment) => {
       const ts = parseSortableDate(payment.sortDate || payment.date);
       if (ts > latestAt) latestAt = ts;
     });
-    try {
-      const raw = localStorage.getItem(RECENT_MEMBERSHIP_PAYMENT_KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        const email = String(sfData?.email || '').trim().toLowerCase();
-        if ((!email || !data.email || data.email === email) && Number(data.at) > latestAt) {
-          latestAt = Number(data.at);
-        }
-      }
-    } catch {
-      // ignore
-    }
+    const recentAt = readRecentMembershipPaymentAt(sfData);
+    if (recentAt > latestAt) latestAt = recentAt;
+    return latestAt;
+  };
+
+  if (useAcceleratedNextPay) {
+    const latestAt = latestMembershipPaymentAt();
     const base = latestAt > 0 ? new Date(latestAt) : now;
     const next = new Date(base.getTime());
     next.setMinutes(next.getMinutes() + accelMinutes);
@@ -1295,20 +1383,30 @@ export function getPaymentScheduleSummary(sfData) {
     const firstOfNextMonth = new Date(currentYear, currentMonth + 1, 1);
     nextPaymentDate = toIsoDate(firstOfNextMonth);
   } else if (scheduleKind === 'full' && summary.outstanding <= 0) {
-    // Paid in full — upcoming membership year starts Sept 1 after current tier year (26-27 → 2027-09-01).
-    const yearBlob = [
-      membership.tier,
-      sfData?.groups,
-      sfData?.profile?.groups,
-      sfData?.account?.groups,
-    ].filter(Boolean).join(';');
-    let maxEndYear = 0;
-    for (const m of String(yearBlob).matchAll(/(\d{2})[-/](\d{2})/g)) {
-      maxEndYear = Math.max(maxEndYear, 2000 + parseInt(m[2], 10));
+    const renewalAccel = getAcceleratedScheduleDelayMinutes('Annual');
+    if (renewalAccel > 0) {
+      // TEST MODE: membership renewal opens 10 minutes after full payment.
+      const latestAt = latestMembershipPaymentAt();
+      const base = latestAt > 0 ? new Date(latestAt) : now;
+      const next = new Date(base.getTime());
+      next.setMinutes(next.getMinutes() + renewalAccel);
+      nextPaymentDate = next.toISOString();
+    } else {
+      // Paid in full — upcoming membership year starts Sept 1 after current tier year (26-27 → 2027-09-01).
+      const yearBlob = [
+        membership.tier,
+        sfData?.groups,
+        sfData?.profile?.groups,
+        sfData?.account?.groups,
+      ].filter(Boolean).join(';');
+      let maxEndYear = 0;
+      for (const m of String(yearBlob).matchAll(/(\d{2})[-/](\d{2})/g)) {
+        maxEndYear = Math.max(maxEndYear, 2000 + parseInt(m[2], 10));
+      }
+      nextPaymentDate = maxEndYear > 0
+        ? `${maxEndYear}-09-01`
+        : `${currentYear + 1}-09-01`;
     }
-    nextPaymentDate = maxEndYear > 0
-      ? `${maxEndYear}-09-01`
-      : `${currentYear + 1}-09-01`;
   } else {
     const raw = activeRecurring?.nextDate || membership.renewalDate || membership.endDate || '';
     const parsed = parseLocalDate(raw);
@@ -1535,11 +1633,16 @@ export function isPaymentWindowOpen(sfData) {
   if (needsSalesforceMembershipScheduleSetup(sfData)) return true;
 
   const schedule = getPaymentScheduleSummary(sfData);
-  const accelMinutes = getAcceleratedScheduleDelayMinutes(
-    schedule.frequencyLabel || schedule.scheduleKind || '',
-  );
+  const isInstallmentSchedule = schedule.scheduleKind === 'monthly'
+    || schedule.scheduleKind === 'installments';
+  const accelMinutes = isInstallmentSchedule
+    ? getAcceleratedScheduleDelayMinutes(
+      schedule.frequencyLabel || schedule.scheduleKind || '',
+    )
+    : 0;
 
-  // TEST MODE: reopen Make Payment N minutes after the last payment.
+  // TEST MODE: reopen Make Payment N minutes after the last installment only.
+  // One-time / paid-in-full never reopens on a 10-minute timer.
   if (accelMinutes > 0) {
     const latestPaymentAt = getLatestPaymentTimestamp(sfData);
     if (!latestPaymentAt) return true;

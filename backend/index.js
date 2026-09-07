@@ -1759,7 +1759,7 @@ function stripeRecurringIntervalCount(frequency = 'Monthly') {
   return 1;
 }
 
-/** TEST MODE: Monthly → 1 min / Half Yearly → 5 min / Yearly → 10 min. */
+/** TEST MODE: Monthly → 1 min / Half Yearly → 5 min / Yearly renewal → 10 min. */
 const ACCELERATED_SCHEDULE_TEST = true;
 
 function getAcceleratedRecurringDelayMinutes(frequency = 'Monthly') {
@@ -1767,7 +1767,7 @@ function getAcceleratedRecurringDelayMinutes(frequency = 'Monthly') {
   const normalized = String(frequency || '').trim().toLowerCase();
   // Check half/semi before annual — "Semi-Annual" contains "annual".
   if (normalized.includes('half') || normalized.includes('semi') || normalized.includes('install')) return 5;
-  if (normalized.includes('year') || normalized.includes('annual')) return 10;
+  if (normalized.includes('year') || normalized.includes('annual') || normalized.includes('full')) return 10;
   if (normalized.includes('month') || !normalized) return 1;
   return 1;
 }
