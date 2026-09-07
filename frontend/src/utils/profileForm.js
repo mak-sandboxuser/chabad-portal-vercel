@@ -79,9 +79,21 @@ function readLifecycleValues(sfData) {
 
 function toDateInputValue(value) {
   const normalized = (value ?? '').toString().trim();
-  if (!normalized) return '';
+  if (!normalized || /^null$/i.test(normalized) || /^undefined$/i.test(normalized)) return '';
   if (/^\d{4}-\d{2}-\d{2}/.test(normalized)) return normalized.slice(0, 10);
-  return normalized;
+
+  const parsed = Date.parse(normalized);
+  if (Number.isNaN(parsed)) return '';
+
+  if (/T\d{2}:\d{2}/.test(normalized) || /Z$/i.test(normalized) || /[+-]\d{2}:?\d{2}$/.test(normalized)) {
+    return new Date(parsed).toISOString().slice(0, 10);
+  }
+
+  const local = new Date(parsed);
+  const year = local.getFullYear();
+  const month = String(local.getMonth() + 1).padStart(2, '0');
+  const day = String(local.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function sfDataToProfileForm(sfData, email = '') {

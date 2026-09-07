@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   ShieldCheck, Calendar, CircleDollarSign, Gem,
-  FileText, Users, Edit, CalendarOff, Heart, ArrowRight,
-  Handshake, Star,
+  /* FileText, */ Users, Edit, CalendarOff, Heart, ArrowRight,
+  Handshake, Star, Wallet,
 } from 'lucide-react';
 import PortalPageLayout from '../shared/PortalPageLayout';
 import EditFamilyMemberModal from '../shared/EditFamilyMemberModal';
@@ -15,9 +15,23 @@ import {
   getPayments,
   isGuestUser,
   parseMoney,
+  getSalesforceAssignedGroup,
+  hasAssignedSalesforceGroup,
+  hasRealMembershipGroup,
 } from '../../utils/portalData';
 import GuestMembershipPage from './GuestMembershipPage';
 import { markPostLoginStepperPending } from '../../onboard/utils/postLoginStepper';
+
+/** SF group exists but is not a portal paid membership tier (e.g. Building Prospects). */
+// Commented out: Building Prospects now uses the same Membership layout as paid tiers with $0 amounts.
+// function SalesforceGroupOnlyPanel({ groupName }) {
+//   return (
+//     <div className="glass-panel" style={{ padding: '28px 32px', width: '100%' }}>
+//       <h3 style={{ margin: '0 0 8px 0', fontSize: '18px' }}>Your Salesforce Group</h3>
+//       ...
+//     </div>
+//   );
+// }
 
 function NewMemberJoiningBanner({ dates }) {
   return (
@@ -199,6 +213,12 @@ export default function MembershipPage({
   }, [getAuthToken]);
 
   if (isGuestUser(sfData)) {
+    // Previous (commented out): non-portal SF groups (Building Prospects) used a
+    // separate "group name only" panel instead of the paid-tier Membership layout.
+    // const sfGroup = getSalesforceAssignedGroup(sfData);
+    // if (sfGroup && !hasRealMembershipGroup(sfGroup)) {
+    //   return ( <SalesforceGroupOnlyPanel ... /> );
+    // }
     return (
       <GuestMembershipPage
         theme={theme}
@@ -235,6 +255,16 @@ export default function MembershipPage({
         };
       }
     }
+    // Non-portal SF groups (e.g. Building Prospects) have no 26-27 year tag —
+    // use the same membership-year layout as paid portal tiers (Sept 1 → Aug 31).
+    if (hasAssignedSalesforceGroup(tierStr) || getSalesforceAssignedGroup(sfData)) {
+      const now = new Date();
+      const membershipStartYear = now.getFullYear();
+      return {
+        startDate: `1 September ${membershipStartYear}`,
+        endDate: `31 August ${membershipStartYear + 1}`,
+      };
+    }
     return {
       startDate: membership.startDate ? formatDisplayDate(membership.startDate) : '—',
       endDate: membership.endDate ? formatDisplayDate(membership.endDate) : '—',
@@ -264,6 +294,7 @@ export default function MembershipPage({
   );
 
   const statusLower = (membership.status || '').toLowerCase();
+  const displayStatus = statusLower === 'living' ? 'Active' : (membership.status || 'Active');
   const isExplicitExpired = statusLower.includes('expire') || statusLower.includes('ended') || statusLower.includes('inactive') || statusLower.includes('lapsed');
   const endDateParsed = dates.endDate ? Date.parse(dates.endDate) : 0;
   const isPastEndDate = Number.isFinite(endDateParsed) && now.getTime() > endDateParsed;
@@ -285,16 +316,30 @@ export default function MembershipPage({
     {
       label: 'Group',
       value: membership.tier || '—',
-      sub: isExpired ? (isExpiringSoon ? 'Renewal Due' : 'Expired') : (membership.status || '—'),
+      sub: isExpired ? (isExpiringSoon ? 'Renewal Due' : 'Expired') : null,
       subClass: isExpired ? 'text-danger-red' : '',
       icon: Gem,
       badge: membership.tier || '—',
       badgeClass: 'blue',
     },
     {
+      label: 'Commitment',
+      value: membership.annualCommitment || '—',
+      sub: 'Annual membership',
+      icon: Wallet,
+    },
+    {
+      label: 'Outstanding',
+      value: membership.outstanding || '—',
+      sub: parseMoney(membership.outstanding) > 0 ? 'Balance remaining' : 'Paid up',
+      subClass: parseMoney(membership.outstanding) > 0 ? 'text-danger-red' : 'text-success',
+      icon: CircleDollarSign,
+      valueClass: parseMoney(membership.outstanding) > 0 ? 'text-danger-red' : 'text-success',
+    },
+    {
       label: 'Status',
-      value: isExpired ? (isExpiringSoon ? 'Expiring Soon' : 'Expired') : membership.status,
-      sub: isExpired ? (isExpiringSoon ? 'Renewal window open' : 'Membership has ended') : 'In good standing',
+      value: isExpired ? (isExpiringSoon ? 'Expiring Soon' : 'Expired') : displayStatus,
+      sub: isExpired ? (isExpiringSoon ? 'Renewal window open' : 'Membership has ended') : null,
       icon: ShieldCheck,
       valueClass: isExpired ? 'text-danger-red' : 'text-success',
     },
@@ -324,14 +369,15 @@ export default function MembershipPage({
       sub: null,
       action: null,
     },
-    {
-      icon: FileText,
-      label: 'Receipts & Statements',
-      value: 'View and download your membership receipts.',
-      sub: null,
-      action: 'View All',
-      actionTab: 'payments',
-    },
+    // Hidden: Receipts & Statements row
+    // {
+    //   icon: FileText,
+    //   label: 'Receipts & Statements',
+    //   value: 'View and download your membership receipts.',
+    //   sub: null,
+    //   action: 'View All',
+    //   actionTab: 'payments',
+    // },
   ];
 
   const showHeaderHero = !isBeforeSeptFirst && !isExpired;
@@ -370,7 +416,7 @@ export default function MembershipPage({
         <div className="membership-main">
           <div className="membership-hero-badge-row">
             <span className={`badge ${isExpired ? 'badge-danger' : 'badge-active'}`}>
-              {isExpired ? 'Expired' : (membership.status ? `${membership.status} Member` : 'No Membership')}
+              {isExpired ? 'Expired' : (membership.status ? `${displayStatus} Member` : 'No Membership')}
             </span>
           </div>
 

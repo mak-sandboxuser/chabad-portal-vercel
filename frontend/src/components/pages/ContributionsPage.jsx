@@ -6,6 +6,8 @@ import {
 import PortalPageLayout from '../shared/PortalPageLayout';
 import {
   formatDisplayDate,
+  formatPaymentDescription,
+  getPaymentHistoryDescription,
   getAccount,
   getPayments,
   parseMoney,
@@ -263,8 +265,15 @@ export default function ContributionsPage({ theme, sfData, onDonate, user }) {
                 <td><strong>{row.amount}</strong></td>
                 <td>{row.subType || row.type}</td>
                 <td className="payment-method-cell">
-                  {(row.method || '').toLowerCase().includes('bank') ? <Landmark size={16} /> : <CreditCard size={16} />}
+                  {(String(row.method || row.OneCRM__Payment_Type__c || '').toLowerCase().includes('bank')
+                    || String(row.method || row.OneCRM__Payment_Type__c || '').toLowerCase().includes('ach'))
+                    ? <Landmark size={16} />
+                    : <CreditCard size={16} />}
+                  {getPaymentHistoryDescription(row)}
+                  {/* Previous (commented out): showed Stripe
+                  {formatPaymentDescription(row.method)}
                   {row.method || '—'}
+                  */}
                 </td>
                 <td>
                   <span className={`badge ${row.status === 'Pending' ? 'badge-pending' : 'badge-active'}`}>

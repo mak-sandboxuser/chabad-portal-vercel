@@ -14,6 +14,7 @@ const {
   mergeHouseholdPortalData,
   mergePaymentsRemoteAndLocal,
   filterNormalizedPayments,
+  extractCardsFromPayload,
 } = require('./portalDataMapper');
 const { getPortalFiscalYearRange, formatPortalFiscalYearLabel } = require('./portalFiscalYear');
 const { validateAddFamilyMemberRequest } = require('./householdMemberRules');
@@ -34,6 +35,8 @@ const DEV_LOCALHOST_ORIGIN = /^https?:\/\/localhost(?::\d+)?$/;
 const VERCEL_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*vercel\.app$/i;
 
 console.log('[ENV] MAKE_PAYMENTS_WEBHOOK_URL =', process.env.MAKE_PAYMENTS_WEBHOOK_URL || '(missing)');
+console.log('[ENV] MAKE_GET_CARD_URL =', process.env.MAKE_GET_CARD_URL || '(missing)');
+console.log('[ENV] MAKE_UPDATE_PAYMENT_MEETHOD_URL =', process.env.MAKE_UPDATE_PAYMENT_MEETHOD_URL || process.env.MAKE_UPDATE_PAYMENT_METHOD_URL || '(missing)');
 console.log('[ENV] MAKE_QUICK_PAYMENT_WEBHOOK_URL =', process.env.MAKE_QUICK_PAYMENT_WEBHOOK_URL || '(missing)');
 console.log('[ENV] MAKE_STRIPE_PAYMENT_WEBHOOK_URL =', process.env.MAKE_STRIPE_PAYMENT_WEBHOOK_URL || '(missing)');
 
@@ -403,7 +406,20 @@ function deriveMembershipSummary(membership, financials, profile) {
     ? formatMoney(annual)
     : (membership?.annualCommitment || '$0.00');
 
-  const formattedOutstanding = formatMoney(Math.max(annual - contributed, 0));
+  const pledgeOutstanding = membershipPledge
+    ? parseMoney(membershipPledge.outstanding)
+    : pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
+  // When MAKE_PAYMENTS_WEBHOOK_URL returns empty pledges, do not invent outstanding
+  // from annual - paid (e.g. fake $143 after a $1 cash payment).
+  const formattedOutstanding = formatMoney(
+    pledgeOutstanding > 0
+      ? pledgeOutstanding
+      : (pledges.length > 0 ? Math.max(annual - contributed, 0) : 0),
+  );
+  // Previous (commented out):
+  // const formattedOutstanding = formatMoney(
+  //   pledgeOutstanding > 0 ? pledgeOutstanding : Math.max(annual - contributed, 0),
+  // );
 
   const rawTier = String(membership?.tier || '').trim();
   const isBareTier = !rawTier || /^(member|guest|prospect|contact)$/i.test(rawTier);
@@ -491,10 +507,16 @@ async function fetchFinancialsFromWebhook(webhookUrl, email, contactId, memberDe
     return { fromSalesforce: false, payments: [], pledges: [], recurring: [] };
   }
   const parsed = extractPortalDataFromPayload(payload, memberDetails || {});
+  console.log(`Make.com financials recurring raw for ${email}:`, JSON.stringify(payload.recurring).slice(0, 2500));
   console.log(`Make.com financials parsed for ${email}:`, {
     payments: parsed.payments?.length || 0,
     pledges: parsed.pledges?.length || 0,
     recurring: parsed.recurring?.length || 0,
+    recurringMethods: (parsed.recurring || []).map((item) => ({
+      method: item.method,
+      paymentType: item.paymentType,
+      last4: item.last4,
+    })),
   });
   return {
     fromSalesforce: Boolean(
@@ -534,6 +556,69 @@ async function lookupSalesforcePayments(email, contactId, memberDetails = null) 
   } catch (err) {
     console.error(`Error calling Make.com financials webhook for ${email}:`, err);
     return { fromSalesforce: false, payments: [], pledges: [], recurring: [] };
+  }
+}
+
+async function fetchCardsFromWebhook(webhookUrl, email, contactId, memberDetails = null) {
+  const body = {
+    email: (email || '').toLowerCase(),
+    contactId: contactId || '',
+    accountId: memberDetails?.accountId || '',
+    fetchCards: true,
+  };
+  const valueJson = JSON.stringify(body);
+  console.log(`[CARDS] POST ${webhookUrl}`);
+  console.log(`[CARDS] body=`, valueJson);
+
+  const postResponse = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...body,
+      value: valueJson,
+    }),
+  });
+
+  let text = '';
+  if (postResponse.ok) {
+    text = await postResponse.text();
+  } else {
+    console.warn(`Make.com cards POST returned ${postResponse.status} for ${email} — trying GET`);
+    const getResponse = await fetch(webhookUrl, { method: 'GET' });
+    if (!getResponse.ok) {
+      console.error(`Make.com cards webhook returned ${getResponse.status} for ${email}`);
+      return [];
+    }
+    text = await getResponse.text();
+  }
+
+  console.log(`Make.com cards for ${email}:`, text.slice(0, 800));
+  const payload = parseMakePayload(text);
+  const cards = extractCardsFromPayload(payload);
+  if (!cards.length && postResponse.ok) {
+    const getResponse = await fetch(webhookUrl, { method: 'GET' });
+    if (getResponse.ok) {
+      const getText = await getResponse.text();
+      console.log(`Make.com cards GET fallback for ${email}:`, getText.slice(0, 800));
+      return extractCardsFromPayload(parseMakePayload(getText));
+    }
+  }
+  return cards;
+}
+
+async function lookupSalesforceCards(email, contactId, memberDetails = null) {
+  const webhookUrl = process.env.MAKE_GET_CARD_URL;
+  if (!webhookUrl) {
+    return [];
+  }
+
+  try {
+    const cards = await fetchCardsFromWebhook(webhookUrl, email, contactId, memberDetails);
+    console.log(`Make.com cards parsed for ${email}:`, cards.length);
+    return cards;
+  } catch (err) {
+    console.error(`Error calling Make.com cards webhook for ${email}:`, err);
+    return [];
   }
 }
 
@@ -591,6 +676,13 @@ async function fetchHouseholdDataFromWebhook(webhookUrl, email, contactId, membe
       contactId: contactId || '',
       accountId,
       fetchHousehold: true,
+      // Ask Make/SF Search to return personal fields (must also be mapped in Webhook response).
+      includePersonalFields: true,
+      contactFields: [
+        'Id', 'FirstName', 'LastName', 'Name', 'Email', 'MobilePhone', 'HomePhone',
+        'Phone', 'Salutation', 'Birthdate', 'Gender', 'Title',
+        'MailingStreet', 'MailingCity', 'MailingState', 'MailingPostalCode', 'MailingCountry',
+      ],
     }),
   });
 
@@ -600,7 +692,7 @@ async function fetchHouseholdDataFromWebhook(webhookUrl, email, contactId, membe
   }
 
   const text = await response.text();
-  console.log(`Make.com household data for ${email}:`, text.slice(0, 800));
+  console.log(`Make.com household data for ${email}:`, text.slice(0, 1200));
   const payload = parseMakePayload(text);
   return extractPortalDataFromPayload(payload, memberDetails || {});
 }
@@ -622,6 +714,9 @@ async function lookupHouseholdData(email, contactId, memberDetails = null) {
 function applyHouseholdDataToSfData(sfData = {}, householdData = null) {
   if (!householdData) return sfData;
 
+  // Pass cached contacts only as a fallback for non-Salesforce household payloads.
+  // When Make returns fromSalesforce:true, mergeHouseholdPortalData replaces contacts
+  // so deleted household members no longer linger in the portal.
   const merged = mergeHouseholdPortalData({
     fromSalesforce: sfData.syncedFromSalesforce,
     accountId: sfData.accountId || sfData.account?.id,
@@ -632,7 +727,8 @@ function applyHouseholdDataToSfData(sfData = {}, householdData = null) {
     state: sfData.account?.state || sfData.profile?.state,
     postalCode: sfData.account?.postalCode || sfData.profile?.postalCode,
     country: sfData.account?.country || sfData.profile?.country,
-    contacts: sfData.contacts || [],
+    // contacts: sfData.contacts || [],
+    contacts: householdData.fromSalesforce ? [] : (sfData.contacts || []),
     relationships: sfData.relationships || [],
   }, householdData);
 
@@ -710,19 +806,86 @@ async function buildHouseholdMemberDetails(auth, requestedContactId) {
     }
   }
 
-  const profile = profileDetails ? buildProfileFromDetails(profileDetails) : {};
+  const profile = profileDetails ? buildProfileFromDetails(profileDetails) : {
+    phone: contact.phone || '',
+    mobile: contact.phone || '',
+    homePhone: contact.homePhone || '',
+    street: contact.street || '',
+    city: contact.city || '',
+    state: contact.state || '',
+    postalCode: contact.postalCode || '',
+    country: contact.country || '',
+    nickname: contact.nickname || '',
+    title: contact.title || '',
+    hebrewName: contact.hebrewName || '',
+    fathersHebrewName: contact.fathersHebrewName || '',
+    mothersHebrewName: contact.mothersHebrewName || '',
+    jewish: contact.jewish || '',
+    hebrewBirthdate: contact.hebrewBirthdate || '',
+    nextHebrewBirthday: contact.nextHebrewBirthday || '',
+    weddingDate: contact.weddingDate || '',
+    lifecycleStatus: contact.lifecycleStatus || '',
+    birthdate: contact.birthdate || '',
+    age: contact.age || '',
+    gender: contact.gender || '',
+    lifecycle: contact.profile?.lifecycle || {
+      hebrewName: contact.hebrewName || '',
+      fathersHebrewName: contact.fathersHebrewName || '',
+      mothersHebrewName: contact.mothersHebrewName || '',
+      jewish: contact.jewish || '',
+      hebrewBirthdate: contact.hebrewBirthdate || '',
+      nextHebrewBirthday: contact.nextHebrewBirthday || '',
+      weddingDate: contact.weddingDate || '',
+      lifecycleStatus: contact.lifecycleStatus || '',
+    },
+    additional: contact.profile?.additional || {
+      birthdate: contact.birthdate || '',
+      age: contact.age || '',
+      gender: contact.gender || '',
+    },
+  };
+
+  // Prefer household-webhook contact fields (MAKE_HOUSEHOLD_DATA) when present,
+  // especially empty birthdate clears that member-lookup may not carry.
+  if (Object.prototype.hasOwnProperty.call(contact, 'birthdate')) {
+    profile.birthdate = contact.birthdate || '';
+    profile.additional = {
+      ...(profile.additional || {}),
+      birthdate: contact.birthdate || '',
+      age: Object.prototype.hasOwnProperty.call(contact, 'age') ? (contact.age || '') : (profile.additional?.age || ''),
+      gender: Object.prototype.hasOwnProperty.call(contact, 'gender') ? (contact.gender || '') : (profile.additional?.gender || profile.gender || ''),
+    };
+  }
 
   return {
     member: {
       ...contact,
       contactId,
+      firstName: pickFirstNonEmpty(contact.firstName, profileDetails?.firstName, ''),
+      lastName: pickFirstNonEmpty(contact.lastName, profileDetails?.lastName, ''),
       email: pickFirstNonEmpty(contact.email, profileDetails?.email, ''),
       phone: pickFirstNonEmpty(contact.phone, profile.mobile, profile.phone, profileDetails?.mobile, ''),
+      homePhone: pickFirstNonEmpty(contact.homePhone, profile.homePhone, ''),
       street: pickFirstNonEmpty(contact.street, profile.street, profileDetails?.street, ''),
       city: pickFirstNonEmpty(contact.city, profile.city, profileDetails?.city, ''),
       state: pickFirstNonEmpty(contact.state, profile.state, profileDetails?.state, ''),
       postalCode: pickFirstNonEmpty(contact.postalCode, profile.postalCode, profileDetails?.postalCode, ''),
       country: pickFirstNonEmpty(contact.country, profile.country, profileDetails?.country, ''),
+      birthdate: Object.prototype.hasOwnProperty.call(contact, 'birthdate')
+        ? (contact.birthdate || '')
+        : (profile.birthdate || profile.additional?.birthdate || ''),
+      hebrewBirthdate: pickFirstNonEmpty(contact.hebrewBirthdate, profile.hebrewBirthdate, profile.lifecycle?.hebrewBirthdate),
+      nextHebrewBirthday: pickFirstNonEmpty(contact.nextHebrewBirthday, profile.nextHebrewBirthday, profile.lifecycle?.nextHebrewBirthday),
+      weddingDate: pickFirstNonEmpty(contact.weddingDate, profile.weddingDate, profile.lifecycle?.weddingDate),
+      age: Object.prototype.hasOwnProperty.call(contact, 'age') ? (contact.age || '') : (profile.age || profile.additional?.age || ''),
+      gender: pickFirstNonEmpty(contact.gender, profile.gender, profile.additional?.gender),
+      hebrewName: pickFirstNonEmpty(contact.hebrewName, profile.hebrewName, profile.lifecycle?.hebrewName),
+      fathersHebrewName: pickFirstNonEmpty(contact.fathersHebrewName, profile.fathersHebrewName, profile.lifecycle?.fathersHebrewName),
+      mothersHebrewName: pickFirstNonEmpty(contact.mothersHebrewName, profile.mothersHebrewName, profile.lifecycle?.mothersHebrewName),
+      jewish: pickFirstNonEmpty(contact.jewish, profile.jewish, profile.lifecycle?.jewish),
+      lifecycleStatus: pickFirstNonEmpty(contact.lifecycleStatus, profile.lifecycleStatus, profile.lifecycle?.lifecycleStatus),
+      nickname: pickFirstNonEmpty(contact.nickname, profile.nickname),
+      title: pickFirstNonEmpty(contact.title, profile.title),
       profile,
     },
     sfData: mergedHousehold,
@@ -788,10 +951,17 @@ async function lookupSalesforcePortalData(email, contactId, memberDetails = null
         }
       }
 
-      portalData = {
-        ...portalData,
-        contacts: mergeContactsList(portalData.contacts, cachedContacts),
-      };
+      // Do not re-add members from in-memory cache after Salesforce removed them.
+      // portalData = {
+      //   ...portalData,
+      //   contacts: mergeContactsList(portalData.contacts, cachedContacts),
+      // };
+      if (!(portalData.fromSalesforce && Array.isArray(portalData.contacts) && portalData.contacts.length)) {
+        portalData = {
+          ...portalData,
+          contacts: mergeContactsList(portalData.contacts, cachedContacts),
+        };
+      }
 
       if (
         portalData.fromSalesforce
@@ -911,6 +1081,7 @@ function mergeMemberProfile(sfDetails, portalData = null) {
     },
     contacts: effectivePortal.contacts || [],
     relationships: effectivePortal.relationships || [],
+    cards: Array.isArray(effectivePortal.cards) ? effectivePortal.cards : [],
     financials,
     membership: deriveMembershipSummary(
       effectivePortal.membership,
@@ -935,11 +1106,22 @@ async function buildPortalSfData(rawEmail) {
   const portalData = await lookupSalesforcePortalData(email, memberDetails.contactId, memberDetails);
   const financialsData = await lookupSalesforcePayments(email, memberDetails.contactId, memberDetails);
 
+  const financialsFetched = Array.isArray(financialsData?.payments);
   const mergedPortal = {
     ...portalData,
-    payments: financialsData.payments?.length ? financialsData.payments : (portalData.payments || []),
-    pledges: financialsData.pledges?.length ? financialsData.pledges : (portalData.pledges || []),
-    recurring: financialsData.recurring?.length ? financialsData.recurring : (portalData.recurring || []),
+    // Financials webhook is source of truth — empty means Salesforce has no payments
+    // (deleted records). Do not fall back to stale portal-payload payments.
+    // Previous (commented out): empty financials reused old portalData.payments
+    // payments: financialsData.payments?.length ? financialsData.payments : (portalData.payments || []),
+    // pledges: financialsData.pledges?.length ? financialsData.pledges : (portalData.pledges || []),
+    // recurring: financialsData.recurring?.length ? financialsData.recurring : (portalData.recurring || []),
+    payments: financialsFetched ? (financialsData.payments || []) : (portalData.payments || []),
+    pledges: Array.isArray(financialsData?.pledges)
+      ? (financialsData.pledges || [])
+      : (portalData.pledges || []),
+    recurring: Array.isArray(financialsData?.recurring)
+      ? (financialsData.recurring || [])
+      : (portalData.recurring || []),
     fromSalesforce: Boolean(
       portalData.fromSalesforce
       || financialsData.fromSalesforce
@@ -949,12 +1131,16 @@ async function buildPortalSfData(rawEmail) {
     ),
   };
 
-  const householdData = await lookupHouseholdData(
-    email,
-    memberDetails.contactId,
-    memberDetails,
-  );
+  const [householdData, cards] = await Promise.all([
+    lookupHouseholdData(
+      email,
+      memberDetails.contactId,
+      memberDetails,
+    ),
+    lookupSalesforceCards(email, memberDetails.contactId, memberDetails),
+  ]);
   const mergedPortalWithHousehold = mergeHouseholdPortalData(mergedPortal, householdData);
+  mergedPortalWithHousehold.cards = cards;
 
   const sfData = mergeMemberProfile(memberDetails, mergedPortalWithHousehold);
 
@@ -1348,6 +1534,102 @@ app.post('/api/portal/refresh', async (req, res) => {
   }
 });
 
+app.get('/api/portal/cards', async (req, res) => {
+  const auth = await resolveAuthedPortalMember(req);
+  if (auth.error) {
+    return res.status(auth.error.status).json({ error: auth.error.message, code: auth.error.code });
+  }
+
+  try {
+    const cards = await lookupSalesforceCards(auth.email, auth.contactId, auth.memberDetails);
+    const cached = userSalesforceData[auth.email];
+    if (cached) {
+      cached.cards = cards;
+    }
+    return res.json({ success: true, cards });
+  } catch (error) {
+    console.error('Fetch cards error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to load saved cards.' });
+  }
+});
+
+app.post('/api/portal/update-payment-method', async (req, res) => {
+  const auth = await resolveAuthedPortalMember(req);
+  if (auth.error) {
+    return res.status(auth.error.status).json({ error: auth.error.message, code: auth.error.code });
+  }
+
+  const webhookUrl = process.env.MAKE_UPDATE_PAYMENT_MEETHOD_URL
+    || process.env.MAKE_UPDATE_PAYMENT_METHOD_URL;
+  if (!webhookUrl) {
+    return res.status(503).json({
+      error: 'MAKE_UPDATE_PAYMENT_MEETHOD_URL is not configured. Add your Make.com webhook to backend/.env',
+    });
+  }
+
+  const cardId = String(req.body?.cardId || req.body?.id || '').trim();
+  const last4 = String(req.body?.last4 || req.body?.OneCRM__Last4__c || '').replace(/\D/g, '').slice(-4);
+  const label = String(req.body?.label || req.body?.OneCRM__Label__c || '').trim();
+  const expiration = String(req.body?.expiration || req.body?.OneCRM__Expiration_Date__c || '').trim();
+  const paymentProgramId = String(req.body?.paymentProgramId || req.body?.recurringId || '').trim();
+
+  if (!cardId && !last4) {
+    return res.status(400).json({ error: 'Select a saved card to update this payment method.' });
+  }
+
+  const body = {
+    action: 'update_payment_method',
+    email: auth.email,
+    contactId: auth.contactId,
+    accountId: auth.accountId,
+    accountName: auth.accountName,
+    paymentProgramId,
+    recurringId: paymentProgramId,
+    cardId,
+    last4,
+    label,
+    expiration,
+    brand: String(req.body?.brand || '').trim(),
+    OneCRM__Next_Charge_Credit_Card__c: cardId,
+    OneCRM__Last4__c: last4,
+    OneCRM__Label__c: label,
+    OneCRM__Expiration_Date__c: expiration,
+  };
+  const valueJson = JSON.stringify(body);
+
+  try {
+    console.log(`[UPDATE-PAYMENT-METHOD] POST ${webhookUrl}`);
+    console.log(`[UPDATE-PAYMENT-METHOD] body=`, valueJson);
+    const makeRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...body,
+        value: valueJson,
+      }),
+    });
+    const text = await makeRes.text();
+    console.log(`[UPDATE-PAYMENT-METHOD] Make response for ${auth.email}:`, text.slice(0, 800));
+
+    // Make custom webhooks often return 500 / "Scenario failed to complete"
+    // after the scenario already ran. Do not surface that as a portal error.
+    if (!makeRes.ok && makeRes.status !== 500) {
+      return res.status(502).json({ error: `Make.com update payment method returned ${makeRes.status}` });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Payment method updated.',
+      cardId,
+      last4,
+      paymentProgramId,
+    });
+  } catch (error) {
+    console.error('Update payment method error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to update payment method.' });
+  }
+});
+
 // Stripe Checkout Session generation
 async function resolveCheckoutContactId(authHeader, email, contactId = '') {
   let resolvedContactId = sanitizeContactId(contactId);
@@ -1477,25 +1759,24 @@ function stripeRecurringIntervalCount(frequency = 'Monthly') {
   return 1;
 }
 
-/** TEST MODE: compress billing cadence so schedules can be verified quickly. */
+/** TEST MODE: Monthly → 1 min / Half Yearly → 5 min / Yearly → 10 min. */
 const ACCELERATED_SCHEDULE_TEST = true;
 
 function getAcceleratedRecurringDelayMinutes(frequency = 'Monthly') {
   if (!ACCELERATED_SCHEDULE_TEST) return 0;
   const normalized = String(frequency || '').trim().toLowerCase();
+  // Check half/semi before annual — "Semi-Annual" contains "annual".
   if (normalized.includes('half') || normalized.includes('semi') || normalized.includes('install')) return 5;
   if (normalized.includes('year') || normalized.includes('annual')) return 10;
-  if (normalized.includes('month') || !normalized) return 1; // Monthly → 1 minute
-  return 0;
+  if (normalized.includes('month') || !normalized) return 1;
+  return 1;
 }
 
 function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
   const acceleratedDelayMinutes = getAcceleratedRecurringDelayMinutes(frequency);
   if (acceleratedDelayMinutes > 0) {
-    const start = dateStr ? new Date(dateStr) : new Date();
-    const base = Number.isNaN(start.getTime()) ? new Date() : start;
+    const base = new Date();
     base.setMinutes(base.getMinutes() + acceleratedDelayMinutes);
-    // Keep full timestamp so minute-level test cadence is preserved for CRM/Make.
     return base.toISOString();
   }
 
@@ -1549,13 +1830,30 @@ function resolveMembershipGroupAnnualPrice(payload = {}) {
     if (s.includes('chai rabbi')) return 18000;
     if (s.includes('chai partner')) return 10000;
     if (s.includes('chai donor')) return 5000;
-    if (s.includes('upgraded')) return 3000;
+    if (s.includes('upgraded') || s.includes('partnership')) return 3000;
     if (s.includes('senior')) return 1800;
-    if (s.includes('single parent') || (s.includes('membership 26-27') && !s.includes('family') && !s.includes('single') && !s.includes('senior') && !s.includes('upgraded'))) return 1560;
+    // Only explicit Single Parent — bare "Membership 26-27" is too ambiguous.
+    if (s.includes('single parent')) return 1560;
     if (s.includes('family') && !s.includes('single')) return 2244;
     if (s.includes('single') && !s.includes('parent')) return 1128;
   }
   return 0;
+}
+
+function getFrequencyAnnualMultiplier(frequency = 'Monthly') {
+  const freqLower = String(frequency || '').toLowerCase();
+  if (freqLower.includes('half') || freqLower.includes('semi')) return 2;
+  if (freqLower.includes('month') && !freqLower.includes('semi')) return 12;
+  if (freqLower.includes('week')) return 52;
+  if (freqLower.includes('quarter')) return 4;
+  return 1;
+}
+
+/** Stripe uses card / us_bank_account. Make.com expects CREDIT  CARD / ACH. */
+function toMakePaymentMethodType(value = '') {
+  const raw = String(value || '').toLowerCase().trim();
+  if (raw.includes('bank') || raw === 'ach' || raw === 'us_bank_account') return 'ACH';
+  return 'CREDIT  CARD';
 }
 
 function enrichFinancialPayload(payload = {}) {
@@ -1569,29 +1867,29 @@ function enrichFinancialPayload(payload = {}) {
     || Boolean(payload.stripeSubscriptionId);
 
   const groupAnnualPrice = resolveMembershipGroupAnnualPrice(payload);
-  if (groupAnnualPrice > 0) {
-    pledgeAmount = groupAnnualPrice;
-  } else if (isRecurring) {
-    const freqLower = frequency.toLowerCase();
-    let multiplier = 1;
-    if (freqLower.includes('half') || freqLower.includes('semi')) {
-      multiplier = 2;
-    } else if (freqLower.includes('month') && !freqLower.includes('semi')) {
-      multiplier = 12;
-    } else if (freqLower.includes('week')) {
-      multiplier = 52;
-    } else if (freqLower.includes('quarter')) {
-      multiplier = 4;
-    }
+  const multiplier = isRecurring ? getFrequencyAnnualMultiplier(frequency) : 1;
+  const annualizedFromPayment = (isRecurring && paymentAmount > 0 && multiplier > 1)
+    ? paymentAmount * multiplier
+    : 0;
 
-    if (multiplier > 1) {
-      const annualizedFromPayment = paymentAmount * multiplier;
-      if (annualizedFromPayment > 0 && pledgeAmount < annualizedFromPayment) {
-        pledgeAmount = annualizedFromPayment;
-      } else if (pledgeAmount > 0 && pledgeAmount < (pledgeAmount * multiplier)) {
-        pledgeAmount = pledgeAmount * multiplier;
-      }
+  // Idempotent annual commitment — never multiply an already-annual pledge again.
+  // (Previous bug: `pledgeAmount < pledgeAmount * 12` was always true, so each
+  // enrich pass did ×12 → e.g. 2244 → 26928 → 323136 → 3877632.)
+  if (annualizedFromPayment > 0) {
+    const looksLikeInstallment = pledgeAmount <= 0
+      || Math.abs(pledgeAmount - paymentAmount) < 0.02
+      || (pledgeAmount < annualizedFromPayment * 0.9);
+    if (looksLikeInstallment) {
+      pledgeAmount = annualizedFromPayment;
     }
+    // else keep existing pledgeAmount (already annual / larger commitment)
+  } else if (pledgeAmount <= 0 && groupAnnualPrice > 0) {
+    pledgeAmount = groupAnnualPrice;
+  }
+
+  // Catalog price only fills gaps — never shrink a real commitment.
+  if (pledgeAmount <= 0 && groupAnnualPrice > 0) {
+    pledgeAmount = groupAnnualPrice;
   }
 
   let action = 'none';
@@ -1730,7 +2028,7 @@ async function createStripeCheckoutSession(payload, contactId, email) {
     ? `${FRONTEND_URL}/onboard/membership?payment=cancel`
     : CHECKOUT_CANCEL_URL;
 
-  if (isRecurring && paymentAmount > 0) {
+  if (isRecurring && paymentAmount > 0 && !ACCELERATED_SCHEDULE_TEST) {
     return stripe.checkout.sessions.create({
       payment_method_types: paymentMethodTypes,
       customer: customerId,
@@ -1757,6 +2055,8 @@ async function createStripeCheckoutSession(payload, contactId, email) {
       cancel_url: cancelUrl,
     });
   }
+
+  // TEST MODE: one-time Stripe charge; CRM nextChargeDate still uses 1/5/10 min cadence.
 
   return stripe.checkout.sessions.create({
     payment_method_types: paymentMethodTypes,
@@ -1963,6 +2263,10 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
     createPayment: Boolean(enriched.createPayment && paidCharge > 0),
     paymentOnly: Boolean(enriched.paymentOnly),
     doNotCreatePledge: !enriched.createPledge,
+    // Previous (commented out): sent Stripe values "card" / "us_bank_account"
+    // paymentMethodType: enriched.paymentMethodType || 'card',
+    paymentMethodType: toMakePaymentMethodType(enriched.paymentMethodType),
+    OneCRM__Payment_Type__c: toMakePaymentMethodType(enriched.paymentMethodType),
   };
 
   const calls = [];
@@ -3129,11 +3433,13 @@ app.post('/api/portal/update-profile', async (req, res) => {
           mothersHebrewName: merged.mothersHebrewName,
           jewish: merged.jewish,
           hebrewBirthdate: merged.hebrewBirthdate,
-          nextHebrewBirthday: merged.nextHebrewBirthday,
-          weddingDate: merged.weddingDate,
+          nextHebrewBirthday: nullableCrmDate(merged.nextHebrewBirthday),
+          weddingDate: nullableCrmDate(merged.weddingDate),
           lifecycleStatus: merged.lifecycleStatus,
-          birthdate: merged.birthdate,
-          age: merged.age,
+          birthdate: nullableCrmDate(merged.birthdate),
+          clearBirthdate: !String(merged.birthdate || '').trim(),
+          Birthdate: nullableCrmDate(merged.birthdate),
+          age: String(merged.birthdate || '').trim() ? merged.age : '',
           gender: merged.gender,
         };
 
@@ -3207,6 +3513,15 @@ app.post('/api/portal/update-profile', async (req, res) => {
   }
 });
 
+function nullableCrmDate(value) {
+  const text = String(value ?? '').trim();
+  if (!text || /^null$/i.test(text) || /^undefined$/i.test(text)) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const parsed = Date.parse(text);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
 app.post('/api/household/update-member', async (req, res) => {
   const auth = await resolveAuthedPortalMember(req);
   if (auth.error) {
@@ -3265,6 +3580,11 @@ app.post('/api/household/update-member', async (req, res) => {
     }
   }
 
+  // Empty date → null so Make/Salesforce clears Birthdate ("" is often ignored).
+  const birthdateValue = nullableCrmDate(birthdate);
+  const nextHebrewBirthdayValue = nullableCrmDate(nextHebrewBirthday);
+  const weddingDateValue = nullableCrmDate(weddingDate);
+
   // Update contact details in Salesforce via MAKE_PROFILE_UPDATE_WEBHOOK_URL
   if (process.env.MAKE_PROFILE_UPDATE_WEBHOOK_URL) {
     console.log(`Triggering profile update for household member: ${targetContactId}`);
@@ -3292,12 +3612,14 @@ app.post('/api/household/update-member', async (req, res) => {
           fathersHebrewName,
           mothersHebrewName,
           jewish,
-          hebrewBirthdate,
-          nextHebrewBirthday,
-          weddingDate,
+          hebrewBirthdate: String(hebrewBirthdate || '').trim(),
+          nextHebrewBirthday: nextHebrewBirthdayValue,
+          weddingDate: weddingDateValue,
           lifecycleStatus,
-          birthdate,
-          age,
+          birthdate: birthdateValue,
+          clearBirthdate: birthdateValue == null,
+          Birthdate: birthdateValue,
+          age: birthdateValue == null ? '' : age,
           gender,
           groups,
         }),

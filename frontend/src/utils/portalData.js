@@ -1,4 +1,5 @@
 import { isDateInPortalFiscalYear, getPortalFiscalYearRange, getPortalFiscalYearLabel } from './portalFiscalYear.js';
+import { ALL_MEMBERSHIP_TIERS } from '../onboard/data/membershipTiers';
 
 export { getPortalFiscalYearLabel };
 
@@ -22,21 +23,62 @@ export function formatMoney(amount) {
   return `$${Number(amount || 0).toFixed(2)}`;
 }
 
+/** Display OneCRM__Payment_Type__c for payment history Description. */
+export function formatPaymentDescription(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '—';
+  // Never surface Salesforce API field names.
+  if (/^OneCRM__/i.test(raw) || /__c$/i.test(raw)) return '—';
+  const lower = raw.toLowerCase();
+  // Previous (commented out): Card / Bank short labels
+  // if (/^stripe$/i.test(raw) || /stripe/i.test(raw)) return 'Card';
+  // if (/credit\s*card/i.test(raw) || /^card$/i.test(raw)) return 'Card';
+  if (lower.includes('credit') || lower === 'card' || lower.includes('stripe')) return 'Credit  Card';
+  if (lower.includes('ach') || lower.includes('bank') || lower.includes('transfer') || lower.includes('wire')) {
+    return 'ACH';
+  }
+  return raw
+    .split(/(\s+|[-_/])/g)
+    .map((part) => {
+      if (/^\s+$/.test(part) || /^[-_/]$/.test(part)) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join('');
+}
+
+/**
+ * Dashboard / Payments "Description" — OneCRM__Payment_Type__c from MAKE_PAYMENTS_WEBHOOK_URL.
+ */
+export function getPaymentHistoryDescription(payment = {}) {
+  const candidates = [
+    payment.OneCRM__Payment_Type__c,
+    payment['Payment Type'],
+    payment.paymentType,
+    payment.method,
+    payment.type,
+    payment.purpose,
+    payment.subType,
+    payment.name,
+  ];
+
+  // Previous (commented out): mapped CREDIT CARD → Card and ACH → Bank
+  // if (lower.includes('stripe') || lower.includes('credit') || lower === 'card') return 'Card';
+  // if (lower.includes('bank') || lower.includes('ach') || lower.includes('transfer')) return 'Bank';
+
+  for (const candidate of candidates) {
+    const raw = String(candidate || '').trim();
+    if (!raw) continue;
+    if (/^OneCRM__/i.test(raw) || /__c$/i.test(raw)) continue;
+    const lower = raw.toLowerCase();
+    if (lower === 'campaign' || lower.includes('membership') || lower.includes('donation')) continue;
+    return formatPaymentDescription(raw);
+  }
+  return '—';
+}
+
 export function formatDisplayDate(value) {
   const normalized = (value ?? '').toString().trim();
   if (!normalized) return '—';
-  if (/^\d{4}-\d{2}-\d{2}T/.test(normalized)) {
-    const parsed = new Date(normalized);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      });
-    }
-  }
   if (/^\d{4}-\d{2}-\d{2}/.test(normalized)) {
     const [year, month, day] = normalized.slice(0, 10).split('-').map(Number);
     return new Date(year, month - 1, day).toLocaleDateString(undefined, {
@@ -46,6 +88,30 @@ export function formatDisplayDate(value) {
     });
   }
   return normalized;
+}
+
+/** Date + time when value has a clock time; date-only strings stay date-only. */
+export function formatDisplayDateTime(value) {
+  const normalized = (value ?? '').toString().trim();
+  if (!normalized) return '—';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return formatDisplayDate(normalized);
+  }
+  const hasTime = /T\d{2}:\d{2}/.test(normalized) || /\d{1,2}:\d{2}\s*(AM|PM)?/i.test(normalized);
+  if (!hasTime) {
+    return formatDisplayDate(normalized);
+  }
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return formatDisplayDate(normalized);
+  }
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 /** Display labels for CRM frequency values (Semi-Annual → Half Yearly). */
@@ -130,7 +196,38 @@ export function getRelationships(sfData) {
 
 export function getPayments(sfData) {
   const payments = (sfData?.financials?.payments?.length ? sfData.financials.payments : sfData?.payments) || [];
-  return mergePendingPayments(filterDisplayPayments(payments), sfData);
+  const pledges = (sfData?.financials?.pledges?.length ? sfData.financials.pledges : sfData?.pledges) || [];
+  const pledgeIds = new Set(pledges.map((item) => String(item.id || '').trim()).filter(Boolean));
+  // const commitmentAmounts = pledges
+  //   .map((item) => parseMoney(item.total || item.amount))
+  //   .filter((amount) => amount > 0);
+
+  // Never show pledge / commitment rows in payment history (same Salesforce Id).
+  const historyOnly = payments.filter((payment) => {
+    const id = String(payment.id || '').trim();
+    if (id && pledgeIds.has(id)) return false;
+
+    // Previous (commented out): hid full membership payments because $2244 matched the pledge total.
+    // const amount = parseMoney(payment.amount) || parseMoney(payment.total);
+    // const method = String(payment.method || '').toLowerCase();
+    // const name = String(payment.name || payment.purpose || payment.subType || '').toLowerCase();
+    // const isCashLine = method.includes('cash') || name.includes('cash payment');
+    // if (!isCashLine && commitmentAmounts.some((commitment) => Math.abs(commitment - amount) < 0.02)) {
+    //   return false;
+    // }
+    return true;
+  });
+
+  // Payment history is Salesforce/Make only — do not append browser Stripe leftovers.
+  // Previous (commented out): mergePendingPayments kept local checkout rows on the dashboard
+  // after Salesforce payments were deleted.
+  // return mergePendingPayments(filterDisplayPayments(historyOnly), sfData);
+  try {
+    localStorage.removeItem(PENDING_PORTAL_PAYMENTS_KEY);
+  } catch {
+    // ignore
+  }
+  return filterDisplayPayments(historyOnly);
 }
 
 function parseSortableDate(value) {
@@ -155,13 +252,18 @@ function sortFinancialRecordsByRecent(records = []) {
 }
 
 function paymentDisplayKey(payment = {}) {
-  // Dedupe on date + amount ONLY.
-  // Salesforce returns type/subType as null, and the same real payment
-  // generates multiple records with different methods (Cash vs null).
-  // Date + amount is the only reliable combination for deduplication.
+  const id = String(payment.id || '').trim();
+  // Prefer Salesforce Income Id so same-day/same-amount installments stay visible.
+  // Old key collapsed real payment history to a single row:
+  // const amount = parseMoney(payment.amount) || parseMoney(payment.total);
+  // const date = String(payment.date || '').slice(0, 10);
+  // return `${date}|${amount.toFixed(2)}`;
+  if (id && !/^(payment_|local_|pending_)/i.test(id)) {
+    return `id:${id}`;
+  }
   const amount = parseMoney(payment.amount) || parseMoney(payment.total);
   const date = String(payment.date || '').slice(0, 10);
-  return `${date}|${amount.toFixed(2)}`;
+  return `${date}|${amount.toFixed(2)}|${id || 'anon'}`;
 }
 
 function filterDisplayPayments(payments = []) {
@@ -170,6 +272,10 @@ function filterDisplayPayments(payments = []) {
     payments.filter((payment) => {
       const amount = parseMoney(payment.amount) || parseMoney(payment.total);
       if (amount <= 0) return false;
+      // Hide browser leftover Stripe checkout rows (pending / local / stripe_ ids).
+      if (payment.pending || /^(pending_|local_|stripe_)/i.test(String(payment.id || ''))) {
+        return false;
+      }
 
       const type = String(payment.type || payment.OneCRM__Type__c || '').toLowerCase();
       const subType = String(payment.subType || payment.OneCRM__Sub_Type__c || payment.purpose || payment.name || '').toLowerCase();
@@ -219,7 +325,9 @@ export function storePendingPortalPayment(payment = {}) {
       type: payment.type || 'Campaign',
       subType: payment.subType || payment.purpose || 'Membership',
       purpose: payment.purpose || payment.subType || 'Membership',
-      method: payment.method || 'Stripe',
+      method: payment.method || 'Card',
+      // Previous (commented out): method defaulted to 'Stripe' and showed in Description
+      // method: payment.method || 'Stripe',
       status: payment.status || 'Paid',
       pending: true,
       at: Date.now(),
@@ -248,9 +356,9 @@ function mergePendingPayments(crmPayments = [], sfData = null) {
   const email = String(sfData?.email || '').trim().toLowerCase();
   hydratePendingPaymentFromDraft(email, sfData);
 
-  // Once CRM has real payment rows, drop optimistic Stripe placeholders.
-  // Pending often stores the full annual commitment (e.g. $1560) while CRM
-  // correctly has only the installment ($130), which double-counts on localhost.
+  // Once CRM has real payment rows, drop optimistic Stripe / full-commitment placeholders.
+  // Pending often stores the annual pledge (e.g. $3000) while CRM correctly has only
+  // cash installments ($250), which wrongly appear as an extra "payment" on this page.
   if (crmPayments.length > 0) {
     const remaining = readPendingPortalPayments().filter(
       (payment) => email && payment.email && payment.email !== email,
@@ -263,24 +371,39 @@ function mergePendingPayments(crmPayments = [], sfData = null) {
     return sortFinancialRecordsByRecent(crmPayments);
   }
 
-  const crmKeys = new Set(crmPayments.map((payment) => paymentDisplayKey(payment)));
-  const pledges = (sfData?.financials?.pledges?.length ? sfData.financials.pledges : sfData?.pledges) || [];
-  const annual = parseMoney(sfData?.membership?.annualCommitment)
-    || pledges.reduce((max, item) => Math.max(max, parseMoney(item.total || item.amount)), 0);
+  const crmLoaded = Boolean(sfData?.financials) || Boolean(sfData?.syncedFromSalesforce);
+  const now = Date.now();
+
+  // Previous (commented out): kept local Stripe pending for 7 days when CRM payments
+  // were empty — so deleting a payment in Salesforce still showed $2244 paid-in-full.
+  // const crmKeys = new Set(crmPayments.map((payment) => paymentDisplayKey(payment)));
+  // const pending = readPendingPortalPayments().filter((payment) => {
+  //   if (email && payment.email && payment.email !== email) return false;
+  //   if (Date.now() - (Number(payment.at) || 0) > RECENT_MEMBERSHIP_PAYMENT_TTL_MS) return false;
+  //   if (crmKeys.has(paymentDisplayKey(payment))) return false;
+  //   return true;
+  // });
+  // return sortFinancialRecordsByRecent([...pending, ...crmPayments]);
+
+  // CRM financials loaded with 0 payments: Salesforce is source of truth (payment deleted).
+  // Do not keep local Stripe leftovers on the dashboard.
+  // Previous (commented out): 20-minute lag still showed deleted payments.
+  // if (crmLoaded) {
+  //   return age < PENDING_PAYMENTS_CRM_LAG_MS;
+  // }
   const pending = readPendingPortalPayments().filter((payment) => {
     if (email && payment.email && payment.email !== email) return false;
-    if (Date.now() - (Number(payment.at) || 0) > RECENT_MEMBERSHIP_PAYMENT_TTL_MS) return false;
-    if (crmKeys.has(paymentDisplayKey(payment))) return false;
-    const pendingAmount = parseMoney(payment.amount || payment.total);
-    // Never keep a pending charge that looks like the full annual pledge —
-    // installment checkouts must not inflate contributed / zero outstanding.
-    if (annual > 0 && amountsMatch(pendingAmount, annual)) return false;
-    return true;
+    if (crmLoaded) return false;
+    const age = now - (Number(payment.at) || 0);
+    if (age < 0) return false;
+    return age < PENDING_PAYMENTS_CRM_LAG_MS;
   });
 
-  // Persist pruned list (remove synced / expired).
   try {
-    localStorage.setItem(PENDING_PORTAL_PAYMENTS_KEY, JSON.stringify(pending));
+    const others = readPendingPortalPayments().filter(
+      (payment) => email && payment.email && payment.email !== email,
+    );
+    localStorage.setItem(PENDING_PORTAL_PAYMENTS_KEY, JSON.stringify([...pending, ...others]));
   } catch {
     // ignore
   }
@@ -296,6 +419,21 @@ function hydratePendingPaymentFromDraft(email = '', sfData = null) {
     // Only recover a pending Stripe charge after a real checkout success flag.
     if (!hasRecentMembershipPayment(email)) return;
 
+    // Do not resurrect a deleted Salesforce payment from the onboarding draft.
+    const crmPayments = (sfData?.financials?.payments?.length ? sfData.financials.payments : sfData?.payments) || [];
+    const crmLoaded = Boolean(sfData?.financials) || Boolean(sfData?.syncedFromSalesforce);
+    if (crmLoaded && crmPayments.length === 0) {
+      return;
+      // Previous (commented out): resurrected pending from draft after SF delete
+      // try {
+      //   const raw = localStorage.getItem(RECENT_MEMBERSHIP_PAYMENT_KEY);
+      //   const at = raw ? Number(JSON.parse(raw)?.at) || 0 : 0;
+      //   if (!at || Date.now() - at >= PENDING_PAYMENTS_CRM_LAG_MS) return;
+      // } catch {
+      //   return;
+      // }
+    }
+
     let amount = 0;
     let subType = 'Membership';
 
@@ -303,6 +441,7 @@ function hydratePendingPaymentFromDraft(email = '', sfData = null) {
       const raw = localStorage.getItem('chabad_membership_onboarding_draft_full');
       if (raw) {
         const draft = JSON.parse(raw);
+        // Only the schedule installment that was actually charged — never the pledge total.
         amount = Number(draft?.data?.contributionSchedule?.amount) || 0;
         subType = draft?.data?.membership?.tier || subType;
       }
@@ -310,28 +449,19 @@ function hydratePendingPaymentFromDraft(email = '', sfData = null) {
       // ignore draft parse errors
     }
 
-    // Do NOT fall back to annual commitment / full pledge — that wrongly
-    // records a full-year payment when the member only paid one installment.
     if (amount <= 0) return;
 
-    const pledges = (sfData?.financials?.pledges?.length ? sfData.financials.pledges : sfData?.pledges) || [];
-    const annual = parseMoney(sfData?.membership?.annualCommitment)
-      || pledges.reduce((max, item) => Math.max(max, parseMoney(item.total || item.amount)), 0);
-    if (annual > 0 && amountsMatch(amount, annual)) {
-      // Draft still has annual price as "amount" — not a safe installment charge.
-      return;
-    }
-
-    storePendingPortalPayment({
-      email,
-      amount,
-      date: new Date().toISOString().slice(0, 10),
-      subType,
-      purpose: subType,
-      method: 'Stripe',
-      status: 'Paid',
-      id: `pending_draft_${email || 'user'}`,
-    });
+    // Hidden: do not recreate a browser leftover from the onboarding draft.
+    // storePendingPortalPayment({
+    //   email,
+    //   amount,
+    //   total: amount,
+    //   type: 'Campaign',
+    //   subType,
+    //   purpose: subType,
+    //   method: 'Card',
+    //   status: 'Paid',
+    // });
   } catch {
     // ignore
   }
@@ -345,35 +475,150 @@ export function sumPaymentsYtd(payments = []) {
   return sumPaymentsTotal(payments);
 }
 
+const MEMBERSHIP_ANNUAL_TIERS = [
+  { amount: 36000, name: 'Chai Leadership Circle Membership 26-27' },
+  { amount: 18000, name: "Chai Rabbi's Circle Membership 26-27" },
+  { amount: 10000, name: 'Chai Partner Membership 26-27' },
+  { amount: 5000, name: 'Chai Donor Membership 26-27' },
+  { amount: 3000, name: 'Upgraded Membership 26-27' },
+  { amount: 2244, name: 'Family Membership 26-27' },
+  { amount: 1800, name: 'Senior Citizen Membership 26-27' },
+  { amount: 1560, name: 'Single Parent Family Membership 26-27' },
+  { amount: 1128, name: 'Single Membership 26-27' },
+];
+
+/** When Make returns Campaign cash payments but no Groups / pledge, infer tier + annual. */
+export function inferMembershipFromPayments(payments = []) {
+  const pool = (payments || []).filter((payment) => {
+    const amount = parseMoney(payment.amount || payment.total);
+    if (amount <= 0) return false;
+    const blob = `${payment.type || ''} ${payment.subType || ''} ${payment.name || ''} ${payment.purpose || ''}`.toLowerCase();
+    return blob.includes('campaign')
+      || blob.includes('membership')
+      || blob.includes('member')
+      || blob.includes('cash payment');
+  });
+
+  if (!pool.length) {
+    return { annual: 0, installment: 0, tier: '', paid: 0 };
+  }
+
+  const amounts = pool.map((payment) => parseMoney(payment.amount || payment.total)).filter((amount) => amount > 0);
+  const counts = new Map();
+  amounts.forEach((amount) => counts.set(amount, (counts.get(amount) || 0) + 1));
+  const installment = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] || amounts[0] || 0;
+
+  let annual = 0;
+  if (installment > 0 && installment <= 500) {
+    // Monthly membership installments (e.g. $250 × 12 = $3000 upgraded).
+    annual = installment * 12;
+  } else if (installment > 500 && installment < 1500) {
+    annual = installment * 2;
+  } else {
+    annual = Math.max(...amounts);
+  }
+
+  const matched = MEMBERSHIP_ANNUAL_TIERS.find((tier) => Math.abs(tier.amount - annual) < 1);
+  const paid = amounts.reduce((sum, amount) => sum + amount, 0);
+
+  return {
+    annual,
+    installment,
+    paid,
+    tier: matched?.name || (annual > 0 ? 'Membership 26-27' : ''),
+  };
+}
+
 export function getPledges(sfData) {
   const rawPledges = (sfData?.financials?.pledges?.length ? sfData.financials.pledges : sfData?.pledges) || [];
   const recurring = (sfData?.financials?.recurring?.length ? sfData.financials.recurring : sfData?.recurring) || [];
   const activeRecurring = recurring.find((item) => ['active', 'finished', 'open'].includes((item.status || '').toLowerCase())) || recurring[0];
-  const freq = (activeRecurring?.frequency || sfData?.membership?.frequency || '').toLowerCase();
+  // const freq = (activeRecurring?.frequency || sfData?.membership?.frequency || '').toLowerCase();
 
   const displayPayments = getPayments(sfData);
-  const currentYtdPaid = sumPaymentsYtd(displayPayments);
+  // const currentYtdPaid = sumPaymentsYtd(displayPayments);
 
   const membershipObj = sfData?.membership || {};
-
-  const explicitMemPledge = rawPledges.find(
-    (p) => (p.type || '').toLowerCase() === 'membership'
-      || (p.purpose || '').toLowerCase().includes('membership')
-      || (p.name || '').toLowerCase().includes('membership'),
-  );
 
   const tierPriceMap = {
     'family': 2244,
     'upgraded': 3000,
     'single parent': 1560,
     'single membership': 1128,
-    'single': 1128,
     'senior': 1800,
     'chai donor': 5000,
     'chai partner': 10000,
     'chai rabbi': 18000,
     'chai leadership': 36000,
+    'single': 1128,
   };
+
+  const resolveTierPriceFromGroup = (tierName = '') => {
+    if (!hasRealMembershipGroup(tierName)) return 0;
+    const lower = String(tierName).toLowerCase();
+    const mapped = Object.entries(tierPriceMap)
+      .sort((a, b) => b[0].length - a[0].length)
+      .find(([key]) => lower.includes(key))?.[1];
+    if (mapped) return mapped;
+    const fromCatalog = ALL_MEMBERSHIP_TIERS.find((tier) => {
+      const name = String(tier.name || '').toLowerCase();
+      return name && lower.includes(name);
+    });
+    return Number(fromCatalog?.annualPrice) || 0;
+  };
+
+  const membershipPaidFromPayments = (payments = []) => payments.reduce((sum, payment) => {
+    const amount = parseMoney(payment.amount || payment.total);
+    if (amount <= 0) return sum;
+    // Do not treat local pending checkout rows as CRM-paid (deleted SF payments).
+    if (payment.pending || /^pending_/i.test(String(payment.id || ''))) return sum;
+    const blob = `${payment.type || ''} ${payment.subType || ''} ${payment.name || ''} ${payment.purpose || ''}`.toLowerCase();
+    // Do not count general donations (e.g. $1 Cash Donation) toward membership paid.
+    if (blob.includes('donation') && !blob.includes('membership')) return sum;
+    if (amount < 50 && !blob.includes('membership') && !blob.includes('campaign:membership')) return sum;
+    return sum + amount;
+  }, 0);
+
+  // MAKE_PAYMENTS_WEBHOOK_URL returned empty pledges.
+  // If Salesforce Groups has a membership, show that membership amount for
+  // commitment / outstanding / Pay flow — not invent from random cash payments.
+  if (!rawPledges.length) {
+    // Previous (commented out): always returned [] so Commitment/Outstanding stayed $0
+    // even when Salesforce Groups had Family Membership 26-27.
+    // return [];
+
+    const tierName = membershipObj.tier
+      || sfData?.account?.groups
+      || sfData?.groups
+      || sfData?.profile?.groups
+      || '';
+    const memCommitment = resolveTierPriceFromGroup(tierName);
+    if (!(memCommitment > 0)) return [];
+
+    const memPaid = membershipPaidFromPayments(displayPayments);
+    const memOutstanding = Math.max(memCommitment - memPaid, 0);
+    return [{
+      id: 'sf_group_membership_pledge',
+      name: tierName,
+      purpose: tierName,
+      type: 'Pledge',
+      subType: 'Annual Membership',
+      amount: formatMoney(memCommitment),
+      total: formatMoney(memCommitment),
+      paid: formatMoney(memPaid),
+      outstanding: formatMoney(memOutstanding),
+      date: membershipObj.renewalDate || sfData?.joinedDate || '',
+      status: memOutstanding > 0 ? 'Active' : 'Success',
+      source: 'salesforce_group',
+    }];
+  }
+
+  const explicitMemPledge = rawPledges.find(
+    (p) => (p.type || '').toLowerCase() === 'membership'
+      || (p.purpose || '').toLowerCase().includes('membership')
+      || (p.name || '').toLowerCase().includes('membership'),
+  );
 
   const tierName = membershipObj.tier
     || explicitMemPledge?.purpose
@@ -382,9 +627,7 @@ export function getPledges(sfData) {
     || sfData?.groups
     || '';
   const realGroup = hasRealMembershipGroup(tierName);
-  const matchedTierPrice = realGroup
-    ? Object.entries(tierPriceMap).find(([key]) => String(tierName).toLowerCase().includes(key))?.[1]
-    : undefined;
+  const matchedTierPrice = resolveTierPriceFromGroup(tierName);
 
   const explicitAmt = explicitMemPledge ? parseMoney(explicitMemPledge.total || explicitMemPledge.amount) : 0;
   const sfCommitment = parseMoney(membershipObj.annualCommitment);
@@ -396,31 +639,54 @@ export function getPledges(sfData) {
   else if (matchedTierPrice) memCommitment = matchedTierPrice;
   else if (realGroup && sfCommitment > 0) memCommitment = sfCommitment;
 
-  if (memCommitment <= 0) {
-    return rawPledges.filter((item) => parseMoney(item.amount || item.total) > 0);
-  }
-
-  const memPaid = currentYtdPaid || parseMoney(membershipObj.contributedYtd);
-
-  // If commitment is recorded as per-period or single charge (e.g. $250, $500), extrapolate to full annual commitment
-  if (memCommitment > 0 && memCommitment < 1000) {
-    if (freq.includes('half') || freq.includes('semi')) {
-      memCommitment = memCommitment * 2;
-    } else if (freq.includes('month') || memCommitment <= 500) {
-      memCommitment = memCommitment * 12;
-    }
-  }
+  // Commented out: inventing commitment from payments when pledges are missing
+  // caused fake outstanding (e.g. $1 payment → $144 commitment → $143 due).
+  // const inferred = inferMembershipFromPayments(displayPayments);
+  // if (memCommitment <= 0 && inferred.annual > 0) {
+  //   memCommitment = inferred.annual;
+  // }
+  const inferred = { annual: 0, installment: 0, paid: 0, tier: '' };
 
   if (memCommitment <= 0) {
     return rawPledges.filter((item) => parseMoney(item.amount || item.total) > 0);
   }
 
-  const memOutstanding = Math.max(memCommitment - memPaid, 0);
+  // Commented out: re-multiplying small amounts invented fake annual totals
+  // (e.g. inferred $12 × 12 → $144) when Make pledges were empty.
+  // if (memCommitment > 0 && memCommitment < 1000) {
+  //   if (freq.includes('half') || freq.includes('semi')) {
+  //     memCommitment = memCommitment * 2;
+  //   } else if (freq.includes('month') || memCommitment <= 500) {
+  //     memCommitment = memCommitment * 12;
+  //   }
+  // }
+
+  if (memCommitment <= 0) {
+    return rawPledges.filter((item) => parseMoney(item.amount || item.total) > 0);
+  }
+
+  // Prefer Salesforce pledge Paid / Outstanding when present.
+  // Old logic only used payment-history sum, which was wrong after aggressive
+  // date|amount payment dedupe (e.g. $250 instead of $1250):
+  // const memPaid = currentYtdPaid || parseMoney(membershipObj.contributedYtd);
+  // const memOutstanding = Math.max(memCommitment - memPaid, 0);
+  const sfPaid = parseMoney(explicitMemPledge?.paid);
+  const sfOutstanding = parseMoney(explicitMemPledge?.outstanding);
+  // Prefer pledge paid; do not use donation YTD as membership paid.
+  const memPaid = Math.max(
+    membershipPaidFromPayments(displayPayments),
+    sfPaid,
+    // currentYtdPaid, // commented out: included $1 donations
+    // parseMoney(membershipObj.contributedYtd),
+  );
+  const memOutstanding = sfOutstanding > 0
+    ? sfOutstanding
+    : Math.max(memCommitment - memPaid, 0);
 
   const primaryMemPledge = {
     id: explicitMemPledge?.id || 'membership_pledge_primary',
-    name: 'Membership',
-    purpose: 'Annual Membership',
+    name: inferred.tier || explicitMemPledge?.name || tierName || 'Membership',
+    purpose: inferred.tier || explicitMemPledge?.purpose || tierName || 'Annual Membership',
     type: 'Pledge',
     subType: 'Annual Membership',
     amount: formatMoney(memCommitment),
@@ -428,7 +694,7 @@ export function getPledges(sfData) {
     paid: formatMoney(memPaid),
     outstanding: formatMoney(memOutstanding),
     date: explicitMemPledge?.date || membershipObj.renewalDate || sfData?.joinedDate || '',
-    status: 'Success',
+    status: memOutstanding > 0 ? 'Active' : 'Success',
   };
 
   return [primaryMemPledge];
@@ -437,8 +703,18 @@ export function getPledges(sfData) {
 export function getRecurring(sfData) {
   const recurring = (sfData?.financials?.recurring?.length ? sfData.financials.recurring : sfData?.recurring) || [];
   return sortFinancialRecordsByRecent(
-    recurring.filter((item) => parseMoney(item.amount) > 0),
+    recurring.filter((item) => {
+      const id = String(item.id || '');
+      // Keep Salesforce payment programs even when amount was incomplete upstream.
+      if (id && !id.startsWith('recurring_')) return true;
+      return parseMoney(item.amount) > 0;
+    }),
   );
+}
+
+export function getSavedCards(sfData) {
+  const cards = sfData?.cards || sfData?.savedCards || [];
+  return Array.isArray(cards) ? cards : [];
 }
 
 const GUEST_MEMBERSHIP_STATUSES = new Set([
@@ -458,6 +734,8 @@ export const GUEST_PAYMENTS_MESSAGE = 'Become a member to enable payments.';
 /** Survives CRM lag after Stripe → Make sync (role often stays Guest briefly). */
 const RECENT_MEMBERSHIP_PAYMENT_KEY = 'recent_membership_payment';
 const RECENT_MEMBERSHIP_PAYMENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** How long to show a local checkout payment while Salesforce/Make is still empty. */
+const PENDING_PAYMENTS_CRM_LAG_MS = 20 * 60 * 1000;
 
 export function markRecentMembershipPayment(email = '', paymentDetails = null) {
   try {
@@ -484,10 +762,11 @@ export function markRecentMembershipPayment(email = '', paymentDetails = null) {
     }
 
     if (paymentDetails && (paymentDetails.amount || paymentDetails.total)) {
-      storePendingPortalPayment({
-        ...paymentDetails,
-        email: fallbackEmail,
-      });
+      // Hidden: do not keep a browser leftover payment row after Stripe checkout.
+      // storePendingPortalPayment({
+      //   ...paymentDetails,
+      //   email: fallbackEmail,
+      // });
     }
   } catch {
     // ignore storage failures
@@ -530,6 +809,31 @@ export function hasRealMembershipGroup(value = '') {
     || /(family|upgraded|chai|senior|single parent)/i.test(tier);
 }
 
+/** Any Salesforce Groups value worth displaying (e.g. Building Prospects). */
+export function hasAssignedSalesforceGroup(value = '') {
+  const tier = String(value || '').trim();
+  if (!tier) return false;
+  if (/^(member|guest|prospect|contact)$/i.test(tier)) return false;
+  if (/^(member|guest|prospect|contact)(\s*;\s*(member|guest|prospect|contact))*$/i.test(tier)) {
+    return false;
+  }
+  return true;
+}
+
+export function getSalesforceAssignedGroup(sfData) {
+  const candidates = [
+    sfData?.membership?.tier,
+    sfData?.groups,
+    sfData?.account?.groups,
+    sfData?.profile?.groups,
+  ];
+  for (const value of candidates) {
+    const text = String(value || '').trim();
+    if (hasAssignedSalesforceGroup(text)) return formatMembershipDisplayName(text);
+  }
+  return '';
+}
+
 export function isGuestUser(sfData) {
   if (!sfData) return true;
 
@@ -551,18 +855,32 @@ export function isGuestUser(sfData) {
   const hasMembershipTiers = hasRealMembershipGroup(tier);
   const pledges = (sfData.financials?.pledges?.length ? sfData.financials.pledges : sfData.pledges) || [];
   const hasPledges = pledges.some((item) => parseMoney(item.amount || item.total) > 0);
-  const payments = getPayments(sfData);
-  const hasPayments = payments.some((item) => parseMoney(item.amount || item.total) > 0);
+  // Commented out: any cash payment (e.g. $1 General Donation) or a spouse/household
+  // contact was treating users with NO Salesforce membership group as members,
+  // which skipped the membership stepper and invented "Membership 26-27".
+  // const payments = getPayments(sfData);
+  // const hasPayments = payments.some((item) => parseMoney(item.amount || item.total) > 0);
+  // const contacts = getContacts(sfData);
+  // const hasEstablishedHousehold = contacts.length > 1;
   const recurring = (sfData.financials?.recurring?.length ? sfData.financials.recurring : sfData.recurring) || [];
   const hasActiveRecurring = recurring.some(
     (item) => (item.status || '').toLowerCase() === 'active' && parseMoney(item.amount) > 0,
   );
-  const contacts = getContacts(sfData);
-  const hasEstablishedHousehold = contacts.length > 1;
 
-  if (hasMembershipTiers || hasPledges || hasPayments || hasActiveRecurring || hasEstablishedHousehold) {
+  // Require Salesforce group (paid membership OR other SF groups like Building Prospects),
+  // pledge, or recurring — so UI matches paid portal tiers with $0 when group is not a portal tier.
+  const hasAnySfGroup = hasAssignedSalesforceGroup(tier);
+  if (hasMembershipTiers || hasAnySfGroup || hasPledges || hasActiveRecurring) {
     return false;
   }
+  // Previous (commented out): only paid membership tiers counted as members
+  // if (hasMembershipTiers || hasPledges || hasActiveRecurring) {
+  //   return false;
+  // }
+  // Previous (commented out):
+  // if (hasMembershipTiers || hasPledges || hasPayments || hasActiveRecurring || hasEstablishedHousehold) {
+  //   return false;
+  // }
 
   if (hasRecentMembershipPayment(email)) return false;
 
@@ -627,45 +945,109 @@ export function getMembership(sfData) {
     return formatMembershipDisplayName(rawStr);
   };
 
-  const resolvedTier = resolveStandardGroup(rawTierCandidate);
+  const resolvedTierFromGroups = resolveStandardGroup(rawTierCandidate);
   const pledges = getPledges(sfData);
   const recurring = getRecurring(sfData);
   const payments = getPayments(sfData);
   const activeRecurring = recurring.find((item) => (item.status || '').toLowerCase() === 'active') || recurring[0];
+  // Paid membership display name (Family / Chai / etc.).
+  const paidMembershipTier = hasRealMembershipGroup(resolvedTierFromGroups)
+    ? resolvedTierFromGroups
+    : '';
+  // Commented out: blanking non-membership SF groups hid "Building Prospects" in the portal.
+  // const resolvedTier = hasRealMembershipGroup(resolvedTierFromGroups)
+  //   ? resolvedTierFromGroups
+  //   : '';
+  // Show any Salesforce Groups assignment (including Building Prospects).
+  const sfAssignedGroup = hasAssignedSalesforceGroup(rawTierCandidate)
+    ? formatMembershipDisplayName(rawTierCandidate)
+    : '';
+  const resolvedTier = paidMembershipTier || sfAssignedGroup;
+  // Prefer CRM groups only — never invent a tier when SF has no group.
 
   const membershipPledge = pledges.find(
     (p) => (p.type || '').toLowerCase() === 'membership'
       || (p.purpose || '').toLowerCase().includes('membership')
       || (p.name || '').toLowerCase().includes('membership')
       || (p.purpose || '').toLowerCase().includes('member')
-      || (p.type || '').toLowerCase() === 'member',
+      || (p.type || '').toLowerCase() === 'member'
+      || (p.type || '').toLowerCase() === 'pledge',
   );
 
   const membershipPledgeAmt = membershipPledge ? parseMoney(membershipPledge.total || membershipPledge.amount) : 0;
   const annualFromPledges = pledges.reduce((sum, item) => sum + parseMoney(item.total || item.amount), 0);
 
-  const annualCommitmentVal = membershipPledgeAmt > 0
+  let annualCommitmentVal = membershipPledgeAmt > 0
     ? membershipPledgeAmt
-    : (annualFromPledges > 0 ? annualFromPledges : parseMoney(membership.annualCommitment));
+    : (annualFromPledges > 0 ? annualFromPledges : 0);
+  // When pledges empty but SF Groups has membership, pledges[] is synthesized
+  // from the membership tier price (e.g. Family → $2244) inside getPledges.
+  // Commented out: falling back to membership.annualCommitment / payment inference
+  // when Make pledges are empty invented fake commitment/outstanding from $1 donations.
+  // let annualCommitmentVal = membershipPledgeAmt > 0
+  //   ? membershipPledgeAmt
+  //   : (annualFromPledges > 0 ? annualFromPledges : parseMoney(membership.annualCommitment));
+  // if (annualCommitmentVal <= 0 && inferredFromPayments.annual > 0) {
+  //   annualCommitmentVal = inferredFromPayments.annual;
+  // }
 
   const totalPaidSum = sumPaymentsTotal(payments);
   const contributed = totalPaidSum || parseMoney(membership.contributedYtd)
     || pledges.reduce((sum, item) => sum + parseMoney(item.paid || item.amount), 0);
+    // || inferredFromPayments.paid;
 
-  const calculatedOutstanding = Math.max(annualCommitmentVal - contributed, 0);
+  const pledgeOutstanding = membershipPledge ? parseMoney(membershipPledge.outstanding) : 0;
+  // Use pledge outstanding, or commitment - paid when we have a membership amount
+  // from SF Groups (even if Make pledges webhook was empty).
+  const calculatedOutstanding = pledgeOutstanding > 0
+    ? pledgeOutstanding
+    : (annualCommitmentVal > 0 ? Math.max(annualCommitmentVal - contributed, 0) : 0);
+  // Previous (commented out): only used annual - contributed when raw pledge amounts existed
+  // const calculatedOutstanding = pledgeOutstanding > 0
+  //   ? pledgeOutstanding
+  //   : (membershipPledgeAmt > 0 || annualFromPledges > 0
+  //     ? Math.max(annualCommitmentVal - contributed, 0)
+  //     : 0);
 
   const finalAnnualCommitmentStr = annualCommitmentVal > 0
     ? formatMoney(annualCommitmentVal)
     : (membership.annualCommitment || '$0.00');
 
+  // Pledges empty + SF group is not a portal paid tier (e.g. Building Prospects):
+  // same member UI as Family/Chai, but membership amounts stay $0.
+  // If CRM / membership already has a commitment (e.g. Building Donors HH $3000), keep it
+  // so first-login Pay Membership → monthly/half-yearly can run.
+  const isPortalPaidTier = Boolean(paidMembershipTier);
+  const isNonPortalSfGroup = Boolean(sfAssignedGroup) && !isPortalPaidTier;
+  const crmCommitment = parseMoney(membership.annualCommitment);
+  // Previous (commented out): zeroed all non-portal groups whenever pledges were empty,
+  // which hid Pay Membership for SF donor groups that only had CRM commitment.
+  // const forceZeroMembershipAmounts = isNonPortalSfGroup && annualCommitmentVal <= 0;
+  const forceZeroMembershipAmounts = isNonPortalSfGroup
+    && annualCommitmentVal <= 0
+    && crmCommitment <= 0;
+  const displayCommitment = forceZeroMembershipAmounts ? '$0.00' : finalAnnualCommitmentStr;
+  const displayOutstanding = forceZeroMembershipAmounts
+    ? '$0.00'
+    : formatMoney(
+      calculatedOutstanding > 0
+        ? calculatedOutstanding
+        : (parseMoney(finalAnnualCommitmentStr) > 0
+          ? Math.max(parseMoney(finalAnnualCommitmentStr) - contributed, 0)
+          : 0),
+    );
+
   return {
     tier: resolvedTier,
+    // Active for any Salesforce group so Membership page matches paid-tier layout.
     status: resolvedTier ? (membership.status || 'Active') : '',
+    // Previous (commented out): only paid membership groups got Active status
+    // status: paidMembershipTier ? (membership.status || 'Active') : '',
     memberSince: membership.memberSince || sfData?.joinedDate || '',
     renewalDate: membership.renewalDate || membership.endDate || '',
-    annualCommitment: finalAnnualCommitmentStr,
+    annualCommitment: displayCommitment,
     contributedYtd: formatMoney(contributed),
-    outstanding: formatMoney(calculatedOutstanding),
+    outstanding: displayOutstanding,
     autoRenewal: membership.autoRenewal || (activeRecurring ? 'Enabled' : 'Disabled'),
     paymentMethod: membership.paymentMethod || activeRecurring?.method || '—',
     paymentMethodExpiry: membership.paymentMethodExpiry || activeRecurring?.cardExpiry || '',
@@ -683,7 +1065,10 @@ export function getFinancialSummary(sfData) {
 
   const pledges = getPledges(sfData);
   const pledgeOutstandingSum = pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
-  const calculatedOutstanding = annual > 0 ? Math.max(annual - contributed, 0) : pledgeOutstandingSum;
+  // Pledges drive outstanding / commitment; payments drive history / YTD only.
+  const calculatedOutstanding = pledgeOutstandingSum > 0
+    ? pledgeOutstandingSum
+    : (annual > 0 ? Math.max(annual - contributed, 0) : 0);
   const outstanding = calculatedOutstanding;
 
   const pct = annual > 0 ? Math.round((contributed / annual) * 100) : 0;
@@ -715,8 +1100,25 @@ function toIsoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
+/** TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Yearly/full → 10 min. */
+const ACCELERATED_SCHEDULE_TEST = true;
+
+function getAcceleratedScheduleDelayMinutes(frequency = '') {
+  if (!ACCELERATED_SCHEDULE_TEST) return 0;
+  const freq = String(frequency || '').toLowerCase().trim();
+  if (freq.includes('half') || freq.includes('semi') || freq.includes('install')) return 5;
+  if (freq.includes('annual') || freq.includes('yearly') || freq.includes('year') || freq === 'full') return 10;
+  if (freq.includes('month') || freq === 'monthly' || !freq) return 1;
+  return 1;
+}
+
 function addFrequencyInterval(baseDate, frequency) {
   const next = new Date(baseDate.getTime());
+  const accelMinutes = getAcceleratedScheduleDelayMinutes(frequency);
+  if (accelMinutes > 0) {
+    next.setMinutes(next.getMinutes() + accelMinutes);
+    return next;
+  }
   const freq = String(frequency || '').toLowerCase();
   if (freq.includes('week')) next.setDate(next.getDate() + 7);
   else if (freq.includes('half') || freq.includes('semi')) next.setMonth(next.getMonth() + 6);
@@ -743,8 +1145,7 @@ function amountsMatch(a, b, tolerance = 1.5) {
   return Math.abs(a - b) <= tolerance || Math.abs(a - b) / b < 0.06;
 }
 
-export function getActiveRecurring(sfData) {
-  const recurring = getRecurring(sfData);
+function pickActiveRecurringFromList(recurring = []) {
   return recurring.find(
     (item) => ['active', 'finished', 'open'].includes((item.status || '').toLowerCase()) && item.nextDate,
   )
@@ -756,6 +1157,30 @@ export function getActiveRecurring(sfData) {
     || null;
 }
 
+function isMembershipRelatedItem(item = {}) {
+  const blob = [
+    item.name,
+    item.purpose,
+    item.type,
+    item.subType,
+    item.OneCRM__Type__c,
+    item.OneCRM__Sub_Type__c,
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (blob.includes('tuition') || blob.includes('building') || blob.includes('hebrew') || blob.includes('school')) {
+    return false;
+  }
+  return blob.includes('member') || blob.includes('membership') || blob.includes('campaign');
+}
+
+export function getActiveRecurring(sfData) {
+  return pickActiveRecurringFromList(getRecurring(sfData));
+}
+
+/** Membership-only recurring. Ignores tuition / building / school programs. */
+export function getActiveMembershipRecurring(sfData) {
+  return pickActiveRecurringFromList(getRecurring(sfData).filter(isMembershipRelatedItem));
+}
+
 /**
  * Shared schedule labels/amounts for Dashboard + Financial Overview.
  * Infers monthly / two-installment / full when CRM frequency is missing.
@@ -764,8 +1189,12 @@ export function getPaymentScheduleSummary(sfData) {
   const summary = getFinancialSummary(sfData);
   const membership = getMembership(sfData);
   const payments = getPayments(sfData);
-  const activeRecurring = getActiveRecurring(sfData);
-  const lastPaymentAmount = parseMoney(payments[0]?.amount || payments[0]?.total);
+  // Previous (commented out): first active recurring of any program (e.g. $5000 Recurring Balance).
+  // const activeRecurring = getActiveRecurring(sfData);
+  const activeRecurring = getActiveMembershipRecurring(sfData);
+  const membershipPayments = payments.filter(isMembershipRelatedItem);
+  const lastMembershipPayment = membershipPayments[0] || payments[0];
+  const lastPaymentAmount = parseMoney(lastMembershipPayment?.amount || lastMembershipPayment?.total);
   const recurringAmount = parseMoney(activeRecurring?.amount);
   const frequency = activeRecurring?.frequency || membership.frequency || '';
 
@@ -800,6 +1229,7 @@ export function getPaymentScheduleSummary(sfData) {
     }
   }
 
+  // Membership installment only — never Recurring Balance / non-membership program amount.
   let scheduledAmount = recurringAmount;
   if (!(scheduledAmount > 0)) {
     if (scheduleKind === 'monthly') {
@@ -814,11 +1244,16 @@ export function getPaymentScheduleSummary(sfData) {
       scheduledAmount = summary.outstanding;
     }
   }
+  // Last installment can be smaller than a full month / half-year.
+  if (summary.outstanding > 0 && scheduledAmount > summary.outstanding) {
+    scheduledAmount = summary.outstanding;
+  }
 
   // Next payment date rules (production):
   // - Half Yearly (Installments): 2nd installment is ALWAYS scheduled on 1st of December.
   // - Monthly: 1st of every upcoming month.
-  // TEST MODE: compress to minutes after last payment / now.
+  // - Full payment (paid in full): upcoming renewal = Sept 1 after membership year.
+  // TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Yearly/full → 10 min.
   let nextPaymentDate = '';
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -828,9 +1263,8 @@ export function getPaymentScheduleSummary(sfData) {
   );
 
   if (accelMinutes > 0) {
-    const payments = getPayments(sfData);
     let latestAt = 0;
-    payments.forEach((payment) => {
+    membershipPayments.forEach((payment) => {
       const ts = parseSortableDate(payment.sortDate || payment.date);
       if (ts > latestAt) latestAt = ts;
     });
@@ -860,6 +1294,21 @@ export function getPaymentScheduleSummary(sfData) {
   } else if (scheduleKind === 'monthly') {
     const firstOfNextMonth = new Date(currentYear, currentMonth + 1, 1);
     nextPaymentDate = toIsoDate(firstOfNextMonth);
+  } else if (scheduleKind === 'full' && summary.outstanding <= 0) {
+    // Paid in full — upcoming membership year starts Sept 1 after current tier year (26-27 → 2027-09-01).
+    const yearBlob = [
+      membership.tier,
+      sfData?.groups,
+      sfData?.profile?.groups,
+      sfData?.account?.groups,
+    ].filter(Boolean).join(';');
+    let maxEndYear = 0;
+    for (const m of String(yearBlob).matchAll(/(\d{2})[-/](\d{2})/g)) {
+      maxEndYear = Math.max(maxEndYear, 2000 + parseInt(m[2], 10));
+    }
+    nextPaymentDate = maxEndYear > 0
+      ? `${maxEndYear}-09-01`
+      : `${currentYear + 1}-09-01`;
   } else {
     const raw = activeRecurring?.nextDate || membership.renewalDate || membership.endDate || '';
     const parsed = parseLocalDate(raw);
@@ -874,6 +1323,12 @@ export function getPaymentScheduleSummary(sfData) {
   const balanceLabel = scheduleKind === 'monthly' ? 'Monthly Payments' : 'Net Payment';
   const balanceAmount = scheduleKind === 'full' ? summary.outstanding : scheduledAmount;
   const nextPaymentAmountValue = scheduleKind === 'full' ? summary.outstanding : scheduledAmount;
+  // Paid-in-full: show $0.00 (not em dash) for Upcoming Payment card.
+  const nextPaymentAmountDisplay = nextPaymentAmountValue > 0
+    ? formatMoney(nextPaymentAmountValue)
+    : (scheduleKind === 'full' && summary.annual > 0 ? formatMoney(0) : '—');
+  // Previous (commented out):
+  // nextPaymentAmountDisplay: nextPaymentAmountValue > 0 ? formatMoney(nextPaymentAmountValue) : '—',
 
   return {
     scheduleKind,
@@ -882,14 +1337,15 @@ export function getPaymentScheduleSummary(sfData) {
     balanceAmount,
     balanceAmountDisplay: formatMoney(balanceAmount),
     nextPaymentDate,
-    nextPaymentDateDisplay: formatDisplayDate(nextPaymentDate),
+    nextPaymentDateDisplay: formatDisplayDateTime(nextPaymentDate),
     nextPaymentAmount: nextPaymentAmountValue,
-    nextPaymentAmountDisplay: nextPaymentAmountValue > 0 ? formatMoney(nextPaymentAmountValue) : '—',
+    nextPaymentAmountDisplay,
     membershipRenewalDate,
-    membershipRenewalDateDisplay: formatDisplayDate(membershipRenewalDate),
+    membershipRenewalDateDisplay: formatDisplayDateTime(membershipRenewalDate),
     frequencyLabel: formatFrequencyLabel(
       frequency || (scheduleKind === 'monthly' ? 'Monthly' : scheduleKind === 'installments' ? 'Half Yearly' : 'Annual'),
     ),
+    paidInFull: scheduleKind === 'full' && summary.outstanding <= 0 && summary.annual > 0,
   };
 }
 
@@ -912,18 +1368,6 @@ function hasPaymentInCurrentMonth(sfData) {
   });
 }
 
-/** TEST MODE: Monthly 1 min / Half Yearly 5 min / Yearly 10 min. */
-const ACCELERATED_SCHEDULE_TEST = true;
-
-function getAcceleratedScheduleDelayMinutes(frequency = '') {
-  if (!ACCELERATED_SCHEDULE_TEST) return 0;
-  const freq = String(frequency || '').toLowerCase().trim();
-  if (freq.includes('half') || freq.includes('semi') || freq.includes('install')) return 5;
-  if (freq.includes('annual') || freq.includes('yearly') || freq.includes('year') || freq === 'full') return 10;
-  if (freq.includes('month') || freq === 'monthly') return 1;
-  return 1;
-}
-
 function getLatestPaymentTimestamp(sfData) {
   let latest = 0;
   getPayments(sfData).forEach((payment) => {
@@ -944,12 +1388,151 @@ function getLatestPaymentTimestamp(sfData) {
   return latest;
 }
 
+/**
+ * Match portal tier to Salesforce-assigned commitment / group.
+ * Prefer commitment amount so "…Membership 26-27" does not hit Single Parent ($1560).
+ */
+export function resolveMembershipTierFromSfData(sfData) {
+  const membership = getMembership(sfData);
+  const summary = getFinancialSummary(sfData);
+  const annual = parseMoney(membership.annualCommitment)
+    || parseMoney(summary.annual)
+    || parseMoney(summary.outstanding)
+    || 0;
+  const blob = [
+    membership.tier,
+    sfData?.groups,
+    sfData?.profile?.groups,
+    sfData?.account?.groups,
+    sfData?.membership?.tier,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  if (annual > 0) {
+    const byPrice = ALL_MEMBERSHIP_TIERS.find(
+      (tier) => Math.abs(Number(tier.annualPrice) - annual) < 1,
+    );
+    if (byPrice) return { ...byPrice, annualPrice: annual };
+  }
+
+  if (blob.includes('chai leadership')) {
+    const tier = ALL_MEMBERSHIP_TIERS.find((item) => item.id === 'chai-leadership-circle');
+    if (tier) return { ...tier, annualPrice: annual > 0 ? annual : tier.annualPrice };
+  }
+  if (blob.includes('chai rabbi')) {
+    const tier = ALL_MEMBERSHIP_TIERS.find((item) => item.id === 'chai-rabbis-circle');
+    if (tier) return { ...tier, annualPrice: annual > 0 ? annual : tier.annualPrice };
+  }
+  if (blob.includes('chai partner')) {
+    const tier = ALL_MEMBERSHIP_TIERS.find((item) => item.id === 'chai-partner');
+    if (tier) return { ...tier, annualPrice: annual > 0 ? annual : tier.annualPrice };
+  }
+  if (blob.includes('chai donor')) {
+    const tier = ALL_MEMBERSHIP_TIERS.find((item) => item.id === 'chai-donor');
+    if (tier) return { ...tier, annualPrice: annual > 0 ? annual : tier.annualPrice };
+  }
+
+  let best = null;
+  let bestScore = 0;
+  ALL_MEMBERSHIP_TIERS.forEach((tier) => {
+    const needles = [
+      String(tier.sfGroup || '').toLowerCase().replace(/\s*\(\s*household\s*\)/gi, '').trim(),
+      String(tier.name || '').toLowerCase(),
+    ].filter((needle) => needle && needle.length >= 12);
+
+    needles.forEach((needle) => {
+      if (blob.includes(needle) && needle.length > bestScore) {
+        best = tier;
+        bestScore = needle.length;
+      }
+    });
+  });
+  if (best) return { ...best, annualPrice: annual > 0 ? annual : best.annualPrice };
+
+  if (annual > 0) {
+    return {
+      id: 'sf-assigned',
+      name: membership.tier || 'Membership',
+      sfGroup: membership.tier || 'Membership',
+      annualPrice: annual,
+    };
+  }
+  return null;
+}
+
+/**
+ * CRM assigned membership — show Pay Membership → contribution schedule
+ * (monthly / half-yearly / full). First login after Salesforce sets a group
+ * with a commitment amount (portal tier OR other SF group e.g. Building Donors).
+ */
+export function needsSalesforceMembershipScheduleSetup(sfData) {
+  if (!sfData || isGuestUser(sfData)) return false;
+
+  const membership = getMembership(sfData);
+  const tierName = membership.tier
+    || sfData?.groups
+    || sfData?.account?.groups
+    || sfData?.profile?.groups
+    || '';
+  // Previous (commented out): only portal paid tiers (Family/Chai/…) showed Pay Membership,
+  // so SF groups like "Building Donors HH" never got the dashboard button.
+  // if (!hasRealMembershipGroup(tierName)) return false;
+  const hasSfAssignedGroup = hasRealMembershipGroup(tierName)
+    || hasAssignedSalesforceGroup(tierName)
+    || Boolean(getSalesforceAssignedGroup(sfData));
+  if (!hasSfAssignedGroup) return false;
+
+  const resolvedTier = resolveMembershipTierFromSfData(sfData);
+  const annualFromTier = Number(resolvedTier?.annualPrice) || 0;
+  const summary = getFinancialSummary(sfData);
+  const annual = parseMoney(membership.annualCommitment) || summary.annual || annualFromTier || 0;
+  const outstanding = parseMoney(summary.outstanding) || parseMoney(membership.outstanding) || 0;
+  const paid = parseMoney(summary.totalContributed)
+    || parseMoney(summary.contributed)
+    || parseMoney(membership.contributedYtd)
+    || 0;
+  const payments = getPayments(sfData);
+
+  // Commented out: required pledge annual/outstanding > 0, which hid the dashboard
+  // Pay button when Salesforce Groups had a membership but Make pledges were empty
+  // (Family Membership 26-27 with Commitment $0 / Outstanding $0).
+  // if (!(annual > 0) || !(outstanding > 0)) return false;
+  // if (payments.length > 0 && paid > 0) return false;
+  // return paid <= 0;
+
+  // Building Prospects / empty-amount SF groups: no Pay Membership ($0 commitment).
+  if (!(annual > 0)) return false;
+
+  // Ignore tiny non-membership donations (e.g. $1 General Donation) as "already paid".
+  const hasMembershipPayment = payments.some((payment) => {
+    const amount = parseMoney(payment.amount || payment.total);
+    if (amount <= 0) return false;
+    const blob = `${payment.type || ''} ${payment.subType || ''} ${payment.name || ''} ${payment.purpose || ''}`.toLowerCase();
+    if (blob.includes('donation') && !blob.includes('membership')) return false;
+    if (amount < 50 && !blob.includes('membership')) return false;
+    return blob.includes('membership')
+      || blob.includes('campaign')
+      || blob.includes('cash payment');
+  });
+  if (hasMembershipPayment) return false;
+
+  // Real pledge already fully paid — no schedule setup needed.
+  if (outstanding <= 0 && paid >= annual && annual > 0) {
+    const pledges = (sfData?.financials?.pledges?.length ? sfData.financials.pledges : sfData?.pledges) || [];
+    if (pledges.some((item) => parseMoney(item.paid) > 0)) return false;
+  }
+
+  return true;
+}
+
 export function isPaymentWindowOpen(sfData) {
   if (!sfData) return false;
 
   const summary = getFinancialSummary(sfData);
   const outstandingVal = parseMoney(summary.outstanding);
   if (outstandingVal <= 0) return false;
+
+  // Salesforce-assigned unpaid membership: always allow pay setup.
+  if (needsSalesforceMembershipScheduleSetup(sfData)) return true;
 
   const schedule = getPaymentScheduleSummary(sfData);
   const accelMinutes = getAcceleratedScheduleDelayMinutes(
@@ -967,6 +1550,8 @@ export function isPaymentWindowOpen(sfData) {
     || /month/i.test(schedule.frequencyLabel || '');
 
   // Monthly: once this month's installment is paid, hide until next month.
+  // Without this, the 30-day window for the 1st of next month keeps the button
+  // visible for nearly the entire month (e.g. paid Aug 13, due Sep 1).
   if (isMonthly && hasPaymentInCurrentMonth(sfData)) {
     return false;
   }
@@ -979,7 +1564,9 @@ export function isPaymentWindowOpen(sfData) {
   }
 
   const now = new Date();
-  const nextDate = new Date(nextDateStr.includes('T') ? nextDateStr : `${nextDateStr}T00:00:00`);
+  const nextDate = new Date(
+    nextDateStr.includes('T') ? nextDateStr : `${nextDateStr}T00:00:00`,
+  );
 
   if (isNaN(nextDate.getTime())) {
     return outstandingVal > 0;

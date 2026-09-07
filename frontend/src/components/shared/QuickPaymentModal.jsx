@@ -5,7 +5,13 @@ import {
 import { fetchPortalApi } from '../../utils/portalApi';
 import { showToast } from '../../utils/toast';
 import { ALL_MEMBERSHIP_TIERS } from '../../onboard/data/membershipTiers';
-import { getMembership, getRecurring, parseMoney } from '../../utils/portalData';
+import {
+  getMembership,
+  getRecurring,
+  parseMoney,
+  getPaymentScheduleSummary,
+  getFinancialSummary,
+} from '../../utils/portalData';
 
 const TYPE_OPTIONS = [
   { id: 'Campaign', label: 'Campaign' },
@@ -40,6 +46,9 @@ const DEDICATION_TYPES = [
 
 const FREQUENCIES = [
   { id: 'Monthly', label: 'Monthly' },
+  { id: 'Half Yearly', label: 'Half Yearly' },
+  { id: 'Annual', label: 'Annual' },
+  { id: 'Weekly', label: 'Weekly' },
 ];
 
 function todayIsoDate() {
@@ -108,8 +117,9 @@ function resolveMembershipDefaults({ sfData, defaultSubType, groups, defaultAmou
     subTypeName = defaultSubType;
   }
 
-  // Live Quick Contribution only offers Monthly recurring.
-  const frequency = 'Monthly';
+  const frequency = defaultFrequency
+    || activeRecurring?.frequency
+    || 'Monthly';
 
   const recurringAmount = parseMoney(activeRecurring?.amount);
   const computedAmount = tier
@@ -122,7 +132,7 @@ function resolveMembershipDefaults({ sfData, defaultSubType, groups, defaultAmou
 
   return {
     subType: subTypeName,
-    frequency,
+    frequency: /semi[-\s]?annual/i.test(String(frequency)) ? 'Half Yearly' : frequency,
     amount: amountNumber > 0 ? amountNumber.toFixed(2) : '0.00',
     annualPrice: tier?.annualPrice || 0,
   };
@@ -159,25 +169,27 @@ export default function QuickPaymentModal({
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [paymentMethodType, setPaymentMethodType] = useState('us_bank_account'); // 'card' or 'us_bank_account'
-  const [membershipSuggestedAmount, setMembershipSuggestedAmount] = useState('');
   const amountInputRef = useRef(null);
 
-  const isMembership = paymentType === 'Membership'
-    || (paymentType === 'Campaign' && (
-      subType === 'Membership'
-      || Boolean(findMembershipTier(subType))
-      || Boolean(findMembershipTier(groups || defaultSubType || ''))
-    ));
+  const isMembership = (paymentType === 'Campaign' && subType === 'Membership') || paymentType === 'Membership';
 
-  const applyMembershipAmount = (tierName, nextFrequency) => {
-    const tier = findMembershipTier(tierName || defaultSubType || groups || sfData?.account?.groups || 'Family Membership');
-    if (!tier) return;
-    const nextAmount = getMembershipPaymentAmount(tier.annualPrice, nextFrequency);
-    if (nextAmount > 0) {
-      const formatted = nextAmount.toFixed(2);
-      setMembershipSuggestedAmount(formatted);
-      setAmount(formatted);
+  const applyMembershipAmount = (tierName, nextFrequency, nextBillingMode = billingMode) => {
+    const tier = findMembershipTier(
+      tierName || defaultSubType || groups || sfData?.account?.groups || 'Family Membership',
+    );
+    const summary = getFinancialSummary(sfData);
+    const annual = Number(pledgeAmount) > 0
+      ? Number(pledgeAmount)
+      : (summary.annual > 0 ? summary.annual : (tier?.annualPrice || 0));
+    if (!(annual > 0)) return;
+
+    if (nextBillingMode === 'one-time') {
+      setAmount(annual.toFixed(2));
+      return;
     }
+
+    const nextAmount = getMembershipPaymentAmount(annual, nextFrequency);
+    if (nextAmount > 0) setAmount(nextAmount.toFixed(2));
   };
 
   useEffect(() => {
@@ -191,43 +203,76 @@ export default function QuickPaymentModal({
       nextSubType = 'Membership';
     }
 
-    const nextBillingMode = defaultBillingMode === 'recurring' ? 'recurring' : 'one-time';
+    const isMembershipPayment = nextType === 'Campaign' && (
+      nextSubType === 'Membership'
+      || String(defaultSubType || '').toLowerCase().includes('membership')
+      || String(groups || '').toLowerCase().includes('membership')
+    );
+
+    const schedule = getPaymentScheduleSummary(sfData);
+    const summary = getFinancialSummary(sfData);
+    const scheduleIsInstallment = schedule.scheduleKind === 'monthly'
+      || schedule.scheduleKind === 'installments';
+
+    let nextBillingMode = 'one-time';
+    if (defaultBillingMode === 'recurring' || defaultBillingMode === 'one-time') {
+      nextBillingMode = defaultBillingMode;
+    } else if (isMembershipPayment && scheduleIsInstallment) {
+      nextBillingMode = 'recurring';
+    }
+
+    const scheduleFrequency = schedule.scheduleKind === 'installments'
+      ? 'Half Yearly'
+      : (schedule.scheduleKind === 'monthly' ? 'Monthly' : '');
+    const nextFrequency = defaultFrequency || scheduleFrequency || 'Monthly';
 
     setBillingMode(nextBillingMode);
     setPaymentType(nextType);
-    setSubType(nextSubType);
+    setSubType(
+      nextType === 'Campaign' && (
+        nextSubType === 'Membership'
+        || String(defaultSubType || '').toLowerCase().includes('membership')
+        || String(groups || '').toLowerCase().includes('membership')
+      )
+        ? 'Membership'
+        : nextSubType,
+    );
     setStartDate(todayIsoDate());
-    setDedicationType(readOnly ? 'None' : 'In Honor Of');
+    setDedicationType('None');
     setDedicationName('');
     setNote(defaultMemo || '');
     setPaymentMethodType('us_bank_account');
     setLoading(false);
 
-    if (nextType === 'Campaign' && nextSubType === 'Membership') {
+    if (isMembershipPayment) {
       const membershipDefaults = resolveMembershipDefaults({
         sfData,
         defaultSubType: defaultSubType === 'Membership' ? null : defaultSubType,
         groups,
         defaultAmount,
-        defaultFrequency,
+        defaultFrequency: nextFrequency,
       });
-      setFrequency(membershipDefaults.frequency);
-      setAmount(membershipDefaults.amount);
-      setMembershipSuggestedAmount(membershipDefaults.amount);
-      if (nextBillingMode === 'one-time' && !defaultFrequency) {
-        const tier = findMembershipTier(membershipDefaults.subType);
-        if (tier && !defaultAmount) {
-          const annual = tier.annualPrice.toFixed(2);
-          setAmount(annual);
-          setMembershipSuggestedAmount(annual);
-        }
+      const freq = membershipDefaults.frequency || nextFrequency;
+      setFrequency(freq);
+
+      // Recurring = installment; One-time = full annual. Prefer explicit defaultAmount.
+      if (defaultAmount) {
+        setAmount(Number(defaultAmount).toFixed(2));
+      } else if (nextBillingMode === 'one-time') {
+        const annual = Number(pledgeAmount) > 0
+          ? Number(pledgeAmount)
+          : (summary.annual || membershipDefaults.annualPrice || 0);
+        setAmount(annual > 0 ? annual.toFixed(2) : membershipDefaults.amount);
+      } else if (schedule.nextPaymentAmount > 0) {
+        setAmount(Number(schedule.nextPaymentAmount).toFixed(2));
+      } else {
+        setAmount(membershipDefaults.amount);
       }
     } else {
       setAmount(defaultAmount || '100.00');
-      setFrequency(defaultFrequency || 'Monthly');
-      setMembershipSuggestedAmount('');
+      setFrequency(nextFrequency);
     }
-  }, [open, defaultAmount, defaultType, defaultSubType, defaultBillingMode, defaultFrequency, defaultMemo, readOnly, sfData, groups]);
+  }, [open, defaultAmount, defaultType, defaultSubType, defaultBillingMode, defaultFrequency, defaultMemo, readOnly, sfData, groups, pledgeAmount]);
 
   if (!open) return null;
 
@@ -243,7 +288,11 @@ export default function QuickPaymentModal({
         defaultFrequency: frequency,
       });
       setFrequency(membershipDefaults.frequency);
-      setAmount(membershipDefaults.amount);
+      applyMembershipAmount(
+        membershipDefaults.subType || defaultSubType || groups || 'Family Membership',
+        membershipDefaults.frequency,
+        billingMode,
+      );
       return;
     }
 
@@ -263,8 +312,15 @@ export default function QuickPaymentModal({
 
   const handleFrequencyChange = (nextFrequency) => {
     setFrequency(nextFrequency);
-    if ((paymentType === 'Campaign' && subType === 'Membership') || paymentType === 'Membership') {
-      applyMembershipAmount(defaultSubType || groups || 'Family Membership', nextFrequency);
+    if (isMembership) {
+      applyMembershipAmount(defaultSubType || groups || 'Family Membership', nextFrequency, billingMode);
+    }
+  };
+
+  const handleBillingModeChange = (nextMode) => {
+    setBillingMode(nextMode);
+    if (isMembership) {
+      applyMembershipAmount(defaultSubType || groups || subType || 'Family Membership', frequency, nextMode);
     }
   };
 
@@ -291,6 +347,19 @@ export default function QuickPaymentModal({
     try {
       const payloadType = paymentType === 'Membership' ? 'Campaign' : paymentType;
       const payloadSubType = paymentType === 'Membership' ? 'Membership' : subType;
+      const tierForPledge = isMembership
+        ? findMembershipTier(groups || defaultSubType || subType || 'Family Membership')
+        : null;
+      // Membership recurring: send full annual commitment (e.g. $187/mo → pledge $2244).
+      const resolvedPledgeAmount = isMembership
+        ? (Number(pledgeAmount) > 0
+          ? Number(pledgeAmount)
+          : (tierForPledge?.annualPrice
+            || (frequency === 'Half Yearly' ? parsedAmount * 2
+              : frequency === 'Weekly' ? parsedAmount * 52
+                : frequency === 'Annual' ? parsedAmount
+                  : parsedAmount * 12)))
+        : (Number(pledgeAmount) || 0);
 
       const data = await fetchPortalApi('/api/payments/quick-payment', {
         getAuthToken,
@@ -303,9 +372,9 @@ export default function QuickPaymentModal({
           type: payloadType,
           paymentType: payloadType,
           subType: payloadSubType,
-          membershipTier: subType,
+          membershipTier: groups || defaultSubType || subType,
           memo: note || dedicationName ? `${dedicationType}: ${dedicationName}. Note: ${note}` : '',
-          pledgeAmount: pledgeAmount || 0,
+          pledgeAmount: Math.round(Number(resolvedPledgeAmount) * 100) / 100,
           paymentAmount: parsedAmount,
           billingMode: billingMode === 'recurring' ? 'recurring' : 'regular',
           frequency: frequency,
@@ -739,19 +808,17 @@ export default function QuickPaymentModal({
 
         <form onSubmit={handleSubmit} className="qc-form-body">
           <div className="qc-toggle-group" style={readOnly ? { pointerEvents: 'none', opacity: 0.85 } : {}}>
-            {!(readOnly && billingMode === 'recurring') && (
-              <button
-                type="button"
-                className={`qc-toggle-btn ${billingMode === 'one-time' ? 'active' : ''}`}
-                onClick={() => setBillingMode('one-time')}
-              >
-                <Heart size={13} /> One-Time
-              </button>
-            )}
+            <button
+              type="button"
+              className={`qc-toggle-btn ${billingMode === 'one-time' ? 'active' : ''}`}
+              onClick={() => handleBillingModeChange('one-time')}
+            >
+              <Heart size={13} /> One-Time
+            </button>
             <button
               type="button"
               className={`qc-toggle-btn ${billingMode === 'recurring' ? 'active' : ''}`}
-              onClick={() => setBillingMode('recurring')}
+              onClick={() => handleBillingModeChange('recurring')}
             >
               <Calendar size={13} /> Recurring
             </button>
@@ -829,7 +896,7 @@ export default function QuickPaymentModal({
 
           <div className="qc-field" style={{ marginTop: '10px' }}>
             <label className="qc-label">Amount (USD)</label>
-            <div className="qc-amount-input-box">
+            <div className="qc-amount-input-box" style={readOnly ? { backgroundColor: 'var(--bg-card-hover)', opacity: 0.8 } : {}}>
               <span className="qc-amount-symbol">$</span>
               <input
                 ref={amountInputRef}
@@ -841,39 +908,13 @@ export default function QuickPaymentModal({
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
                 required
+                disabled={readOnly}
+                readOnly={readOnly}
               />
             </div>
           </div>
 
-          {/* Membership: show suggested installment pill only — no $50/$100/$250 presets.
-              Amount field above stays editable for a custom payment. */}
-          {isMembership && (
-            <div style={{ marginBottom: '10px' }}>
-              <div className="qc-pills-row">
-                <button
-                  type="button"
-                  className={`qc-pill ${parseFloat(amount) === parseFloat(membershipSuggestedAmount || amount) ? 'active' : ''}`}
-                  onClick={() => {
-                    const suggested = membershipSuggestedAmount
-                      || (() => {
-                        const tier = findMembershipTier(subType || defaultSubType || groups || '');
-                        if (!tier) return '';
-                        return getMembershipPaymentAmount(tier.annualPrice, frequency).toFixed(2);
-                      })();
-                    if (suggested) {
-                      setMembershipSuggestedAmount(suggested);
-                      setAmount(suggested);
-                    }
-                  }}
-                >
-                  ${membershipSuggestedAmount || formattedBtnAmount || '0.00'}
-                  {billingMode === 'recurring' ? ` / ${frequency === 'Half Yearly' ? 'half year' : frequency.toLowerCase()}` : ''}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!isMembership && !readOnly && (
+          {!readOnly && !isMembership && (
             <div style={{ marginBottom: '10px' }}>
               <div className="qc-pills-row">
                 {['50', '100', '250'].map((val) => (
@@ -892,6 +933,23 @@ export default function QuickPaymentModal({
                   onClick={() => handleAmountPillClick('Other')}
                 >
                   Other
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isMembership && (
+            <div style={{ marginBottom: '10px' }}>
+              <div className="qc-pills-row">
+                <button
+                  type="button"
+                  className="qc-pill active"
+                  onClick={() => {
+                    if (!readOnly) applyMembershipAmount(subType, frequency);
+                  }}
+                >
+                  {formattedBtnAmount || '$0.00'}
+                  {billingMode === 'recurring' ? ` / ${frequency === 'Half Yearly' ? 'half year' : frequency.toLowerCase()}` : ''}
                 </button>
               </div>
             </div>
@@ -935,50 +993,46 @@ export default function QuickPaymentModal({
             </>
           )}
 
-          {!readOnly && (
+          <div className="qc-field" style={{ marginTop: '10px' }}>
+            <label className="qc-label">Dedication (Optional)</label>
+            <div className="qc-input-box">
+              <Gift size={14} className="qc-input-icon" />
+              <select
+                className="qc-select"
+                value={dedicationType}
+                onChange={(e) => setDedicationType(e.target.value)}
+              >
+                {DEDICATION_TYPES.map((d) => (
+                  <option key={d.id} value={d.id}>{d.label}</option>
+                ))}
+              </select>
+              <span className="qc-select-arrow">▼</span>
+            </div>
+          </div>
+
+          {dedicationType !== 'None' && (
             <>
               <div className="qc-field" style={{ marginTop: '10px' }}>
-                <label className="qc-label">Dedication (Optional)</label>
-                <div className="qc-input-box">
-                  <Gift size={14} className="qc-input-icon" />
-                  <select
-                    className="qc-select"
-                    value={dedicationType}
-                    onChange={(e) => setDedicationType(e.target.value)}
-                  >
-                    {DEDICATION_TYPES.map((d) => (
-                      <option key={d.id} value={d.id}>{d.label}</option>
-                    ))}
-                  </select>
-                  <span className="qc-select-arrow">▼</span>
-                </div>
+                <label className="qc-label">Dedication Name</label>
+                <input
+                  type="text"
+                  className="qc-text-input"
+                  value={dedicationName}
+                  onChange={(e) => setDedicationName(e.target.value)}
+                  placeholder="Someone's Name"
+                />
               </div>
 
-              {dedicationType !== 'None' && (
-                <>
-                  <div className="qc-field" style={{ marginTop: '10px' }}>
-                    <label className="qc-label">Dedication Name</label>
-                    <input
-                      type="text"
-                      className="qc-text-input"
-                      value={dedicationName}
-                      onChange={(e) => setDedicationName(e.target.value)}
-                      placeholder="Someone's Name"
-                    />
-                  </div>
-
-                  <div style={{ marginTop: '10px', marginBottom: '10px' }}>
-                    <textarea
-                      className="qc-textarea"
-                      maxLength={150}
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      placeholder="Add a note (optional)"
-                    />
-                    <div className="qc-char-counter">{note.length}/150</div>
-                  </div>
-                </>
-              )}
+              <div style={{ marginTop: '10px', marginBottom: '10px' }}>
+                <textarea
+                  className="qc-textarea"
+                  maxLength={150}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Add a note (optional)"
+                />
+                <div className="qc-char-counter">{note.length}/150</div>
+              </div>
             </>
           )}
 
@@ -988,6 +1042,10 @@ export default function QuickPaymentModal({
               'Processing...'
             ) : billingMode === 'one-time' ? (
               `Pay ${formattedBtnAmount} Now`
+            ) : frequency === 'Half Yearly' ? (
+              'Start Half-Yearly Giving'
+            ) : frequency === 'Annual' ? (
+              'Start Annual Giving'
             ) : (
               'Start Monthly Giving'
             )}

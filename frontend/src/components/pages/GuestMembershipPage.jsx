@@ -10,7 +10,9 @@ import {
 import PortalPageLayout from '../shared/PortalPageLayout';
 import ChabadLogo from '../shared/ChabadLogo';
 import { ONBOARD_FIRST_FORM_PATH } from '../../onboard/utils/onboardingRoutes';
-import { markPostLoginStepperPending, getPostLoginStepperEntryPath } from '../../onboard/utils/postLoginStepper';
+import { startChooseMembershipStepper } from '../../onboard/utils/postLoginStepper';
+// import { markPostLoginStepperPending, getPostLoginStepperEntryPath } from '../../onboard/utils/postLoginStepper';
+import { getSalesforceAssignedGroup } from '../../utils/portalData';
 
 const MEMBERSHIP_BENEFITS = [
   {
@@ -42,10 +44,13 @@ const MEMBERSHIP_BENEFITS = [
 
 export default function GuestMembershipPage({ theme, onNavigate, user, sfData }) {
   const benefitsRef = useRef(null);
+  const assignedGroup = getSalesforceAssignedGroup(sfData);
 
   const handleBecomeMember = () => {
-    markPostLoginStepperPending();
-    window.location.assign(getPostLoginStepperEntryPath());
+    // Previous (commented out): always opened full stepper (Spouse first)
+    // markPostLoginStepperPending();
+    // window.location.assign(getPostLoginStepperEntryPath());
+    startChooseMembershipStepper(sfData);
   };
 
 
@@ -75,6 +80,26 @@ export default function GuestMembershipPage({ theme, onNavigate, user, sfData })
           <span className="guest-membership-heart-badge" aria-hidden="true">
             <Heart size={18} strokeWidth={1.75} />
           </span>
+
+          {assignedGroup ? (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'rgba(212, 175, 55, 0.15)',
+                border: '1px solid #d4af37',
+                color: '#8a6d1d',
+                padding: '8px 14px',
+                borderRadius: '999px',
+                fontWeight: 700,
+                fontSize: '13px',
+                marginBottom: '14px',
+              }}
+            >
+              Current Salesforce group: {assignedGroup}
+            </div>
+          ) : null}
 
           <h2 className="guest-membership-title">You&apos;re Not a Member Yet</h2>
 

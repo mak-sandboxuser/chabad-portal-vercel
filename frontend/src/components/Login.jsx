@@ -8,8 +8,8 @@ import { ONBOARD_PATH } from './onboard/OnboardWelcome';
 import {
   releasePostLoginStepperPending,
   prepareOnboardingDraftForLogin,
-  markPostLoginStepperPending,
-  getPostLoginStepperEntryPath,
+  // markPostLoginStepperPending,
+  // getPostLoginStepperEntryPath,
 } from '../onboard/utils/postLoginStepper';
 import { clearDraft, writeThemeCookie } from '../onboard/utils/onboardingCookies';
 import { clearRecentMembershipPayment } from '../utils/portalData';
@@ -120,14 +120,19 @@ export default function Login({ initialError = '' }) {
       localStorage.setItem('sf_user_session', JSON.stringify(userSession));
       prepareOnboardingDraftForLogin(cleanEmail);
 
+      // Previous (commented out): Guest/empty role jumped to the stepper before
+      // portal household data loaded, so a 2-person household still started at Spouse.
+      // if (needsMembershipStepper) {
+      //   clearRecentMembershipPayment();
+      //   markPostLoginStepperPending();
+      //   showToast({ message: `Welcome, ${userSession.name}! Continue your membership application.`, type: 'success' });
+      //   setTimeout(() => {
+      //     window.location.replace(getPostLoginStepperEntryPath());
+      //   }, 300);
+      //   return;
+      // }
       if (needsMembershipStepper) {
         clearRecentMembershipPayment();
-        markPostLoginStepperPending();
-        showToast({ message: `Welcome, ${userSession.name}! Continue your membership application.`, type: 'success' });
-        setTimeout(() => {
-          window.location.replace(getPostLoginStepperEntryPath());
-        }, 300);
-        return;
       }
 
       // Do not mark stepper "completed" here — CRM often returns role "Member"

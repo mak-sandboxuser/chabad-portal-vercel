@@ -23,7 +23,7 @@ import {
   getPreviousPreferenceStepId,
   isFirstPreferenceStep,
 } from '../utils/householdPreferences';
-import { signOutFromOnboarding, isPostLoginStepperPending, dismissPostLoginStepperPending } from '../utils/postLoginStepper';
+import { signOutFromOnboarding, isPostLoginStepperPending, dismissPostLoginStepperPending, isChooseMembershipExistingHousehold } from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = MEMBERSHIP_STEP_ID;
@@ -205,12 +205,22 @@ export default function MembershipSelection() {
 
         <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
 
+        {!isChooseMembershipExistingHousehold() && (
+          <KnowYouBetterPanel
+            draft={draft}
+            updateDraft={updateDraft}
+            persistNow={persistNow}
+            currentStepId={THIS_STEP_ID}
+          />
+        )}
+        {/* Previous (commented out): always showed Help Us Know You Better on Membership
         <KnowYouBetterPanel
           draft={draft}
           updateDraft={updateDraft}
           persistNow={persistNow}
           currentStepId={THIS_STEP_ID}
         />
+        */}
 
         <main>
           {isPaid ? (

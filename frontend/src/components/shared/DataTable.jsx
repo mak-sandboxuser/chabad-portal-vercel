@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle2 } from 'lucide-react';
 
-export default function DataTable({ columns, rows, emptyMessage = 'No records found.' }) {
+export default function DataTable({ columns, rows, emptyMessage = 'No records found.', align = 'left' }) {
   if (!rows?.length) {
     return (
       <div className="portal-empty-table glass-panel">
@@ -10,9 +10,15 @@ export default function DataTable({ columns, rows, emptyMessage = 'No records fo
     );
   }
 
+  const tableClassName = [
+    'members-table',
+    'portal-data-table',
+    align === 'center' ? 'portal-data-table--center' : '',
+  ].filter(Boolean).join(' ');
+
   return (
     <div className="table-wrapper">
-      <table className="members-table portal-data-table">
+      <table className={tableClassName}>
         <thead>
           <tr>
             {columns.map((column) => (

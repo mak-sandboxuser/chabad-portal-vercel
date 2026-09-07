@@ -4,7 +4,7 @@ import {
   Calendar,
   TrendingUp,
   ArrowUpRight,
-  ShieldCheck,
+  // ShieldCheck, // was used for Auto-pay on Next Payment
   Handshake,
   Star,
   Heart,
@@ -14,17 +14,26 @@ import BuildingSketch from './shared/BuildingSketch';
 import {
   formatDisplayDate,
   formatMoney,
+  formatPaymentDescription,
+  getPaymentHistoryDescription,
+  parseMoney,
   getContacts,
   getFinancialSummary,
   getMembership,
   getPaymentScheduleSummary,
   getPayments,
   isPaymentWindowOpen,
+  needsSalesforceMembershipScheduleSetup,
+  getSalesforceAssignedGroup,
+  hasRealMembershipGroup,
 } from '../utils/portalData';
 import {
-  markPostLoginStepperPending,
-  getPostLoginStepperEntryPath,
+  // markPostLoginStepperPending,
+  // getPostLoginStepperEntryPath,
+  startChooseMembershipStepper,
+  startSalesforceMembershipSchedulePayment,
 } from '../onboard/utils/postLoginStepper';
+import { showToast } from '../utils/toast';
 
 function GuestMembershipInviteBanner({ firstName, onBecomeMember }) {
   return (
@@ -107,14 +116,44 @@ export default function DashboardHome({
   const schedule = getPaymentScheduleSummary(sfData);
 
   const contributedYtd = summary.contributedYtd || totalContributed || '$2824.00';
-  const canPayNow = isPaymentWindowOpen(sfData);
+  const needsSfMembershipPay = needsSalesforceMembershipScheduleSetup(sfData);
+  const canPayNow = isPaymentWindowOpen(sfData) || needsSfMembershipPay;
+  // Full membership payment complete → hide Upcoming/Next Payment card (code kept below).
+  const isFullPaymentComplete = Boolean(schedule.paidInFull) && !needsSfMembershipPay;
+  const hideUpcomingPaymentCard = !needsSfMembershipPay
+    && parseMoney(summary.outstanding) <= 0
+    && parseMoney(membership.annualCommitment) > 0;
 
   const handleBecomeMember = () => {
-    markPostLoginStepperPending();
-    window.location.assign(getPostLoginStepperEntryPath());
+    // Previous (commented out): always opened full stepper (Spouse first)
+    // markPostLoginStepperPending();
+    // window.location.assign(getPostLoginStepperEntryPath());
+    startChooseMembershipStepper(sfData);
+  };
+
+  const handleSfMembershipPay = () => {
+    try {
+      startSalesforceMembershipSchedulePayment(sfData);
+    } catch (err) {
+      showToast({ message: err.message || 'Unable to start membership payment.', type: 'error' });
+    }
+  };
+
+  const handlePayClick = () => {
+    if (needsSfMembershipPay) {
+      handleSfMembershipPay();
+      return;
+    }
+    onDonate?.();
   };
 
   if (paymentsDisabled) {
+    // Previous (commented out): special $0 + group badge layout for non-portal SF groups.
+    // Now those users use the same paid-tier dashboard (via isGuestUser=false) with $0 amounts.
+    // const sfGroup = getSalesforceAssignedGroup(sfData);
+    // const isUndefinedPortalGroup = Boolean(sfGroup && !hasRealMembershipGroup(sfGroup));
+    // if (isUndefinedPortalGroup) { return ( ... $0 cards ... ); }
+
     return (
       <div className="member-dashboard" style={{ width: '100%' }}>
         <div className="member-dashboard-main" style={{ width: '100%' }}>
@@ -147,8 +186,42 @@ export default function DashboardHome({
           <BuildingSketch theme={theme} className="dash-welcome-sketch" />
         </div>
 
-        {/* 3 Executive Summary Cards */}
-        <div className="dash-balance-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '22px', width: '100%' }}>
+        {needsSfMembershipPay && (
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              marginTop: '18px',
+              padding: '18px 22px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              flexWrap: 'wrap',
+              border: '1px solid rgba(196, 149, 74, 0.35)',
+              background: 'linear-gradient(135deg, rgba(196, 149, 74, 0.08), rgba(255,255,255,0.4))',
+            }}
+          >
+            <div>
+              <strong style={{ display: 'block', fontSize: '16px', marginBottom: '4px' }}>
+                Complete your membership payment
+              </strong>
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Your membership is ready. Choose the payment option that works best for you.
+                {/* Previous (commented out):
+                Your membership was set in Salesforce. Choose monthly, half-yearly, or pay in full to continue.
+                */}
+              </span>
+            </div>
+            <PaymentActionButton className="dash-btn-gold" onClick={handleSfMembershipPay}>
+              Pay Membership
+              <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+            </PaymentActionButton>
+          </div>
+        )}
+
+        {/* 3 Executive Summary Cards (2 when Upcoming Payment is hidden after full pay) */}
+        <div className="dash-balance-row" style={{ display: 'grid', gridTemplateColumns: hideUpcomingPaymentCard ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '22px', width: '100%' }}>
           
           {/* Card 1: Total Contributed YTD */}
           <div className="dash-balance-card glass-panel dash-card-fancy" style={{ padding: '28px 30px', minHeight: '195px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
@@ -171,8 +244,7 @@ export default function DashboardHome({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Since 2023 To Till Date</span>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Synced from CRM</span>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Since 2026 To Till Date</span>
             </div>
           </div>
 
@@ -196,64 +268,90 @@ export default function DashboardHome({
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {schedule.nextPaymentDate ? `Due on ${schedule.nextPaymentDateDisplay}` : 'No due date scheduled'}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingTop: '4px' }}>
               {canPayNow && (
                 <PaymentActionButton
                   className="dash-btn-gold-action"
-                  onClick={() => onDonate({
-                    type: 'Campaign',
-                    subType: 'Membership',
-                    billingMode: schedule.scheduleKind === 'full' ? 'one-time' : 'recurring',
-                    frequency: 'Monthly',
-                    amount: schedule.nextPaymentAmount > 0
-                      ? schedule.nextPaymentAmount.toFixed(2)
-                      : undefined,
-                    groups: membership.tier || undefined,
-                    readOnly: true,
-                    source: 'dashboard_make_payment',
-                  })}
+                  onClick={handlePayClick}
                 >
-                  Make Payment
+                  {needsSfMembershipPay ? 'Pay Membership' : 'Make Payment'}
                   <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
                 </PaymentActionButton>
               )}
             </div>
           </div>
 
-          {/* Card 3: Next Scheduled Contribution */}
+          {/* Card 3: Next / Upcoming Payment — hidden when paid in full (do not delete) */}
+          {!hideUpcomingPaymentCard && (
           <div className="dash-balance-card glass-panel dash-card-fancy" style={{ padding: '28px 30px', minHeight: '195px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div className="dash-icon-wrapper blue-glow">
                   <Calendar size={18} />
                 </div>
-                <span className="dash-card-title">Next Payment</span>
+                <span className="dash-card-title">
+                  Upcoming Payment
+                  {/* Previous (commented out): Next Payment, or Upcoming only when paid in full
+                  {isFullPaymentComplete ? 'Upcoming Payment' : 'Next Payment'}
+                  Next Payment
+                  */}
+                </span>
               </div>
+              {/* SF membership set but schedule not chosen yet — no Annual/frequency badge */}
+              {!needsSfMembershipPay && schedule.frequencyLabel && schedule.frequencyLabel !== '—' && (
+                <span className="dash-pill-badge blue">
+                  {schedule.frequencyLabel}
+                </span>
+              )}
+              {/* Previous (commented out): always showed frequency even before Pay Membership schedule setup
               {schedule.frequencyLabel && schedule.frequencyLabel !== '—' && (
                 <span className="dash-pill-badge blue">
                   {schedule.frequencyLabel}
                 </span>
               )}
+              */}
             </div>
 
             <div style={{ margin: '14px 0 6px 0' }}>
               <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
+                {/* Awaiting SF schedule setup OR paid in full → show $0.00 */}
+                {needsSfMembershipPay || isFullPaymentComplete
+                  ? formatMoney(0)
+                  : schedule.nextPaymentAmountDisplay}
+                {/* Previous (commented out):
+                {needsSfMembershipPay ? formatMoney(0) : schedule.nextPaymentAmountDisplay}
                 {schedule.nextPaymentAmountDisplay}
+                */}
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {needsSfMembershipPay
+                  ? 'No scheduled billing'
+                  : (schedule.nextPaymentDate
+                    ? `Scheduled: ${schedule.nextPaymentDateDisplay}`
+                    : 'No scheduled billing')}
+                {/* Previous (commented out): invented Scheduled date before contribution schedule was chosen
                 {schedule.nextPaymentDate ? `Scheduled: ${schedule.nextPaymentDateDisplay}` : 'No scheduled billing'}
+                */}
               </span>
+              {/* Auto-pay removed from Next Payment card
+              {!needsSfMembershipPay && (
+                <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <ShieldCheck size={14} /> Auto-pay
+                </span>
+              )}
               <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <ShieldCheck size={14} /> Auto-pay
               </span>
+              */}
             </div>
           </div>
+          )}
+          {/* Previous (commented out): always showed Upcoming/Next Payment after full pay
+          <div className="dash-balance-card ... Upcoming Payment ... />
+          */}
 
         </div>
 
@@ -277,7 +375,11 @@ export default function DashboardHome({
                   {recentPayments.length ? recentPayments.map((row, i) => (
                     <tr key={row.id || i}>
                       <td>{formatDisplayDate(row.date)}</td>
+                      <td>{getPaymentHistoryDescription(row)}</td>
+                      {/* Previous (commented out): showed Stripe when method was the processor
+                      <td>{formatPaymentDescription(row.method || row.type)}</td>
                       <td>{row.method || row.type || '—'}</td>
+                      */}
                       <td>{row.amount || '—'}</td>
                       <td><span className="badge badge-active">{row.status || '—'}</span></td>
                     </tr>

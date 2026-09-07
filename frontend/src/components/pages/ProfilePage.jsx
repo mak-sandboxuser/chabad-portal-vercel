@@ -12,13 +12,14 @@ import {
   profileFormToPayload,
   sfDataToProfileForm,
 } from '../../utils/profileForm';
-import { formatMembershipDisplayName, getMembership } from '../../utils/portalData';
+import { formatMembershipDisplayName, getMembership, hasRealMembershipGroup, hasAssignedSalesforceGroup, getSalesforceAssignedGroup } from '../../utils/portalData';
+import { startChooseMembershipStepper } from '../../onboard/utils/postLoginStepper';
 
 const PROFILE_TABS = [
   { id: 'general', label: 'General Details', icon: User },
   { id: 'address', label: 'Address Details', icon: MapPin },
   { id: 'personal', label: 'Personal Information', icon: Heart },
-  { id: 'membership', label: 'Membership & Groups', icon: Star },
+  { id: 'membership', label: 'Membership', icon: Star },
 ];
 
 const TAB_FIELD_KEYS = {
@@ -124,7 +125,10 @@ export default function ProfilePage({
   const [form, setForm] = useState(() => sfDataToProfileForm(sfData, user?.email));
   const [draft, setDraft] = useState(form);
   const [saving, setSaving] = useState(false);
-  const [assignedGroup, setAssignedGroup] = useState(() => getStoredGroup());
+  const [assignedGroup, setAssignedGroup] = useState('');
+  // Previous (commented out): seeded from localStorage and could show stale
+  // "Chai Donor Membership 26-27" when Salesforce Groups were empty.
+  // const [assignedGroup, setAssignedGroup] = useState(() => getStoredGroup());
   const [selectedGroup, setSelectedGroup] = useState('Senior Citizen Membership');
   const [assigningGroup, setAssigningGroup] = useState(false);
   const [groupOptions, setGroupOptions] = useState([
@@ -144,12 +148,18 @@ export default function ProfilePage({
     setForm(next);
     if (!editingTab) setDraft(next);
     // Also pull groups from sfData if backend returns it
-    const sfGroup = sfData?.account?.groups || sfData?.groups || sfData?.profile?.groups || '';
-    if (sfGroup) {
+    const sfGroup = sfData?.account?.groups || sfData?.groups || sfData?.profile?.groups || sfData?.membership?.tier || '';
+    if (sfGroup && hasAssignedSalesforceGroup(sfGroup)) {
       setAssignedGroup(sfGroup);
       if (localStorageKey) localStorage.setItem(localStorageKey, sfGroup);
+    } else {
+      // Clear stale local portal group when Salesforce has no Groups assigned.
+      setAssignedGroup('');
+      if (localStorageKey) localStorage.removeItem(localStorageKey);
+      // Previous (commented out): only kept paid membership groups
+      // if (sfGroup && hasRealMembershipGroup(sfGroup)) { ... }
     }
-  }, [sfData, user?.email, editingTab]);
+  }, [sfData, user?.email, editingTab, localStorageKey]);
 
   useEffect(() => {
     fetchGroups()
@@ -395,29 +405,75 @@ export default function ProfilePage({
     ],
     membership: (() => {
       const membership = getMembership(sfData);
-      const rawGroup = assignedGroup
-        || membership.tier
+      const sfGroup = getSalesforceAssignedGroup(sfData)
         || sfData?.account?.groups
         || sfData?.groups
         || sfData?.profile?.groups
-        || form.groups
+        || membership.tier
         || '';
-      const activeGroup = formatMembershipDisplayName(rawGroup) || 'No Group Assigned Yet';
-      const hasActiveGroup = Boolean(rawGroup && activeGroup !== 'No Group Assigned Yet');
+      // Show any Salesforce Groups value (e.g. Building Prospects), not only paid memberships.
+      const rawGroup = (hasAssignedSalesforceGroup(sfGroup) && sfGroup)
+        || (hasAssignedSalesforceGroup(membership.tier) && membership.tier)
+        || (hasAssignedSalesforceGroup(assignedGroup) && assignedGroup)
+        || (hasAssignedSalesforceGroup(form.groups) && form.groups)
+        || '';
+      // Previous (commented out): only showed paid membership groups, so Building Prospects was hidden
+      // const rawGroup = (hasRealMembershipGroup(sfGroup) && sfGroup)
+      //   || (hasRealMembershipGroup(membership.tier) && membership.tier)
+      //   || (hasRealMembershipGroup(assignedGroup) && assignedGroup)
+      //   || (hasRealMembershipGroup(form.groups) && form.groups)
+      //   || '';
+      const activeGroup = formatMembershipDisplayName(rawGroup);
+      const hasRegisteredMembership = Boolean(rawGroup && activeGroup);
+      // Previous (commented out): empty state was a static label, not a stepper link
+      // const activeGroup = formatMembershipDisplayName(rawGroup) || 'No membership yet';
+      // Used when Select Membership Tier UI is re-enabled below.
+      // const hasActiveGroup = Boolean(rawGroup && activeGroup !== 'No membership yet');
+      // Previous (commented out):
+      // const activeGroup = formatMembershipDisplayName(rawGroup) || 'No Group Assigned Yet';
+      // const hasActiveGroup = Boolean(rawGroup && activeGroup !== 'No Group Assigned Yet');
+      // const isPaidMembership = hasRealMembershipGroup(rawGroup);
 
       return (
         <div className="profile-field--full" style={{ gridColumn: '1 / -1' }}>
-          {/* Assigned Group Display Card */}
+          {/* Assigned Membership Display Card */}
           <div style={{ background: 'rgba(212, 175, 55, 0.08)', padding: '24px', borderRadius: '12px', border: '1px solid #d4af37', marginBottom: '24px' }}>
             <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#d4af37', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Star size={18} /> Current Assigned Group / Membership
+              <Star size={18} /> Current Assigned Membership
             </h4>
+            {hasRegisteredMembership ? (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: '#d4af37', color: '#000', padding: '10px 20px', borderRadius: '24px', fontWeight: '800', fontSize: '16px' }}>
+                <CheckCircle size={20} /> {activeGroup}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startChooseMembershipStepper(sfData)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  background: '#d4af37',
+                  color: '#000',
+                  padding: '10px 20px',
+                  borderRadius: '24px',
+                  fontWeight: '800',
+                  fontSize: '16px',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                Choose Membership
+              </button>
+            )}
+            {/* Previous (commented out):
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: '#d4af37', color: '#000', padding: '10px 20px', borderRadius: '24px', fontWeight: '800', fontSize: '16px' }}>
               <CheckCircle size={20} /> {activeGroup}
             </div>
+            */}
           </div>
 
-          {/* If NO group assigned, show selection form */}
+          {/* Commented out: Select Membership Tier UI (tier cards + Salesforce groups picker).
           {!hasActiveGroup && (
             <div>
               <div style={{ marginBottom: '24px' }}>
@@ -511,6 +567,7 @@ export default function ProfilePage({
               </div>
             </div>
           )}
+          */}
         </div>
       );
     })(),
@@ -553,7 +610,7 @@ export default function ProfilePage({
             <div className="profile-tab-panel-header">
               <h3 className="profile-section-title">
                 <TabIcon size={16} />
-                {currentTab?.label}
+                {activeTab === 'membership' ? 'Your current membership' : currentTab?.label}
               </h3>
 
               {activeTab !== 'membership' && (

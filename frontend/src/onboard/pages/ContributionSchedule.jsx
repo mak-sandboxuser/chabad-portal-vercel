@@ -18,7 +18,12 @@ import {
 } from '../data/onboardingSteps';
 import { getMembershipTierById, formatCurrency } from '../data/membershipTiers';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
-import { isPostLoginStepperPending } from '../utils/postLoginStepper';
+import {
+  isPostLoginStepperPending,
+  isSalesforceMembershipScheduleOnly,
+  clearSalesforceMembershipScheduleOnly,
+  dismissPostLoginStepperPending,
+} from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
@@ -49,7 +54,7 @@ function buildScheduleOptions(annualPrice) {
       billingLines: [
         '2 payments',
         '1st payment today (50%)',
-        '2nd payment in 6 months (50%)',
+        '2nd payment on December 26 (50%)',
       ],
     },
     {
@@ -72,11 +77,22 @@ export default function ContributionSchedule() {
   const [error, setError] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
-  const selectedMembershipTier = getMembershipTierById(draft.data.membership?.tier) || {
-    name: 'Membership',
-    annualPrice: FALLBACK_ANNUAL_PRICE,
+  const draftMembership = draft.data.membership || {};
+  const catalogTier = getMembershipTierById(draftMembership.tier);
+  // Salesforce-assigned groups (e.g. Building Donors HH) may use tier id "sf-assigned"
+  // or a price-matched catalog tier — always prefer draft annualPrice when set.
+  const draftAnnual = Number(draftMembership.annualPrice) || 0;
+  // Previous (commented out): catalog-only lookup fell back to $1800 and ignored SF commitment.
+  // const selectedMembershipTier = getMembershipTierById(draft.data.membership?.tier) || {
+  //   name: 'Membership',
+  //   annualPrice: FALLBACK_ANNUAL_PRICE,
+  // };
+  // const annualPrice = selectedMembershipTier.annualPrice;
+  const selectedMembershipTier = catalogTier || {
+    name: draftMembership.name || draftMembership.sfGroup || 'Membership',
+    annualPrice: draftAnnual > 0 ? draftAnnual : FALLBACK_ANNUAL_PRICE,
   };
-  const annualPrice = selectedMembershipTier.annualPrice;
+  const annualPrice = draftAnnual > 0 ? draftAnnual : selectedMembershipTier.annualPrice;
   const scheduleOptions = buildScheduleOptions(annualPrice);
 
   const selectedOption = draft.data.contributionSchedule?.option || 'full';
@@ -121,6 +137,24 @@ export default function ContributionSchedule() {
   };
 
   const handleBack = () => {
+    // Salesforce-assigned membership pay flow (Pay Membership from dashboard):
+    // Back returns to dashboard, not Membership Selection.
+    const isSfMembershipPay = isSalesforceMembershipScheduleOnly()
+      || draft?.data?.membership?.source === 'salesforce_assigned';
+    if (isSfMembershipPay) {
+      clearSalesforceMembershipScheduleOnly();
+      dismissPostLoginStepperPending();
+      window.location.replace('/');
+      return;
+    }
+
+    // Previous (commented out): always went to Membership Selection.
+    // persistNow({
+    //   ...draft,
+    //   currentStep: PREVIOUS_STEP_ID,
+    // });
+    // goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
+
     persistNow({
       ...draft,
       currentStep: PREVIOUS_STEP_ID,

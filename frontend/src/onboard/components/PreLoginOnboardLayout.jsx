@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { HelpCircle, Moon, Sun } from 'lucide-react';
 import ChabadLogo from '../../components/shared/ChabadLogo';
 import ContactSupportModal from '../../components/shared/ContactSupportModal';
-import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '../../constants/supportContact';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL } from '../../constants/supportContact';
 import './preLoginOnboard.css';
 
 /**
@@ -61,7 +61,7 @@ export default function PreLoginOnboardLayout({
           {' '}at{' '}
           <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
           {' | '}
-          <a href="tel:+19146666068">{SUPPORT_PHONE_DISPLAY}</a>
+          <a href={`tel:${SUPPORT_PHONE_TEL}`}>{SUPPORT_PHONE_DISPLAY}</a>
         </p>
       </footer>
 
