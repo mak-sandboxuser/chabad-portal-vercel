@@ -38,8 +38,9 @@ import {
 } from './onboard/data/onboardingSteps';
 import { getHouseholdPreferences, getRedirectPathIfStepDisallowed } from './onboard/utils/householdPreferences';
 import { readDraft, clearDraft } from './onboard/utils/onboardingCookies';
-import { isPostLoginStepperPending } from './onboard/utils/postLoginStepper';
+import { isPostLoginStepperPending, ensurePostLoginStepperPending } from './onboard/utils/postLoginStepper';
 import { markRecentMembershipPayment } from './utils/portalData';
+import { persistPortalTestDateFromUrl } from './utils/portalFiscalYear';
 import { navigateApp } from './utils/navigateApp';
 
 const ONBOARD_SPOUSE_INFORMATION_PATH = getStepById(SPOUSE_INFORMATION_STEP_ID).path;
@@ -68,6 +69,10 @@ function LoadingScreen({ message }) {
 
 function RedirectToPath({ path }) {
   useEffect(() => {
+    if (path === '/') {
+      window.location.replace('/');
+      return;
+    }
     navigateApp(path);
   }, [path]);
 
@@ -170,6 +175,8 @@ function AuthenticatedPortal({ onLogout, resolvedUserId }) {
 ========================================================================== */
 
 export default function App() {
+  persistPortalTestDateFromUrl();
+
   // const clerk = useClerk();
   // const { signOut, isLoaded, userId, isSignedIn } = useAuth();
   // const [restoringSession, setRestoringSession] = useState(false);
@@ -346,9 +353,29 @@ export default function App() {
   const isMemberUser = Boolean(sfUser) && sfUser.role === 'Member';
 
   // Active members who are not in a pending onboarding stepper should never land on onboarding URLs.
-  if (isPostLoginStepperPath && isMemberUser && !isPostLoginStepperPending()) {
+  const asOfTestDate = persistPortalTestDateFromUrl();
+  let updateMembershipMode = false;
+  try {
+    updateMembershipMode = new URLSearchParams(window.location.search).get('mode') === 'update'
+      || sessionStorage.getItem('is_portal_update_membership_mode') === 'true';
+  } catch {
+    updateMembershipMode = false;
+  }
+  if ((asOfTestDate || updateMembershipMode) && isPostLoginStepperPath && isMemberUser) {
+    // Previous (commented out): this wiped the onboarding draft on every page load,
+    // so Select & Pay's tier (e.g. Single Parent Family $1560) was replaced by an
+    // empty draft and Contribution Schedule always showed the $1800 fallback.
+    // markPostLoginStepperPending();
+    ensurePostLoginStepperPending();
+  }
+  if (isPostLoginStepperPath && isMemberUser && !isPostLoginStepperPending() && !asOfTestDate) {
     return <RedirectToPath path="/" />;
   }
+  // Previous (commented out): logged-in members were always sent home from /onboard/membership,
+  // which made ?asOf= test URLs stick on Redirecting...
+  // if (isPostLoginStepperPath && isMemberUser && !isPostLoginStepperPending()) {
+  //   return <RedirectToPath path="/" />;
+  // }
 
   // Zip stepper requires login — send unauthenticated visitors to the login page.
   // Commented out clerk auth.authenticated check for direct JWT session check

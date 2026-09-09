@@ -20,7 +20,9 @@ import {
   hasRealMembershipGroup,
 } from '../../utils/portalData';
 import GuestMembershipPage from './GuestMembershipPage';
-import { markPostLoginStepperPending } from '../../onboard/utils/postLoginStepper';
+import MembershipRenewalBanner from '../shared/MembershipRenewalBanner';
+import { startPortalMembershipRenewal, startUpdateMembershipFlow } from '../../onboard/utils/postLoginStepper';
+import { isMembershipRenewalWindowOpen } from '../../utils/portalFiscalYear';
 
 /** SF group exists but is not a portal paid membership tier (e.g. Building Prospects). */
 // Commented out: Building Prospects now uses the same Membership layout as paid tiers with $0 amounts.
@@ -301,16 +303,20 @@ export default function MembershipPage({
 
   const endYearMatch = dates.endDate.match(/\d{4}/);
   const endYear = endYearMatch ? parseInt(endYearMatch[0], 10) : 2026;
-  const augFirstRenewalDate = new Date(endYear, 7, 1);
-  const isPastAugustFirst = now >= augFirstRenewalDate;
+  // Previous (commented out): renewal window opened 1 August of the end year.
+  // const augFirstRenewalDate = new Date(endYear, 7, 1);
+  // const isPastAugustFirst = now >= augFirstRenewalDate;
+  const renewalWindowStart = new Date(endYear, 8, 1);
+  const isPastAugust31 = now >= renewalWindowStart;
   const nextYearTag = `${endYear.toString().slice(-2)}-${(endYear + 1).toString().slice(-2)}`;
   const allGroupsStr = String(sfData?.groups || '') + ';' + String(sfData?.membership?.tier || '') + ';' + String(sfData?.profile?.groups || '') + ';' + String(sfData?.account?.groups || '');
-  const hasNextYearGroup = allGroupsStr.includes(nextYearTag) || allGroupsStr.includes('26-27');
-  const hasNextYearPledge = Boolean(sfData?.pledges?.some((p) => String(p.name || p.subType || p.purpose || p.type || '').includes('26-27') || String(p.name || p.subType || p.purpose || p.type || '').includes('2026-2027')));
+  const hasNextYearGroup = allGroupsStr.includes(nextYearTag);
+  const hasNextYearPledge = Boolean(sfData?.pledges?.some((p) => String(p.name || p.subType || p.purpose || p.type || '').includes(nextYearTag)));
   const hasRenewedForNextYear = hasNextYearGroup || hasNextYearPledge;
 
-  const isExpiringSoon = isPastAugustFirst && !isPastEndDate && !hasRenewedForNextYear;
+  const isExpiringSoon = isPastAugust31 && !isPastEndDate && !hasRenewedForNextYear;
   const isExpired = isExplicitExpired || isPastEndDate || isExpiringSoon;
+  const showMembershipRenewal = isMembershipRenewalWindowOpen(sfData);
 
   const stats = [
     {
@@ -383,9 +389,14 @@ export default function MembershipPage({
   const showHeaderHero = !isBeforeSeptFirst && !isExpired;
 
   const handleRenewMembership = () => {
-    markPostLoginStepperPending();
-    sessionStorage.setItem('is_portal_renewal_mode', 'true');
-    window.location.href = '/onboard/membership?mode=renew';
+    startPortalMembershipRenewal(sfData);
+  };
+
+  const handleUpdateMembership = () => {
+    // Previous (commented out): posted immediately to MAKE_MEMBERSHIP_AMOUNT_UPDATE
+    // without opening membership selection / remaining-months checkout.
+    // await fetchPortalApi('/api/portal/update-membership-amount', { ... });
+    startUpdateMembershipFlow(sfData);
   };
 
   return (
@@ -399,7 +410,12 @@ export default function MembershipPage({
       ]}
       showSketch={false}
     >
-      {hasMembershipDates && isExpired ? (
+      {showMembershipRenewal ? (
+        <MembershipRenewalBanner
+          sfData={sfData}
+          onRenew={handleRenewMembership}
+        />
+      ) : hasMembershipDates && isExpired ? (
         <ExpiredMembershipBanner
           dates={dates}
           isExpiringSoon={isExpiringSoon}
@@ -436,7 +452,17 @@ export default function MembershipPage({
           </div>
 
           <div className="membership-details-card glass-panel">
-            <h3>Membership Details</h3>
+            <div className="membership-details-header">
+              <h3>Membership Details</h3>
+              <button
+                type="button"
+                className="dash-btn-gold"
+                disabled={false}
+                onClick={handleUpdateMembership}
+              >
+                Update Membership
+              </button>
+            </div>
             {details.map((row) => {
               const Icon = row.icon;
               return (

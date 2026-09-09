@@ -16,13 +16,16 @@ import {
   CONTRIBUTION_SCHEDULE_STEP_ID,
   MEMBERSHIP_STEP_ID,
 } from '../data/onboardingSteps';
-import { getMembershipTierById, formatCurrency } from '../data/membershipTiers';
+import { getMembershipTierById, formatCurrency, formatMembershipSalesforceGroup } from '../data/membershipTiers';
+import { getProratedMembershipCommitment, getRemainingMembershipMonths, getPortalTestDateLabel } from '../../utils/portalFiscalYear';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
 import {
   isPostLoginStepperPending,
   isSalesforceMembershipScheduleOnly,
   clearSalesforceMembershipScheduleOnly,
   dismissPostLoginStepperPending,
+  isPortalUpdateMembershipMode,
+  readSelectedMembershipTier,
 } from '../utils/postLoginStepper';
 import '../onboard.css';
 
@@ -30,7 +33,9 @@ const THIS_STEP_ID = CONTRIBUTION_SCHEDULE_STEP_ID;
 const PREVIOUS_STEP_ID = MEMBERSHIP_STEP_ID;
 const FALLBACK_ANNUAL_PRICE = 1800;
 
-function buildScheduleOptions(annualPrice) {
+function buildScheduleOptions(commitmentPrice, remainingMonths, annualPrice) {
+  const monthlyRate = Number(annualPrice || 0) / 12;
+  const monthCount = remainingMonths > 0 ? remainingMonths : 12;
   return [
     {
       id: 'full',
@@ -39,7 +44,7 @@ function buildScheduleOptions(annualPrice) {
       subtitle: 'One-Time Payment',
       icon: CreditCard,
       accent: 'blue',
-      amountLabel: `$${formatCurrency(annualPrice)}`,
+      amountLabel: `$${formatCurrency(commitmentPrice)}`,
       billingLines: ['One-time charge today'],
     },
     {
@@ -49,7 +54,7 @@ function buildScheduleOptions(annualPrice) {
       subtitle: '50% + 50%',
       icon: PieChart,
       accent: 'purple',
-      amountLabel: `$${formatCurrency(annualPrice / 2)}`,
+      amountLabel: `$${formatCurrency(commitmentPrice / 2)}`,
       amountSuffix: ' / installment',
       billingLines: [
         '2 payments',
@@ -61,15 +66,57 @@ function buildScheduleOptions(annualPrice) {
       id: 'monthly',
       number: 3,
       title: 'Monthly Contributions',
-      subtitle: '12 Monthly Payments',
+      subtitle: `${monthCount} Monthly Payments`,
       icon: Calendar,
       accent: 'green',
-      amountLabel: `$${formatCurrency(annualPrice / 12)}`,
+      amountLabel: `$${formatCurrency(monthlyRate)}`,
       amountSuffix: ' / month',
-      billingLines: ['12 monthly payments', 'First payment today'],
+      billingLines: [`${monthCount} monthly payments`, 'First payment today'],
     },
-  ].map((option) => ({ ...option, totalCommitment: `$${formatCurrency(annualPrice)}` }));
+  ].map((option) => ({ ...option, totalCommitment: `$${formatCurrency(commitmentPrice)}` }));
 }
+
+// Previous (commented out): Total Commitment was always the full annual price
+// function buildScheduleOptions(annualPrice) {
+//   return [
+//     {
+//       id: 'full',
+//       number: 1,
+//       title: 'Full Payment',
+//       subtitle: 'One-Time Payment',
+//       icon: CreditCard,
+//       accent: 'blue',
+//       amountLabel: `$${formatCurrency(annualPrice)}`,
+//       billingLines: ['One-time charge today'],
+//     },
+//     {
+//       id: 'installments',
+//       number: 2,
+//       title: 'Two Installments',
+//       subtitle: '50% + 50%',
+//       icon: PieChart,
+//       accent: 'purple',
+//       amountLabel: `$${formatCurrency(annualPrice / 2)}`,
+//       amountSuffix: ' / installment',
+//       billingLines: [
+//         '2 payments',
+//         '1st payment today (50%)',
+//         '2nd payment on December 26 (50%)',
+//       ],
+//     },
+//     {
+//       id: 'monthly',
+//       number: 3,
+//       title: 'Monthly Contributions',
+//       subtitle: '12 Monthly Payments',
+//       icon: Calendar,
+//       accent: 'green',
+//       amountLabel: `$${formatCurrency(annualPrice / 12)}`,
+//       amountSuffix: ' / month',
+//       billingLines: ['12 monthly payments', 'First payment today'],
+//     },
+//   ].map((option) => ({ ...option, totalCommitment: `$${formatCurrency(annualPrice)}` }));
+// }
 
 export default function ContributionSchedule() {
   const [theme, toggleTheme] = useOnboardingTheme();
@@ -78,7 +125,22 @@ export default function ContributionSchedule() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   const draftMembership = draft.data.membership || {};
-  const catalogTier = getMembershipTierById(draftMembership.tier);
+  const isUpdateMembership = isPortalUpdateMembershipMode()
+    || draftMembership.source === 'update_membership';
+  // Update Membership is a new catalog pick — do not reuse Pay Membership leftovers
+  // (sf_membership_schedule_only / salesforce_assigned), which showed $1800 instead
+  // of the selected tier (e.g. Single Parent Family $1560).
+  const isExistingMembershipPay = !isUpdateMembership && (
+    isSalesforceMembershipScheduleOnly()
+    || draftMembership.source === 'salesforce_assigned'
+  );
+  // URL/sessionStorage survive a wiped draft (Select & Pay writes both).
+  // Previous (commented out): only draft.tier, which was empty after App.jsx
+  // markPostLoginStepperPending() and always fell back to $1800.
+  // const catalogTier = getMembershipTierById(draftMembership.tier);
+  const catalogTier = getMembershipTierById(
+    readSelectedMembershipTier() || draftMembership.tier,
+  );
   // Salesforce-assigned groups (e.g. Building Donors HH) may use tier id "sf-assigned"
   // or a price-matched catalog tier — always prefer draft annualPrice when set.
   const draftAnnual = Number(draftMembership.annualPrice) || 0;
@@ -92,8 +154,46 @@ export default function ContributionSchedule() {
     name: draftMembership.name || draftMembership.sfGroup || 'Membership',
     annualPrice: draftAnnual > 0 ? draftAnnual : FALLBACK_ANNUAL_PRICE,
   };
-  const annualPrice = draftAnnual > 0 ? draftAnnual : selectedMembershipTier.annualPrice;
-  const scheduleOptions = buildScheduleOptions(annualPrice);
+  // Catalog Select & Pay / Update Membership: use the clicked tier list price
+  // (e.g. Single Parent Family $1560), not a leftover draft/fallback $1800.
+  // Pay Membership keeps the Salesforce draft amount when it differs from catalog.
+  // Previous (commented out): leftover draftAnnual (often FALLBACK 1800) won over the selected tier
+  // const annualPrice = draftAnnual > 0 ? draftAnnual : selectedMembershipTier.annualPrice;
+  const annualPrice = (!isExistingMembershipPay && catalogTier)
+    ? Number(catalogTier.annualPrice)
+    : (draftAnnual > 0 ? draftAnnual : selectedMembershipTier.annualPrice);
+  const remainingMonths = getRemainingMembershipMonths();
+  const commitmentPrice = getProratedMembershipCommitment(annualPrice);
+  const testDateLabel = getPortalTestDateLabel();
+  // Previous (commented out): Pay Membership used the full annual unless the renewal banner was showing
+  // const applyProration = !isExistingMembershipPay || isMembershipRenewalWindowOpen();
+  // const remainingMonths = applyProration ? getRemainingMembershipMonths() : 12;
+  // const commitmentPrice = applyProration
+  //   ? getProratedMembershipCommitment(annualPrice)
+  //   : annualPrice;
+  // Previous (commented out): used leftover draft months from Select & Pay (e.g. 12 from September)
+  // so April test date never changed Total Commitment until a new click.
+  // const remainingMonths = Number(draftMembership.remainingMonths) > 0
+  //   ? Number(draftMembership.remainingMonths)
+  //   : getRemainingMembershipMonths();
+  // const commitmentPrice = Number(draftMembership.proratedCommitment) > 0
+  //   ? Number(draftMembership.proratedCommitment)
+  //   : getProratedMembershipCommitment(annualPrice);
+  const assignedGroupName = isExistingMembershipPay
+    ? (draftMembership.sfGroup || draftMembership.name || '')
+    : formatMembershipSalesforceGroup(selectedMembershipTier.name);
+  const checkoutGroups = isExistingMembershipPay ? '' : assignedGroupName;
+  // Previous (commented out): Pay Membership rebuilt the group from the catalog tier
+  // (e.g. $3000 matched Upgraded) and sent it on checkout, which overwrote Family Membership.
+  // const assignedGroupName = formatMembershipSalesforceGroup(selectedMembershipTier.name);
+  // Previous (commented out): preferred stored/catalog sfGroup, which could keep a stale year
+  // const assignedGroupName = draftMembership.sfGroup
+  //   || catalogTier?.sfGroup
+  //   || formatMembershipSalesforceGroup(selectedMembershipTier.name);
+  // const assignedGroupName = selectedMembershipTier.sfGroup || selectedMembershipTier.name;
+  const scheduleOptions = buildScheduleOptions(commitmentPrice, remainingMonths, annualPrice);
+  // Previous (commented out): Total Commitment used the full annual price
+  // const scheduleOptions = buildScheduleOptions(annualPrice);
 
   const selectedOption = draft.data.contributionSchedule?.option || 'full';
 
@@ -108,12 +208,12 @@ export default function ContributionSchedule() {
   // Determine details of the selected option
   const option = scheduleOptions.find((o) => o.id === selectedOption) || scheduleOptions[0];
 
-  let paymentAmount = annualPrice;
+  let paymentAmount = commitmentPrice;
   let billingMode = 'regular';
   let frequency = 'Annual';
 
   if (selectedOption === 'installments') {
-    paymentAmount = annualPrice / 2;
+    paymentAmount = commitmentPrice / 2;
     billingMode = 'recurring';
     frequency = 'Half Yearly';
   } else if (selectedOption === 'monthly') {
@@ -121,6 +221,14 @@ export default function ContributionSchedule() {
     billingMode = 'recurring';
     frequency = 'Monthly';
   }
+
+  // Previous (commented out): checkout amounts used the full annual price
+  // let paymentAmount = annualPrice;
+  // if (selectedOption === 'installments') {
+  //   paymentAmount = annualPrice / 2;
+  // } else if (selectedOption === 'monthly') {
+  //   paymentAmount = annualPrice / 12;
+  // }
 
   // Round to 2 decimal places
   paymentAmount = Math.round(paymentAmount * 100) / 100;
@@ -159,7 +267,8 @@ export default function ContributionSchedule() {
       ...draft,
       currentStep: PREVIOUS_STEP_ID,
     });
-    goToOnboardingPath(getStepById(PREVIOUS_STEP_ID).path);
+    const membershipPath = getStepById(PREVIOUS_STEP_ID).path;
+    goToOnboardingPath(isUpdateMembership ? `${membershipPath}?mode=update` : membershipPath);
   };
 
   const handleSubmit = (event) => {
@@ -189,8 +298,12 @@ export default function ContributionSchedule() {
         <OnboardHeader
           theme={theme}
           onToggleTheme={toggleTheme}
-          title={isPostLoginStepperPending() ? "Membership Renewal" : "Membership Onboarding"}
-          subtitle={isPostLoginStepperPending() ? "Choose your contribution schedule to complete renewal." : "Join our community in a few simple steps."}
+          title={isUpdateMembership
+            ? 'Update Membership'
+            : (isPostLoginStepperPending() ? 'Membership Renewal' : 'Membership Onboarding')}
+          subtitle={isUpdateMembership
+            ? 'Choose your contribution schedule. Amounts use remaining months through August.'
+            : (isPostLoginStepperPending() ? 'Choose your contribution schedule to complete renewal.' : 'Join our community in a few simple steps.')}
         />
 
         {!isPostLoginStepperPending() && (
@@ -204,6 +317,11 @@ export default function ContributionSchedule() {
                 <h2 className="onboard-about-title">Contribution Schedule</h2>
                 <p className="onboard-about-subtitle">Choose the payment structure that works best for you.</p>
                 <p className="onboard-about-subtitle onboard-about-subtitle-muted">All amounts are in USD.</p>
+                {testDateLabel ? (
+                  <p className="onboard-about-subtitle onboard-about-subtitle-muted">
+                    Test date {testDateLabel}: {remainingMonths} month{remainingMonths === 1 ? '' : 's'} through August.
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -297,23 +415,40 @@ export default function ContributionSchedule() {
           user={{ email }}
           getAuthToken={() => Promise.resolve(`dev:${email}`)}
           sfData={{ contactId, accountId }}
-          pledgeAmount={selectedMembershipTier.annualPrice}
+          pledgeAmount={commitmentPrice}
+          remainingMonths={remainingMonths}
+          // Previous (commented out): checkout pledge used the full annual price
+          // pledgeAmount={selectedMembershipTier.annualPrice}
           defaultAmount={paymentAmount.toFixed(2)}
           defaultType="Membership"
-          defaultSubType={selectedMembershipTier.sfGroup || selectedMembershipTier.name}
+          defaultSubType={assignedGroupName}
           defaultBillingMode={billingMode === 'recurring' ? 'recurring' : 'one-time'}
           defaultFrequency={frequency}
-          defaultMemo={`Onboarding Membership Selection: ${selectedMembershipTier.name} (${option.title})`}
-          source="onboarding"
-          groups={selectedMembershipTier.sfGroup || selectedMembershipTier.name}
+          defaultMemo={isExistingMembershipPay
+            ? `Membership payment: ${assignedGroupName || selectedMembershipTier.name} (${option.title})`
+            : `Onboarding Membership Selection: ${selectedMembershipTier.name} (${option.title})`}
+          source={isUpdateMembership
+            ? 'update_membership'
+            : (isExistingMembershipPay ? 'member_portal' : 'onboarding')}
+          groups={checkoutGroups}
+          // Previous (commented out): Pay Membership sent a rebuilt Salesforce group on checkout
+          // groups={assignedGroupName}
+          // source="onboarding"
           readOnly={true}
           theme={theme}
           onBeforeCheckout={() => {
             try {
               sessionStorage.setItem(
                 'pending_paid_membership_name',
-                selectedMembershipTier.name || 'Membership'
+                isExistingMembershipPay
+                  ? (assignedGroupName || selectedMembershipTier.name || 'Membership')
+                  : (selectedMembershipTier.name || 'Membership')
               );
+              // Previous (commented out): Pay Membership stored the catalog price-match name (Upgraded)
+              // sessionStorage.setItem(
+              //   'pending_paid_membership_name',
+              //   selectedMembershipTier.name || 'Membership'
+              // );
             } catch {
               // ignore
             }

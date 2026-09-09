@@ -1049,16 +1049,17 @@ function normalizePledge(raw = {}, index = 0) {
   };
 
   const lookupKey = purpose.toLowerCase().trim();
-  const matchedTierPrice = Object.entries(tierPriceMap).find(([key]) => lookupKey.includes(key))?.[1];
+  // const matchedTierPrice = Object.entries(tierPriceMap).find(([key]) => lookupKey.includes(key))?.[1];
 
-  if (matchedTierPrice && amountValue < matchedTierPrice) {
-    amountValue = matchedTierPrice;
-  }
-
-  const calculatedOutstanding = Math.max(0, amountValue - paidVal);
-  if (outstandingVal <= 0 || (amountValue > (outstandingVal + paidVal))) {
-    outstandingVal = calculatedOutstanding;
-  }
+  // Keep Salesforce OneCRM__Amount_Outstanding__c as sent. Do not recalculate.
+  // Previous (commented out): raised Family pledge to catalog $2244 then outstanding = amount − paid
+  // if (matchedTierPrice && amountValue < matchedTierPrice) {
+  //   amountValue = matchedTierPrice;
+  // }
+  // const calculatedOutstanding = Math.max(0, amountValue - paidVal);
+  // if (outstandingVal <= 0 || (amountValue > (outstandingVal + paidVal))) {
+  //   outstandingVal = calculatedOutstanding;
+  // }
 
   const rawDate = raw.date ?? raw.pledgeDate ?? raw.Date ?? raw['Pledge Date'] ?? raw.OneCRM__Date__c ?? '';
   const date = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
@@ -1145,10 +1146,27 @@ function normalizeRecurring(raw = {}, index = 0) {
   const paymentType = raw.method || raw.paymentMethod || raw['Payment Method'] || raw.OneCRM__Payment_Type__c || '';
   const last4 = pickRecurringLast4(raw);
 
+  const invoiceTotal = parseMoneyValue(
+    raw.OneCRM__Total_Estimated_Revenue__c
+    ?? raw.totalEstimatedRevenue
+    ?? raw.OneCRM__Amount__c,
+  );
+  const amountPerChargeRaw = raw.OneCRM__Amount_Per_Charge__c ?? raw.amountPerCharge;
+  const amountPerCharge = parseMoneyValue(amountPerChargeRaw);
+  const chargesRaw = raw.OneCRM__Charges_Remaining__c ?? raw.chargesRemaining;
+  const chargesRemaining = chargesRaw === null || chargesRaw === undefined || chargesRaw === ''
+    ? ''
+    : Number(chargesRaw);
+
   return {
     id: raw.id || raw.Id || raw.recurringId || raw['Record ID'] || `recurring_${index}`,
     name: raw.Name || raw.name || raw.OneCRM__Name__c || '',
     amount: formatMoneyField(amountValue) || '$0.00',
+    invoiceTotal: formatMoneyField(invoiceTotal) || '$0.00',
+    amountPerCharge: amountPerChargeRaw === null || amountPerChargeRaw === undefined || amountPerChargeRaw === ''
+      ? ''
+      : (formatMoneyField(amountPerCharge) || '$0.00'),
+    chargesRemaining: Number.isFinite(chargesRemaining) ? chargesRemaining : '',
     frequency: raw.frequency || raw.schedule || raw.Schedule || raw.OneCRM__Schedule__c
       || raw.Frequency || raw.OneCRM__Frequency__c || 'Monthly',
     nextDate,
@@ -1158,6 +1176,9 @@ function normalizeRecurring(raw = {}, index = 0) {
     last4,
     OneCRM__Payment_Type__c: String(paymentType || '').trim(),
     OneCRM__Last4__c: last4,
+    OneCRM__Total_Estimated_Revenue__c: invoiceTotal,
+    OneCRM__Amount_Per_Charge__c: amountPerCharge,
+    OneCRM__Charges_Remaining__c: Number.isFinite(chargesRemaining) ? chargesRemaining : chargesRaw,
     cardExpiry: raw.cardExpiry || raw.expires || raw['Card Expiry'] || raw['Expires'] || raw.OneCRM__Card_Expiry__c || '',
     type: raw.type || raw.planType || raw.Type || raw.OneCRM__Type__c || '',
   };

@@ -8,10 +8,10 @@ import {
   Handshake,
   Star,
   Heart,
-  Shield,
 } from 'lucide-react';
 import PaymentActionButton from './shared/PaymentActionButton';
 import BuildingSketch from './shared/BuildingSketch';
+import MembershipRenewalBanner from './shared/MembershipRenewalBanner';
 import {
   formatDisplayDate,
   formatMoney,
@@ -22,57 +22,26 @@ import {
   getFinancialSummary,
   getMembership,
   getPaymentScheduleSummary,
+  buildMembershipMakePaymentPreset,
   getPayments,
+  getMembershipCatalogListPrice,
   isPaymentWindowOpen,
   isAcceleratedMembershipRenewalDue,
+  syncAcceleratedScheduleClock,
   needsSalesforceMembershipScheduleSetup,
   getSalesforceAssignedGroup,
   hasRealMembershipGroup,
 } from '../utils/portalData';
 import {
-  markPostLoginStepperPending,
+  // markPostLoginStepperPending,
   // getPostLoginStepperEntryPath,
   startChooseMembershipStepper,
   startSalesforceMembershipSchedulePayment,
+  startPortalMembershipRenewal,
 } from '../onboard/utils/postLoginStepper';
+import { getProratedMembershipCommitment, isMembershipRenewalWindowOpen } from '../utils/portalFiscalYear';
+// import { isMembershipRenewalWindowOpen } from '../utils/portalFiscalYear';
 import { showToast } from '../utils/toast';
-
-function MembershipRenewalDueBanner({ amountDisplay, renewalDateDisplay, onRenew }) {
-  return (
-    <div className="renewed-membership-banner expired-membership-banner" style={{ marginTop: '18px', width: '100%' }}>
-      <div className="renewed-banner-left">
-        <div className="renewed-banner-icon-wrapper">
-          <span className="renewed-banner-sparkle sp-top-left">✦</span>
-          <span className="renewed-banner-sparkle sp-top-right">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-left">✦</span>
-          <span className="renewed-banner-sparkle sp-bottom-right">✦</span>
-          <div className="renewed-banner-shield-circle">
-            <Shield size={38} strokeWidth={2.2} />
-          </div>
-        </div>
-        <div className="renewed-banner-body">
-          <h2 className="renewed-banner-title">Membership Renewal</h2>
-          <p className="renewed-banner-sub">
-            Your membership year is complete
-            {amountDisplay ? ` · renew for ${amountDisplay}` : ''}
-            {renewalDateDisplay && renewalDateDisplay !== '—' ? ` · available ${renewalDateDisplay}` : ''}.
-          </p>
-          <button type="button" className="dash-btn-primary expired-renew-btn" onClick={onRenew}>
-            Renew Membership
-          </button>
-        </div>
-      </div>
-      <div className="renewed-banner-right">
-        <div className="renewed-right-divider" aria-hidden="true" />
-        <div className="renewed-right-content">
-          <div className="renewed-right-badge">Renew</div>
-          <p className="renewed-right-text">Continue your support for the coming membership year.</p>
-          <span className="renewed-script-note">Thank you! ♡</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function GuestMembershipInviteBanner({ firstName, onBecomeMember }) {
   return (
@@ -156,36 +125,61 @@ export default function DashboardHome({
 
   const contributedYtd = summary.contributedYtd || totalContributed || '$2824.00';
   const needsSfMembershipPay = needsSalesforceMembershipScheduleSetup(sfData);
-  const [, setRenewalTick] = useState(0);
+  const [, setScheduleTick] = useState(0);
   useEffect(() => {
-    // Poll so Membership Renewal appears when the simulated year (10 min) completes.
-    if (!(schedule.paidInFull || parseMoney(summary.outstanding) <= 0)) return undefined;
-    if (parseMoney(summary.annual) <= 0) return undefined;
-    const id = window.setInterval(() => setRenewalTick((n) => n + 1), 5000);
+    syncAcceleratedScheduleClock(sfData);
+    // Poll so 1/5/10 min windows refresh Make Payment / renewal promptly.
+    const id = window.setInterval(() => {
+      syncAcceleratedScheduleClock(sfData);
+      setScheduleTick((n) => n + 1);
+    }, 2000);
     return () => window.clearInterval(id);
-  }, [schedule.paidInFull, summary.outstanding, summary.annual]);
-  // TEST: 10 minutes after full pay ≈ 1 membership year complete → open renewal.
-  const renewalDue = isAcceleratedMembershipRenewalDue(sfData);
-  const canPayNow = isPaymentWindowOpen(sfData) || needsSfMembershipPay || renewalDue;
+  }, [sfData]);
+  const acceleratedRenewalDue = isAcceleratedMembershipRenewalDue(sfData);
+  const canPayNow = isPaymentWindowOpen(sfData) || needsSfMembershipPay || acceleratedRenewalDue;
   // Full membership payment complete → hide Upcoming/Next Payment card (code kept below).
-  const isFullPaymentComplete = Boolean(schedule.paidInFull) && !needsSfMembershipPay && !renewalDue;
+  const isFullPaymentComplete = Boolean(schedule.paidInFull) && !needsSfMembershipPay && !acceleratedRenewalDue;
   const hideUpcomingPaymentCard = !needsSfMembershipPay
     && parseMoney(summary.outstanding) <= 0
     && parseMoney(membership.annualCommitment) > 0
-    && !renewalDue;
-  const renewalAmountDisplay = membership.annualCommitment || formatMoney(summary.annual);
+    && !acceleratedRenewalDue;
+  const showMembershipRenewal = isMembershipRenewalWindowOpen(sfData) || acceleratedRenewalDue;
+  const hideCompletePaymentBox = showMembershipRenewal;
+  // Salesforce OneCRM__Amount_Outstanding__c when Make returns pledges.
+  // Fallback when that field is missing: remaining-months catalog calc
+  // (same as Contribution Schedule), not Family $2244. See getPledges.
+  const catalogListPrice = getMembershipCatalogListPrice(sfData);
+  const crmCommitment = parseMoney(membership.annualCommitment);
+  const remainingMonthsFallback = getProratedMembershipCommitment(catalogListPrice || crmCommitment);
+  const sfOutstanding = parseMoney(summary.outstanding);
+  const outstandingAmount = sfOutstanding > 0
+    ? sfOutstanding
+    : (needsSfMembershipPay ? remainingMonthsFallback : 0);
+  const hasOutstandingBalance = outstandingAmount > 0;
+  const outstandingDisplay = formatMoney(outstandingAmount);
+  // Previous (commented out): calculated outstanding (prorated commitment − paid)
+  // const catalogListPrice = getMembershipCatalogListPrice(sfData);
+  // const paidTowardMembership = parseMoney(summary.totalContributed)
+  //   || parseMoney(summary.contributed)
+  //   || 0;
+  // const crmCommitment = parseMoney(membership.annualCommitment);
+  // const proratedFromCatalog = getProratedMembershipCommitment(catalogListPrice || crmCommitment);
+  // const periodCommitment = crmCommitment > 0 && Math.abs(crmCommitment - proratedFromCatalog) < 1
+  //   ? crmCommitment
+  //   : proratedFromCatalog;
+  // const outstandingDisplay = formatMoney(Math.max(periodCommitment - paidTowardMembership, 0));
+  // Previous (commented out): prorated CRM commitment a second time (935/12*5 = 389.58)
+  // const renewalAnnual = parseMoney(membership.annualCommitment) || parseMoney(summary.outstanding) || 0;
+  // const renewalProratedAmount = getProratedMembershipCommitment(renewalAnnual);
+  // const outstandingDisplay = formatMoney(renewalProratedAmount);
+  // Previous (commented out): outstanding card always showed the full CRM balance
+  // const outstandingDisplay = formatMoney(summary.outstanding);
 
   const handleBecomeMember = () => {
     // Previous (commented out): always opened full stepper (Spouse first)
     // markPostLoginStepperPending();
     // window.location.assign(getPostLoginStepperEntryPath());
     startChooseMembershipStepper(sfData);
-  };
-
-  const handleRenewMembership = () => {
-    markPostLoginStepperPending();
-    sessionStorage.setItem('is_portal_renewal_mode', 'true');
-    window.location.href = '/onboard/membership?mode=renew';
   };
 
   const handleSfMembershipPay = () => {
@@ -197,15 +191,13 @@ export default function DashboardHome({
   };
 
   const handlePayClick = () => {
-    if (renewalDue) {
-      handleRenewMembership();
-      return;
-    }
     if (needsSfMembershipPay) {
       handleSfMembershipPay();
       return;
     }
-    onDonate?.();
+    // Monthly / half-yearly: open Recurring at the Upcoming Payment amount ($187),
+    // not One-Time full-year ($2244).
+    onDonate?.(buildMembershipMakePaymentPreset(sfData));
   };
 
   if (paymentsDisabled) {
@@ -247,15 +239,20 @@ export default function DashboardHome({
           <BuildingSketch theme={theme} className="dash-welcome-sketch" />
         </div>
 
-        {renewalDue && (
-          <MembershipRenewalDueBanner
-            amountDisplay={renewalAmountDisplay}
-            renewalDateDisplay={schedule.membershipRenewalDateDisplay}
-            onRenew={handleRenewMembership}
+        {showMembershipRenewal && (
+          <MembershipRenewalBanner
+            sfData={sfData}
+            actionLabel="Renew Membership"
+            onRenew={() => startPortalMembershipRenewal(sfData)}
+            // Previous (commented out): outstanding balance changed this banner to Pay Membership
+            // actionLabel={hasOutstandingBalance ? 'Pay Membership' : 'Renew Membership'}
+            // onRenew={hasOutstandingBalance
+            //   ? handleSfMembershipPay
+            //   : () => startPortalMembershipRenewal(sfData)}
           />
         )}
 
-        {needsSfMembershipPay && (
+        {needsSfMembershipPay && !hideCompletePaymentBox && (
           <div
             className="glass-panel"
             style={{
@@ -327,26 +324,89 @@ export default function DashboardHome({
                 <span className="dash-card-title">Outstanding Balance</span>
               </div>
               <span className="dash-pill-badge red">
+                {outstandingAmount > 0 ? `Commitment ${outstandingDisplay}` : 'Due Balance'}
+                {/* Previous (commented out): catalog annual (Family $2244) in the Outstanding card
                 {membership.annualCommitment ? `Commitment ${membership.annualCommitment}` : 'Due Balance'}
+                */}
               </span>
             </div>
 
             <div style={{ margin: '14px 0 6px 0' }}>
               <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: '#ef4444', letterSpacing: '-0.5px' }}>
+                {outstandingDisplay}
+                {/* Previous (commented out): always showed the full CRM outstanding
                 {formatMoney(summary.outstanding)}
+                */}
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingTop: '4px' }}>
-              {(canPayNow || renewalDue) && (
+              {needsSfMembershipPay && hasOutstandingBalance ? (
+                <PaymentActionButton
+                  className="dash-btn-gold-action"
+                  onClick={handleSfMembershipPay}
+                >
+                  Pay Membership
+                  <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+                </PaymentActionButton>
+              ) : showMembershipRenewal ? (
+                <PaymentActionButton
+                  className="dash-btn-gold-action"
+                  onClick={() => startPortalMembershipRenewal(sfData)}
+                >
+                  Renew Membership
+                  <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+                </PaymentActionButton>
+              ) : canPayNow ? (
                 <PaymentActionButton
                   className="dash-btn-gold-action"
                   onClick={handlePayClick}
                 >
-                  {renewalDue ? 'Renew Membership' : (needsSfMembershipPay ? 'Pay Membership' : 'Make Payment')}
+                  Make Payment
+                  <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+                </PaymentActionButton>
+              ) : null}
+              {/* Previous (commented out): any leftover balance kept showing Pay Membership
+                  after the member already paid / set a monthly schedule
+              {hasOutstandingBalance ? (
+                <PaymentActionButton
+                  className="dash-btn-gold-action"
+                  onClick={handleSfMembershipPay}
+                >
+                  Pay Membership
+                  <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+                </PaymentActionButton>
+              ) : showMembershipRenewal ? (
+                <PaymentActionButton
+                  className="dash-btn-gold-action"
+                  onClick={() => startPortalMembershipRenewal(sfData)}
+                >
+                  Renew Membership
+                  <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+                </PaymentActionButton>
+              ) : canPayNow && (
+                <PaymentActionButton
+                  className="dash-btn-gold-action"
+                  onClick={handlePayClick}
+                >
+                  {needsSfMembershipPay ? 'Pay Membership' : 'Make Payment'}
                   <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
                 </PaymentActionButton>
               )}
+              */}
+              {/* Previous (commented out): renewal season always used Renew Membership
+              {showMembershipRenewal ? (
+                <PaymentActionButton
+                  className="dash-btn-gold-action"
+                  onClick={() => startPortalMembershipRenewal(sfData)}
+                >
+                  Renew Membership
+                  <ArrowUpRight size={14} style={{ marginLeft: '4px' }} />
+                </PaymentActionButton>
+              ) : canPayNow && (
+                ...
+              )}
+              */}
             </div>
           </div>
 
@@ -359,7 +419,7 @@ export default function DashboardHome({
                   <Calendar size={18} />
                 </div>
                 <span className="dash-card-title">
-                  {renewalDue ? 'Membership Renewal' : 'Upcoming Payment'}
+                  Upcoming Payment
                   {/* Previous (commented out): Next Payment, or Upcoming only when paid in full
                   {isFullPaymentComplete ? 'Upcoming Payment' : 'Next Payment'}
                   Next Payment
@@ -367,13 +427,11 @@ export default function DashboardHome({
                 </span>
               </div>
               {/* SF membership set but schedule not chosen yet — no Annual/frequency badge */}
-              {renewalDue ? (
-                <span className="dash-pill-badge blue">Annual</span>
-              ) : (!needsSfMembershipPay && schedule.frequencyLabel && schedule.frequencyLabel !== '—' && (
+              {!needsSfMembershipPay && schedule.frequencyLabel && schedule.frequencyLabel !== '—' && (
                 <span className="dash-pill-badge blue">
                   {schedule.frequencyLabel}
                 </span>
-              ))}
+              )}
               {/* Previous (commented out): always showed frequency even before Pay Membership schedule setup
               {schedule.frequencyLabel && schedule.frequencyLabel !== '—' && (
                 <span className="dash-pill-badge blue">
@@ -385,12 +443,10 @@ export default function DashboardHome({
 
             <div style={{ margin: '14px 0 6px 0' }}>
               <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>
-                {/* Renewal year / awaiting SF setup / paid in full */}
-                {renewalDue
-                  ? renewalAmountDisplay
-                  : (needsSfMembershipPay || isFullPaymentComplete
-                    ? formatMoney(0)
-                    : schedule.nextPaymentAmountDisplay)}
+                {/* Awaiting SF schedule setup OR paid in full → show $0.00 */}
+                {needsSfMembershipPay || isFullPaymentComplete
+                  ? formatMoney(0)
+                  : schedule.nextPaymentAmountDisplay}
                 {/* Previous (commented out):
                 {needsSfMembershipPay ? formatMoney(0) : schedule.nextPaymentAmountDisplay}
                 {schedule.nextPaymentAmountDisplay}
@@ -400,15 +456,11 @@ export default function DashboardHome({
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {renewalDue
-                  ? (schedule.nextPaymentDate
-                    ? `Renewal: ${schedule.nextPaymentDateDisplay}`
-                    : 'Membership year complete — renew now')
-                  : (needsSfMembershipPay
-                    ? 'No scheduled billing'
-                    : (schedule.nextPaymentDate
-                      ? `Scheduled: ${schedule.nextPaymentDateDisplay}`
-                      : 'No scheduled billing'))}
+                {needsSfMembershipPay
+                  ? 'No scheduled billing'
+                  : (schedule.nextPaymentDate
+                    ? `Scheduled: ${schedule.nextPaymentDateDisplay}`
+                    : 'No scheduled billing')}
                 {/* Previous (commented out): invented Scheduled date before contribution schedule was chosen
                 {schedule.nextPaymentDate ? `Scheduled: ${schedule.nextPaymentDateDisplay}` : 'No scheduled billing'}
                 */}

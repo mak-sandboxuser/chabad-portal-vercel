@@ -13,6 +13,7 @@ import {
   getFinancialSummary,
   getMembership,
   getPaymentScheduleSummary,
+  buildMembershipMakePaymentPreset,
   getPayments,
   isPaymentWindowOpen,
   parseMoney,
@@ -173,7 +174,7 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
       }
       return;
     }
-    onDonate?.();
+    onDonate?.(buildMembershipMakePaymentPreset(sfData));
   };
 
   return (

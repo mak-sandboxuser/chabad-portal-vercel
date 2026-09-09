@@ -36,6 +36,9 @@ const VERCEL_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*vercel\.app$/i;
 
 console.log('[ENV] MAKE_PAYMENTS_WEBHOOK_URL =', process.env.MAKE_PAYMENTS_WEBHOOK_URL || '(missing)');
 console.log('[ENV] MAKE_GET_CARD_URL =', process.env.MAKE_GET_CARD_URL || '(missing)');
+console.log('[ENV] MAKE_ADD_CREDIT_CARD =', process.env.MAKE_ADD_CREDIT_CARD || '(missing)');
+console.log('[ENV] MAKE_MEMBERSHIP_AMOUNT_UPDATE =', process.env.MAKE_MEMBERSHIP_AMOUNT_UPDATE || '(missing)');
+console.log('[ENV] MAKE_MASTER_PLEDGE_UPDATE =', process.env.MAKE_MASTER_PLEDGE_UPDATE || '(missing)');
 console.log('[ENV] MAKE_UPDATE_PAYMENT_MEETHOD_URL =', process.env.MAKE_UPDATE_PAYMENT_MEETHOD_URL || process.env.MAKE_UPDATE_PAYMENT_METHOD_URL || '(missing)');
 console.log('[ENV] MAKE_QUICK_PAYMENT_WEBHOOK_URL =', process.env.MAKE_QUICK_PAYMENT_WEBHOOK_URL || '(missing)');
 console.log('[ENV] MAKE_STRIPE_PAYMENT_WEBHOOK_URL =', process.env.MAKE_STRIPE_PAYMENT_WEBHOOK_URL || '(missing)');
@@ -1630,6 +1633,177 @@ app.post('/api/portal/update-payment-method', async (req, res) => {
   }
 });
 
+app.post('/api/portal/add-credit-card', async (req, res) => {
+  const auth = await resolveAuthedPortalMember(req);
+  if (auth.error) {
+    return res.status(auth.error.status).json({ error: auth.error.message, code: auth.error.code });
+  }
+
+  const webhookUrl = process.env.MAKE_ADD_CREDIT_CARD;
+  if (!webhookUrl) {
+    return res.status(503).json({
+      error: 'MAKE_ADD_CREDIT_CARD is not configured. Add your Make.com webhook to backend/.env',
+    });
+  }
+
+  const cardNumber = String(req.body?.cardNumber || '').replace(/\D/g, '');
+  const expMonthRaw = String(req.body?.expMonth || '').replace(/\D/g, '');
+  const expYearRaw = String(req.body?.expYear || '').replace(/\D/g, '');
+  const expMonthNum = Number(expMonthRaw);
+  let expYearNum = Number(expYearRaw);
+  if (expYearRaw.length === 2 && Number.isFinite(expYearNum)) {
+    expYearNum += 2000;
+  }
+
+  if (cardNumber.length < 13 || cardNumber.length > 19) {
+    return res.status(400).json({ error: 'Enter a valid card number.' });
+  }
+  if (!expMonthNum || expMonthNum < 1 || expMonthNum > 12) {
+    return res.status(400).json({ error: 'Enter a valid expiration month (1–12).' });
+  }
+  if (!expYearNum || expYearNum < 2000 || expYearNum > 2100) {
+    return res.status(400).json({ error: 'Enter a valid expiration year.' });
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(expYearNum, expMonthNum, 0, 23, 59, 59);
+  if (expiresAt.getTime() < now.getTime()) {
+    return res.status(400).json({ error: 'This card is expired.' });
+  }
+
+  const expMonth = String(expMonthNum).padStart(2, '0');
+  const expYear = String(expYearNum);
+  const last4 = cardNumber.slice(-4);
+  const expiration = `${expMonth}/${expYear}`;
+
+  const body = {
+    action: 'add_credit_card',
+    email: auth.email,
+    contactId: auth.contactId,
+    accountId: auth.accountId,
+    accountName: auth.accountName,
+    cardNumber,
+    expMonth,
+    expYear,
+    last4,
+    expiration,
+    paymentProgramId: String(req.body?.paymentProgramId || req.body?.recurringId || '').trim(),
+    OneCRM__Last4__c: last4,
+    OneCRM__Expiration_Date__c: expiration,
+  };
+  const valueJson = JSON.stringify(body);
+
+  try {
+    console.log(`[ADD-CREDIT-CARD] POST ${webhookUrl}`);
+    console.log(`[ADD-CREDIT-CARD] body=`, JSON.stringify({
+      ...body,
+      cardNumber: `••••${last4}`,
+    }));
+    const makeRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...body,
+        value: valueJson,
+      }),
+    });
+    const text = await makeRes.text();
+    console.log(`[ADD-CREDIT-CARD] Make response for ${auth.email}:`, text.slice(0, 800));
+
+    // Make custom webhooks often return 500 / 404 after the scenario already ran.
+    if (!makeRes.ok && makeRes.status !== 500 && makeRes.status !== 404) {
+      return res.status(502).json({ error: `Make.com add credit card returned ${makeRes.status}` });
+    }
+    // Previous (commented out): 404 from Make was shown as a portal error
+    // if (!makeRes.ok && makeRes.status !== 500) {
+    //   return res.status(502).json({ error: `Make.com add credit card returned ${makeRes.status}` });
+    // }
+
+    let cards = [];
+    try {
+      cards = await lookupSalesforceCards(auth.email, auth.contactId, auth.memberDetails);
+      const cached = userSalesforceData[auth.email];
+      if (cached) {
+        cached.cards = cards;
+      }
+    } catch (refreshErr) {
+      console.warn('[ADD-CREDIT-CARD] card refresh failed:', refreshErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Card added.',
+      last4,
+      expiration,
+      cards,
+    });
+  } catch (error) {
+    console.error('Add credit card error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to add credit card.' });
+  }
+});
+
+app.post('/api/portal/update-membership-amount', async (req, res) => {
+  const auth = await resolveAuthedPortalMember(req);
+  if (auth.error) {
+    return res.status(auth.error.status).json({ error: auth.error.message, code: auth.error.code });
+  }
+
+  const webhookUrl = process.env.MAKE_MEMBERSHIP_AMOUNT_UPDATE;
+  if (!webhookUrl) {
+    return res.status(503).json({
+      error: 'MAKE_MEMBERSHIP_AMOUNT_UPDATE is not configured. Add your Make.com webhook to backend/.env',
+    });
+  }
+
+  const amount = String(req.body?.amount || req.body?.annualCommitment || '').trim();
+  const outstanding = String(req.body?.outstanding || '').trim();
+  const group = String(req.body?.group || req.body?.tier || '').trim();
+  const pledgeId = String(req.body?.pledgeId || '').trim();
+
+  const body = {
+    action: 'update_membership_amount',
+    email: auth.email,
+    contactId: auth.contactId,
+    accountId: auth.accountId,
+    accountName: auth.accountName,
+    amount,
+    annualCommitment: amount,
+    outstanding,
+    group,
+    tier: group,
+    pledgeId,
+  };
+  const valueJson = JSON.stringify(body);
+
+  try {
+    console.log(`[MEMBERSHIP-AMOUNT-UPDATE] POST ${webhookUrl}`);
+    console.log(`[MEMBERSHIP-AMOUNT-UPDATE] body=`, valueJson);
+    const makeRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...body,
+        value: valueJson,
+      }),
+    });
+    const text = await makeRes.text();
+    console.log(`[MEMBERSHIP-AMOUNT-UPDATE] Make response for ${auth.email}:`, text.slice(0, 800));
+
+    if (!makeRes.ok && makeRes.status !== 500 && makeRes.status !== 404) {
+      return res.status(502).json({ error: `Make.com membership amount update returned ${makeRes.status}` });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Membership amount update sent.',
+    });
+  } catch (error) {
+    console.error('Membership amount update error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to update membership amount.' });
+  }
+});
+
 // Stripe Checkout Session generation
 async function resolveCheckoutContactId(authHeader, email, contactId = '') {
   let resolvedContactId = sanitizeContactId(contactId);
@@ -1759,39 +1933,77 @@ function stripeRecurringIntervalCount(frequency = 'Monthly') {
   return 1;
 }
 
-/** TEST MODE: Monthly → 1 min / Half Yearly → 5 min / Yearly renewal → 10 min. */
+/** TEST MODE: Monthly → 1 min / Half Yearly → 5 min / Full year → 10 min. */
 const ACCELERATED_SCHEDULE_TEST = true;
 
 function getAcceleratedRecurringDelayMinutes(frequency = 'Monthly') {
   if (!ACCELERATED_SCHEDULE_TEST) return 0;
   const normalized = String(frequency || '').trim().toLowerCase();
-  // Check half/semi before annual — "Semi-Annual" contains "annual".
   if (normalized.includes('half') || normalized.includes('semi') || normalized.includes('install')) return 5;
   if (normalized.includes('year') || normalized.includes('annual') || normalized.includes('full')) return 10;
   if (normalized.includes('month') || !normalized) return 1;
   return 1;
 }
 
-function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
-  const acceleratedDelayMinutes = getAcceleratedRecurringDelayMinutes(frequency);
-  if (acceleratedDelayMinutes > 0) {
-    const base = new Date();
-    base.setMinutes(base.getMinutes() + acceleratedDelayMinutes);
-    return base.toISOString();
+function toYmdLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** Calendar due date stored in CRM (1st of next month / half-year / next Sep 1). */
+function computeNextChargeCalendarDate(paymentDateStr = '', frequency = 'Monthly') {
+  const baseStr = (paymentDateStr || new Date().toISOString().split('T')[0]).slice(0, 10);
+  const [y, m, d] = baseStr.split('-').map(Number);
+  const paid = new Date(y, (m || 1) - 1, d || 1);
+  const freq = String(frequency || '').toLowerCase();
+
+  if (freq.includes('half') || freq.includes('semi') || freq.includes('install')) {
+    const month = paid.getMonth(); // 0-based
+    // Sep–Nov → Dec 1; Dec–Apr → May 1; else Dec 1 next cycle
+    if (month >= 8 && month <= 10) return `${paid.getFullYear()}-12-01`;
+    if (month >= 11 || month <= 3) {
+      const year = month >= 11 ? paid.getFullYear() + 1 : paid.getFullYear();
+      return `${year}-05-01`;
+    }
+    return `${paid.getFullYear()}-12-01`;
   }
 
-  const base = (dateStr || new Date().toISOString().split('T')[0]).slice(0, 10);
-  const date = new Date(`${base}T12:00:00`);
-  if (frequency === 'Quarterly') {
-    date.setMonth(date.getMonth() + 3);
-  } else if (frequency === 'Semi-Annual') {
-    date.setMonth(date.getMonth() + 6);
-  } else if (frequency === 'Yearly' || frequency === 'Annual') {
-    date.setFullYear(date.getFullYear() + 1);
-  } else {
-    date.setMonth(date.getMonth() + 1);
+  if (freq.includes('year') || freq.includes('annual') || freq.includes('full') || freq.includes('one')) {
+    // Next membership year starts Sep 1 after current FY end
+    const endYear = paid.getMonth() >= 8 ? paid.getFullYear() + 1 : paid.getFullYear();
+    return `${endYear}-09-01`;
   }
-  return date.toISOString().split('T')[0];
+
+  if (freq.includes('quarter')) {
+    const next = new Date(paid.getFullYear(), paid.getMonth() + 3, 1);
+    return toYmdLocal(next);
+  }
+
+  // Monthly (default): 1st of next calendar month after payment
+  const next = new Date(paid.getFullYear(), paid.getMonth() + 1, 1);
+  return toYmdLocal(next);
+}
+
+/**
+ * nextChargeDate for Make/CRM:
+ * - calendar due date (e.g. 2026-10-01)
+ * - in TEST MODE, same calendar day with clock time = now + 1/5/10 minutes
+ */
+function addRecurringIntervalToDate(dateStr = '', frequency = 'Monthly') {
+  const calendarDate = computeNextChargeCalendarDate(dateStr, frequency);
+  const acceleratedDelayMinutes = getAcceleratedRecurringDelayMinutes(frequency);
+
+  if (acceleratedDelayMinutes > 0) {
+    const openAt = new Date();
+    openAt.setMinutes(openAt.getMinutes() + acceleratedDelayMinutes);
+    const [y, m, d] = calendarDate.split('-').map(Number);
+    const withTime = new Date(y, m - 1, d, openAt.getHours(), openAt.getMinutes(), openAt.getSeconds());
+    return withTime.toISOString();
+  }
+
+  return calendarDate;
 }
 
 function normalizeFrequency(freqStr = '') {
@@ -1830,23 +2042,13 @@ function resolveMembershipGroupAnnualPrice(payload = {}) {
     if (s.includes('chai rabbi')) return 18000;
     if (s.includes('chai partner')) return 10000;
     if (s.includes('chai donor')) return 5000;
-    if (s.includes('upgraded') || s.includes('partnership')) return 3000;
+    if (s.includes('upgraded')) return 3000;
     if (s.includes('senior')) return 1800;
-    // Only explicit Single Parent — bare "Membership 26-27" is too ambiguous.
-    if (s.includes('single parent')) return 1560;
+    if (s.includes('single parent') || (s.includes('membership 26-27') && !s.includes('family') && !s.includes('single') && !s.includes('senior') && !s.includes('upgraded'))) return 1560;
     if (s.includes('family') && !s.includes('single')) return 2244;
     if (s.includes('single') && !s.includes('parent')) return 1128;
   }
   return 0;
-}
-
-function getFrequencyAnnualMultiplier(frequency = 'Monthly') {
-  const freqLower = String(frequency || '').toLowerCase();
-  if (freqLower.includes('half') || freqLower.includes('semi')) return 2;
-  if (freqLower.includes('month') && !freqLower.includes('semi')) return 12;
-  if (freqLower.includes('week')) return 52;
-  if (freqLower.includes('quarter')) return 4;
-  return 1;
 }
 
 /** Stripe uses card / us_bank_account. Make.com expects CREDIT  CARD / ACH. */
@@ -1867,30 +2069,45 @@ function enrichFinancialPayload(payload = {}) {
     || Boolean(payload.stripeSubscriptionId);
 
   const groupAnnualPrice = resolveMembershipGroupAnnualPrice(payload);
-  const multiplier = isRecurring ? getFrequencyAnnualMultiplier(frequency) : 1;
-  const annualizedFromPayment = (isRecurring && paymentAmount > 0 && multiplier > 1)
-    ? paymentAmount * multiplier
-    : 0;
-
-  // Idempotent annual commitment — never multiply an already-annual pledge again.
-  // (Previous bug: `pledgeAmount < pledgeAmount * 12` was always true, so each
-  // enrich pass did ×12 → e.g. 2244 → 26928 → 323136 → 3877632.)
-  if (annualizedFromPayment > 0) {
-    const looksLikeInstallment = pledgeAmount <= 0
-      || Math.abs(pledgeAmount - paymentAmount) < 0.02
-      || (pledgeAmount < annualizedFromPayment * 0.9);
-    if (looksLikeInstallment) {
-      pledgeAmount = annualizedFromPayment;
-    }
-    // else keep existing pledgeAmount (already annual / larger commitment)
-  } else if (pledgeAmount <= 0 && groupAnnualPrice > 0) {
+  const remainingMonths = Number(payload.remainingMonths) || 0;
+  // Prorated membership pledge (e.g. April–August = 5 months → 2244/12*5 = 935).
+  if (remainingMonths > 0 && remainingMonths < 12 && groupAnnualPrice > 0) {
+    pledgeAmount = Math.round((groupAnnualPrice / 12) * remainingMonths * 100) / 100;
+  } else if (!(pledgeAmount > 0) && groupAnnualPrice > 0) {
     pledgeAmount = groupAnnualPrice;
   }
-
-  // Catalog price only fills gaps — never shrink a real commitment.
-  if (pledgeAmount <= 0 && groupAnnualPrice > 0) {
-    pledgeAmount = groupAnnualPrice;
-  }
+  // Previous (commented out): catalog annual / 12× monthly always overwrote prorated pledge to 2244
+  // if (groupAnnualPrice > 0) {
+  //   pledgeAmount = groupAnnualPrice;
+  // }
+  // if (!(pledgeAmount > 0) && groupAnnualPrice > 0) {
+  //   pledgeAmount = groupAnnualPrice;
+  // }
+  // Previous (commented out): always replaced pledge with catalog annual, then 12 × monthly
+  // if (groupAnnualPrice > 0) {
+  //   pledgeAmount = groupAnnualPrice;
+  // } else if (isRecurring) {
+  //   const freqLower = frequency.toLowerCase();
+  //   let multiplier = 1;
+  //   if (freqLower.includes('half') || freqLower.includes('semi')) {
+  //     multiplier = 2;
+  //   } else if (freqLower.includes('month') && !freqLower.includes('semi')) {
+  //     multiplier = 12;
+  //   } else if (freqLower.includes('week')) {
+  //     multiplier = 52;
+  //   } else if (freqLower.includes('quarter')) {
+  //     multiplier = 4;
+  //   }
+  //
+  //   if (multiplier > 1) {
+  //     const annualizedFromPayment = paymentAmount * multiplier;
+  //     if (annualizedFromPayment > 0 && pledgeAmount < annualizedFromPayment) {
+  //       pledgeAmount = annualizedFromPayment;
+  //     } else if (pledgeAmount > 0 && pledgeAmount < (pledgeAmount * multiplier)) {
+  //       pledgeAmount = pledgeAmount * multiplier;
+  //     }
+  //   }
+  // }
 
   let action = 'none';
   if (isRecurring && recurringAmount > 0) action = 'recurring';
@@ -1900,16 +2117,35 @@ function enrichFinancialPayload(payload = {}) {
 
   const fullAnnualPledge = pledgeAmount > 0 ? pledgeAmount : (recurringAmount > 0 ? recurringAmount * 2 : 0);
 
-  const recurringFields = isRecurring && recurringAmount > 0 ? {
+  // Prefer client-provided next charge date; otherwise compute calendar (+ test time).
+  const sfFrequency = toSalesforceFrequency(frequency);
+  const computedNextCharge = addRecurringIntervalToDate(paymentDate, frequency);
+  const nextChargeDate = String(payload.nextChargeDate || payload.nextPaymentDate || computedNextCharge || '').trim()
+    || computedNextCharge;
+  const nextChargeDateOnly = String(nextChargeDate).slice(0, 10);
+
+  const recurringFields = (isRecurring && recurringAmount > 0) || (payload.createRecurring === true) ? {
     chargeStartDate: paymentDate,
-    nextChargeDate: addRecurringIntervalToDate(paymentDate, frequency),
+    nextChargeDate,
+    nextPaymentDate: nextChargeDate,
+    nextChargeDateOnly,
+    OneCRM__Next_Charge_Date__c: nextChargeDateOnly,
+    OneCRM__Charge_Start_Date__c: String(paymentDate).slice(0, 10),
+    OneCRM__Schedule__c: sfFrequency,
+    Frequency: frequency,
     initialRecurrences: stripePaid ? 1 : 0,
     totalEstimatedRevenue: fullAnnualPledge > 0 ? fullAnnualPledge : recurringAmount,
     chargesRemaining: 0,
     paymentProcessorId: payload.stripeSubscriptionId || payload.stripePaymentIntentId || '',
     recurringInvoiceName: process.env.RECURRING_INVOICE_NAME || '',
     recurringLetterheadName: process.env.RECURRING_LETTERHEAD_NAME || '',
-  } : {};
+  } : {
+    // Still send next due date on membership one-time / installment follow-up pays for CRM update.
+    nextChargeDate,
+    nextPaymentDate: nextChargeDate,
+    nextChargeDateOnly,
+    OneCRM__Next_Charge_Date__c: nextChargeDateOnly,
+  };
 
   const method = payload.method || (payload.paymentMethodType === 'us_bank_account' ? 'Bank Transfer' : 'Stripe');
   const rawType = String(payload.paymentType || payload.type || '').toLowerCase();
@@ -1939,6 +2175,7 @@ function enrichFinancialPayload(payload = {}) {
     paymentOnly: pledgeAmount <= 0 && paymentAmount > 0 && !isRecurring,
     recurringAmount,
     frequency,
+    remainingMonths,
     paymentDateIso: payload.paymentDateIso || toSalesforceDateIso(paymentDate),
     isRecurring: isRecurring ? 'true' : 'false',
   };
@@ -1963,8 +2200,12 @@ function buildStripeCheckoutMetadata(payload, contactId, email) {
     frequency: payload.frequency || 'Monthly',
     paymentDate: payload.paymentDate || new Date().toISOString().split('T')[0],
     paymentDateIso: toSalesforceDateIso(payload.paymentDate),
+    nextChargeDate: String(enriched.nextChargeDate || payload.nextChargeDate || ''),
+    nextPaymentDate: String(enriched.nextPaymentDate || payload.nextPaymentDate || enriched.nextChargeDate || ''),
+    nextChargeDateOnly: String(enriched.nextChargeDateOnly || '').slice(0, 10),
     donorId: payload.accountId || '',
     pledgeAmount: String(pledgeAmount > 0 ? pledgeAmount : 0),
+    remainingMonths: String(Number(payload.remainingMonths) > 0 ? Number(payload.remainingMonths) : ''),
     paymentAmount: String(paymentAmount),
     action: enriched.action,
     createPledge: enriched.createPledge ? 'true' : 'false',
@@ -1994,9 +2235,12 @@ function buildQuickPaymentPayload(body, contactId) {
     billingMode,
     frequency: body.frequency || 'Monthly',
     paymentDate: body.paymentDate || new Date().toISOString().split('T')[0],
+    nextChargeDate: body.nextChargeDate || body.nextPaymentDate || '',
+    nextPaymentDate: body.nextPaymentDate || body.nextChargeDate || '',
     source: body.source || 'member_portal',
     paymentMethodType: body.paymentMethodType || 'card',
     groups: body.groups || '',
+    remainingMonths: Number(body.remainingMonths) || 0,
   });
 }
 
@@ -2057,7 +2301,6 @@ async function createStripeCheckoutSession(payload, contactId, email) {
   }
 
   // TEST MODE: one-time Stripe charge; CRM nextChargeDate still uses 1/5/10 min cadence.
-
   return stripe.checkout.sessions.create({
     payment_method_types: paymentMethodTypes,
     customer: customerId,
@@ -2092,6 +2335,8 @@ function buildCheckoutClientReferenceId(payload) {
     String(payload.paymentAmount ?? ''),
     payload.paymentDate || '',
     payload.paymentType || 'Donation',
+    String(payload.pledgeAmount ?? ''),
+    String(payload.remainingMonths ?? ''),
   ].join('|');
 }
 
@@ -2104,6 +2349,8 @@ function parseCheckoutClientReferenceId(clientReferenceId = '') {
     paymentAmount: parseFloat(parts[2]) || 0,
     paymentDate: parts[3] || '',
     paymentType: parts[4] || 'Donation',
+    pledgeAmount: parseFloat(parts[5]) || 0,
+    remainingMonths: Number(parts[6]) || 0,
   };
 }
 
@@ -2163,13 +2410,19 @@ async function resolveCheckoutAccountId(authHeader, email, accountId = '') {
 }
 
 function buildPayloadFromCheckoutSession(session) {
-  const metadata = session.metadata || {};
+  const subscriptionMeta = session.subscription && typeof session.subscription === 'object'
+    ? (session.subscription.metadata || {})
+    : {};
+  const metadata = { ...subscriptionMeta, ...(session.metadata || {}) };
   const refData = parseCheckoutClientReferenceId(session.client_reference_id);
   const email = (metadata.email || session.customer_email || session.customer_details?.email || '').toLowerCase();
   const paymentAmount = parseFloat(metadata.paymentAmount)
     || refData.paymentAmount
     || (session.amount_total ? session.amount_total / 100 : 0);
-  const pledgeAmount = parseFloat(metadata.pledgeAmount) || 0;
+  const remainingMonths = Number(metadata.remainingMonths) || Number(refData.remainingMonths) || 0;
+  const pledgeAmount = parseFloat(metadata.pledgeAmount)
+    || refData.pledgeAmount
+    || 0;
   const billingMode = metadata.billingMode === 'recurring' ? 'recurring' : 'regular';
 
   return enrichFinancialPayload({
@@ -2185,6 +2438,8 @@ function buildPayloadFromCheckoutSession(session) {
     billingMode,
     frequency: metadata.frequency || 'Monthly',
     paymentDate: metadata.paymentDate || refData.paymentDate || new Date().toISOString().split('T')[0],
+    nextChargeDate: metadata.nextChargeDate || metadata.nextPaymentDate || '',
+    nextPaymentDate: metadata.nextPaymentDate || metadata.nextChargeDate || '',
     source: metadata.source || 'member_portal',
     stripeSessionId: session.id,
     stripePaymentStatus: session.payment_status,
@@ -2197,6 +2452,8 @@ function buildPayloadFromCheckoutSession(session) {
       : session.payment_intent?.id || '',
     paymentMethodType: metadata.paymentMethodType || 'card',
     groups: metadata.groups || '',
+    remainingMonths,
+    membershipTier: metadata.subType || metadata.groups || '',
   });
 }
 
@@ -2218,6 +2475,29 @@ async function postToMakeWebhook(webhookUrl, payload, label) {
   return response.text();
 }
 
+function parsePortalMoney(value) {
+  if (value == null || value === '') return 0;
+  const amount = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function sumCachedPaymentAmounts(email = '') {
+  const cached = userSalesforceData[String(email || '').toLowerCase()] || {};
+  const payments = (cached.financials?.payments?.length ? cached.financials.payments : cached.payments) || [];
+  return payments.reduce((sum, payment) => {
+    const amount = parsePortalMoney(payment.amount || payment.total || payment.OneCRM__Paid__c || payment.OneCRM__Positive_Amount__c);
+    return amount > 0 ? sum + amount : sum;
+  }, 0);
+}
+
+function isUpdateMembershipPayload(payload = {}) {
+  const source = String(payload.source || '').toLowerCase();
+  return source === 'update_membership'
+    || payload.updateMembership === true
+    || payload.updateMembership === 'true'
+    || payload.updateMembership === '1';
+}
+
 async function triggerFinancialWebhook(payload, authHeader = null) {
   await ensureFinancialPayloadIds(payload, authHeader);
   const enriched = enrichFinancialPayload(payload);
@@ -2231,6 +2511,9 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
 
   const paymentUrl = process.env.MAKE_STRIPE_PAYMENT_WEBHOOK_URL;
   const pledgeRecurringUrl = process.env.MAKE_QUICK_PAYMENT_WEBHOOK_URL;
+  const masterPledgeUrl = process.env.MAKE_MASTER_PLEDGE_UPDATE
+    || process.env.MAKE_MEMBERSHIP_AMOUNT_UPDATE;
+  const updateMembership = isUpdateMembershipPayload(payload) || isUpdateMembershipPayload(enriched);
 
   const sfFrequency = toSalesforceFrequency(enriched.frequency);
   const fullPledgeVal = enriched.createPledge && enriched.pledgeAmount > 0 ? enriched.pledgeAmount : 0;
@@ -2240,6 +2523,7 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
     frequency: sfFrequency,
     OneCRM__Frequency__c: sfFrequency,
     Frequency: sfFrequency,
+    remainingMonths: Number(enriched.remainingMonths) || 0,
     pledgeAmount: fullPledgeVal,
     pledge: fullPledgeVal,
     annualCommitment: fullPledgeVal,
@@ -2263,11 +2547,20 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
     createPayment: Boolean(enriched.createPayment && paidCharge > 0),
     paymentOnly: Boolean(enriched.paymentOnly),
     doNotCreatePledge: !enriched.createPledge,
+    nextChargeDate: enriched.nextChargeDate || '',
+    nextPaymentDate: enriched.nextPaymentDate || enriched.nextChargeDate || '',
+    nextChargeDateOnly: enriched.nextChargeDateOnly || String(enriched.nextChargeDate || '').slice(0, 10),
+    OneCRM__Next_Charge_Date__c: enriched.OneCRM__Next_Charge_Date__c
+      || String(enriched.nextChargeDate || '').slice(0, 10),
+    OneCRM__Charge_Start_Date__c: enriched.OneCRM__Charge_Start_Date__c
+      || String(enriched.paymentDate || '').slice(0, 10),
     // Previous (commented out): sent Stripe values "card" / "us_bank_account"
     // paymentMethodType: enriched.paymentMethodType || 'card',
     paymentMethodType: toMakePaymentMethodType(enriched.paymentMethodType),
     OneCRM__Payment_Type__c: toMakePaymentMethodType(enriched.paymentMethodType),
   };
+
+  console.log('[FINANCIAL] nextChargeDate → Make/CRM:', webhookPayload.nextChargeDate, webhookPayload.OneCRM__Next_Charge_Date__c);
 
   const calls = [];
   if (webhookPayload.createPayment && paymentUrl) {
@@ -2283,6 +2576,27 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
   }
   if ((enriched.createPledge || enriched.createRecurring) && pledgeRecurringUrl) {
     calls.push(postToMakeWebhook(pledgeRecurringUrl, webhookPayload, 'MAKE_QUICK_PAYMENT_WEBHOOK_URL'));
+  }
+
+  // Update Membership: same MAKE_QUICK_PAYMENT payload, but OneCRM__Amount__c =
+  // remaining-months membership amount + total of existing payment amounts.
+  if (updateMembership && masterPledgeUrl && (enriched.createPledge || enriched.createRecurring || webhookPayload.createPayment)) {
+    const calculatedMembershipAmount = fullPledgeVal > 0 ? fullPledgeVal : paidCharge;
+    const paymentsTotal = Math.round(sumCachedPaymentAmounts(enriched.email) * 100) / 100;
+    const masterAmount = Math.round((calculatedMembershipAmount + paymentsTotal) * 100) / 100;
+    const masterPayload = {
+      ...webhookPayload,
+      OneCRM__Amount__c: masterAmount,
+      amount: masterAmount,
+      calculatedMembershipAmount,
+      paymentsTotal,
+    };
+    console.log(`[FINANCIAL] MAKE_MASTER_PLEDGE_UPDATE amount=${masterAmount} (calc=${calculatedMembershipAmount} + payments=${paymentsTotal})`);
+    calls.push(
+      postToMakeWebhook(masterPledgeUrl, masterPayload, 'MAKE_MASTER_PLEDGE_UPDATE').catch((err) => {
+        console.warn('[FINANCIAL] MAKE_MASTER_PLEDGE_UPDATE:', err.message);
+      }),
+    );
   }
 
   // If payment was collected but only the pledge URL is configured, still send payment
@@ -2410,7 +2724,9 @@ app.post('/api/payments/confirm-checkout', async (req, res) => {
       return res.status(400).json({ error: 'No email address found for this user.' });
     }
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['subscription'],
+    });
     if (!isCheckoutSessionComplete(session)) {
       return res.status(400).json({ error: 'Payment is not completed yet.' });
     }
@@ -2446,30 +2762,32 @@ app.post('/api/payments/confirm-checkout', async (req, res) => {
     try {
       await triggerFinancialWebhook(payload, authHeader);
 
-      // Auto-assign group if present in checkout session metadata
-      const assignedGroup = payload.groups;
-      if (assignedGroup) {
-        console.log(`[PAYMENT] Auto-assigning group "${assignedGroup}" to account ${payload.accountId} after checkout session ${sessionId}`);
-        const assignWebhookUrl = process.env.MAKE_ASSIGN_GROUP_WEBHOOK_URL;
-        if (assignWebhookUrl) {
-          try {
-            await fetch(assignWebhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'assign_group',
-                accountId: payload.accountId,
-                accountName: payload.accountName || 'Household Account',
-                contactId: payload.contactId,
-                email: payload.email,
-                groups: assignedGroup,
-              }),
-            });
-          } catch (groupErr) {
-            console.error('[PAYMENT] Error auto-assigning group:', groupErr);
-          }
-        }
-      }
+      // Group assignment is only from Membership Selection (Select & Pay → /api/household/assign-group).
+      // Pay Membership must not change the Salesforce group (e.g. Family → Upgraded from a $3000 price match).
+      // Previous (commented out): auto-assign after every checkout that included groups metadata
+      // const assignedGroup = payload.groups;
+      // if (assignedGroup) {
+      //   console.log(`[PAYMENT] Auto-assigning group "${assignedGroup}" to account ${payload.accountId} after checkout session ${sessionId}`);
+      //   const assignWebhookUrl = process.env.MAKE_ASSIGN_GROUP_WEBHOOK_URL;
+      //   if (assignWebhookUrl) {
+      //     try {
+      //       await fetch(assignWebhookUrl, {
+      //         method: 'POST',
+      //         headers: { 'Content-Type': 'application/json' },
+      //         body: JSON.stringify({
+      //           action: 'assign_group',
+      //           accountId: payload.accountId,
+      //           accountName: payload.accountName || 'Household Account',
+      //           contactId: payload.contactId,
+      //           email: payload.email,
+      //           groups: assignedGroup,
+      //         }),
+      //       });
+      //     } catch (groupErr) {
+      //       console.error('[PAYMENT] Error auto-assigning group:', groupErr);
+      //     }
+      //   }
+      // }
 
       processedCheckoutSessions.add(sessionId);
     } finally {

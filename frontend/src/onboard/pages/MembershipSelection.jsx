@@ -15,7 +15,8 @@ import {
   MEMBERSHIP_STEP_ID,
   CONTRIBUTION_SCHEDULE_STEP_ID,
 } from '../data/onboardingSteps';
-import { GENERAL_TIERS, CHAI_TIERS, formatCurrency } from '../data/membershipTiers';
+import { GENERAL_TIERS, CHAI_TIERS, formatCurrency, formatMembershipSalesforceGroup } from '../data/membershipTiers';
+import { getProratedMembershipCommitment, getRemainingMembershipMonths, getPortalTestDateLabel } from '../../utils/portalFiscalYear';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
 import {
   getHouseholdPreferences,
@@ -23,17 +24,23 @@ import {
   getPreviousPreferenceStepId,
   isFirstPreferenceStep,
 } from '../utils/householdPreferences';
-import { signOutFromOnboarding, isPostLoginStepperPending, dismissPostLoginStepperPending, isChooseMembershipExistingHousehold } from '../utils/postLoginStepper';
+import { signOutFromOnboarding, isPostLoginStepperPending, dismissPostLoginStepperPending, isMembershipFormOnlyFlow, isPortalUpdateMembershipMode, clearPortalUpdateMembershipMode, saveSelectedMembershipTier } from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = MEMBERSHIP_STEP_ID;
 
 function TierRow({ tier, selected, onSelect, isSubmitting }) {
   const Icon = tier.icon;
+  const remainingMonths = getRemainingMembershipMonths();
+  const proratedAmount = getProratedMembershipCommitment(tier.annualPrice);
+  const showProrated = remainingMonths > 0 && remainingMonths < 12 && !tier.isOpenEnded;
+  const displayAmount = showProrated ? proratedAmount : tier.annualPrice;
   const monthlyAmount = Math.floor(tier.annualPrice / 12);
   const monthly = tier.isOpenEnded
     ? tier.tagline
-    : `$${formatCurrency(monthlyAmount)} / month`;
+    : (showProrated
+      ? `$${formatCurrency(monthlyAmount)} / month · ${remainingMonths} months`
+      : `$${formatCurrency(monthlyAmount)} / month`);
 
   return (
     <div
@@ -68,10 +75,18 @@ function TierRow({ tier, selected, onSelect, isSubmitting }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
         <span className="onboard-tier-price-block" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
           <span className="onboard-tier-price" style={{ fontSize: '16px', fontWeight: '800', color: 'var(--onboard-navy)' }}>
-            ${formatCurrency(tier.annualPrice)}
-            {tier.isOpenEnded ? '+' : ''} <span className="onboard-tier-period" style={{ fontSize: '11px', fontWeight: '500', color: 'var(--onboard-text-secondary)' }}>/ year</span>
+            ${formatCurrency(displayAmount)}
+            {tier.isOpenEnded ? '+' : ''}{' '}
+            <span className="onboard-tier-period" style={{ fontSize: '11px', fontWeight: '500', color: 'var(--onboard-text-secondary)' }}>
+              {showProrated ? `/ ${remainingMonths} mo` : '/ year'}
+            </span>
           </span>
           <span className="onboard-tier-monthly" style={{ fontSize: '11px', color: '#c4841f', fontWeight: '600' }}>{monthly}</span>
+          {showProrated && (
+            <span style={{ fontSize: '10px', color: 'var(--onboard-text-secondary)' }}>
+              Full year ${formatCurrency(tier.annualPrice)}
+            </span>
+          )}
         </span>
 
         <button
@@ -143,7 +158,12 @@ export default function MembershipSelection() {
     setIsSubmitting(true);
     setError('');
 
+    const groupName = formatMembershipSalesforceGroup(tier.name);
+    const remainingMonths = getRemainingMembershipMonths();
+    const proratedCommitment = getProratedMembershipCommitment(tier.annualPrice);
+
     try {
+      saveSelectedMembershipTier(tier.id);
       persistNow({
         ...draft,
         currentStep: CONTRIBUTION_SCHEDULE_STEP_ID,
@@ -152,25 +172,57 @@ export default function MembershipSelection() {
           membership: {
             ...draft.data.membership,
             tier: tier.id,
+            name: tier.name,
+            sfGroup: groupName,
+            annualPrice: tier.annualPrice,
+            remainingMonths,
+            proratedCommitment,
+            source: isPortalUpdateMembershipMode()
+              ? 'update_membership'
+              : (draft.data.membership?.source || ''),
+            // Previous (commented out): schedule used full annualPrice only
+            // annualPrice: tier.annualPrice,
           },
         },
       });
 
-      goToOnboardingPath(getStepById(CONTRIBUTION_SCHEDULE_STEP_ID).path);
+      await fetchPortalApi('/api/household/assign-group', {
+        method: 'POST',
+        body: { groups: groupName },
+      });
+
+      const schedulePath = getStepById(CONTRIBUTION_SCHEDULE_STEP_ID).path;
+      const params = new URLSearchParams();
+      if (isPortalUpdateMembershipMode()) params.set('mode', 'update');
+      params.set('tier', tier.id);
+      const query = params.toString();
+      goToOnboardingPath(query ? `${schedulePath}?${query}` : schedulePath);
     } catch (err) {
-      setError(err.message || 'Failed to update selected membership tier.');
+      // Previous (commented out): continued without assigning the Salesforce group
+      // persistNow({ ...draft, currentStep: CONTRIBUTION_SCHEDULE_STEP_ID, data: { ...draft.data, membership: { ...draft.data.membership, tier: tier.id } } });
+      // goToOnboardingPath(getStepById(CONTRIBUTION_SCHEDULE_STEP_ID).path);
+      setError(err.message || 'Failed to assign membership group.');
+      showToast({
+        message: err.message || 'Failed to assign membership group. Please try again.',
+        type: 'error',
+      });
       setIsSubmitting(false);
     }
   };
 
   const handleBack = () => {
-    if (isPostLoginStepperPending() || new URLSearchParams(window.location.search).get('mode') === 'renew') {
+    if (
+      isPostLoginStepperPending()
+      || new URLSearchParams(window.location.search).get('mode') === 'renew'
+      || isPortalUpdateMembershipMode()
+    ) {
       dismissPostLoginStepperPending();
       try {
         sessionStorage.removeItem('is_portal_renewal_mode');
       } catch {
         // ignore
       }
+      clearPortalUpdateMembershipMode();
       window.location.replace('/');
       return;
     }
@@ -191,6 +243,9 @@ export default function MembershipSelection() {
     window.location.replace('/');
   };
 
+  const remainingMonths = getRemainingMembershipMonths();
+  const testDateLabel = getPortalTestDateLabel();
+
   return (
     <div className="onboard-root" data-onboard-theme={theme}>
       <div className="onboard-about-page">
@@ -199,13 +254,19 @@ export default function MembershipSelection() {
         <OnboardHeader
           theme={theme}
           onToggleTheme={toggleTheme}
-          title={isPostLoginStepperPending() ? "Membership Renewal" : "Membership Onboarding"}
-          subtitle={isPostLoginStepperPending() ? "Select your membership tier to renew your account." : "Join our community in a few simple steps."}
+          title={isPortalUpdateMembershipMode()
+            ? 'Update Membership'
+            : (isPostLoginStepperPending() ? 'Membership Renewal' : 'Membership Onboarding')}
+          subtitle={isPortalUpdateMembershipMode()
+            ? `Select your membership. Amounts use remaining months through August${testDateLabel ? ` (test date ${testDateLabel} · ${remainingMonths} mo)` : ` (${remainingMonths} mo)`}.`
+            : (isPostLoginStepperPending() ? 'Select your membership tier to renew your account.' : 'Join our community in a few simple steps.')}
         />
 
-        <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
+        {!isMembershipFormOnlyFlow() && (
+          <OnboardStepper currentStepId={THIS_STEP_ID} draft={draft} />
+        )}
 
-        {!isChooseMembershipExistingHousehold() && (
+        {!isMembershipFormOnlyFlow() && (
           <KnowYouBetterPanel
             draft={draft}
             updateDraft={updateDraft}

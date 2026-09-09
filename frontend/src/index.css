@@ -2607,6 +2607,16 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--color-success);
 }
 
+.badge-waiting {
+  background: rgba(249, 115, 22, 0.12);
+  color: #ea580c;
+}
+
+.light-theme .badge-waiting {
+  background: rgba(249, 115, 22, 0.14);
+  color: #c2410c;
+}
+
 .badge-inactive {
   background: var(--color-danger-light);
   color: var(--color-danger);
@@ -2754,6 +2764,20 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Renewed Membership Banner (Shown before 1st September) */
+.membership-renewal-flex {
+  margin-top: 18px;
+}
+
+.membership-renewal-right-label {
+  width: auto !important;
+  height: auto !important;
+  padding: 4px 10px;
+  border-radius: 8px !important;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .renewed-membership-banner {
   position: relative;
   display: flex;
@@ -3203,6 +3227,30 @@ h1, h2, h3, h4, h5, h6 {
 
 .membership-details-card {
   padding: 28px 32px;
+}
+
+.membership-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.membership-details-header h3 {
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+.membership-details-header .dash-btn-gold {
+  margin-top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
 }
 
 .membership-details-card h3 {
@@ -5990,3 +6038,78 @@ h1, h2, h3, h4, h5, h6 {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+.add-card-open-btn {
+  width: 100%;
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.add-card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.add-card-exp-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.add-card-form-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.add-card-form-footer .dash-btn-gold,
+.add-card-form-footer .dash-btn-outline {
+  margin-top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.add-card-ce-wrap {
+  position: relative;
+  height: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.add-card-ce-placeholder {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted, #94a3b8);
+  pointer-events: none;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.add-card-ce {
+  display: block;
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  line-height: 44px;
+  padding: 0 16px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* Previous (commented out): caret sat at the top of the box
+.add-card-ce {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+*/

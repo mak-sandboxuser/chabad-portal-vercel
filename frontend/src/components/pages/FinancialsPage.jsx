@@ -362,11 +362,45 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
             <DataTable
               emptyMessage="No recurring billing profiles found."
               rows={recurring}
+              align="center"
               columns={[
-                { key: 'status', label: 'Status', render: (row) => <span className="badge badge-active">{row.status}</span> },
-                { key: 'amount', label: 'Amount' },
-                { key: 'frequency', label: 'Frequency' },
-                { key: 'nextDate', label: 'Next Charge', render: (row) => formatDisplayDate(row.nextDate) },
+                {
+                  key: 'status',
+                  label: 'Status',
+                  render: (row) => {
+                    const waiting = String(row.status || '').trim().toLowerCase() === 'waiting';
+                    return (
+                      <span className={`badge ${waiting ? 'badge-waiting' : 'badge-active'}`}>
+                        {row.status}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: 'invoiceTotal',
+                  label: 'Invoice Total',
+                  render: (row) => row.invoiceTotal || formatMoney(row.OneCRM__Total_Estimated_Revenue__c) || '$0.00',
+                },
+                {
+                  key: 'amountPerCharge',
+                  label: 'Amount Per Charge',
+                  render: (row) => row.amountPerCharge || formatMoney(row.OneCRM__Amount_Per_Charge__c) || '$0.00',
+                },
+                {
+                  key: 'frequency',
+                  label: 'Frequency',
+                  align: 'center',
+                  render: (row) => row.frequency || row.OneCRM__Schedule__c || '—',
+                },
+                {
+                  key: 'chargesRemaining',
+                  label: 'Charges Remaining',
+                  render: (row) => {
+                    const remaining = row.chargesRemaining ?? row.OneCRM__Charges_Remaining__c;
+                    if (remaining === '' || remaining === null || remaining === undefined) return '—';
+                    return remaining;
+                  },
+                },
                 {
                   key: 'method',
                   label: 'Payment Method',

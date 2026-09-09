@@ -93,6 +93,10 @@ export default function useOnboardingDraft() {
     const withOwner = email && !nextDraft.ownerEmail
       ? { ...nextDraft, ownerEmail: email }
       : nextDraft;
+    // Keep the in-memory ref in sync before navigation. pagehide/beforeunload
+    // call flushSave(); without this it would write the previous draft and
+    // overwrite the membership amount just saved (e.g. Single Parent Family).
+    draftRef.current = withOwner;
     setDraft(withOwner);
     savedSerializedRef.current = JSON.stringify(withOwner);
     writeDraft(withOwner);
@@ -101,6 +105,7 @@ export default function useOnboardingDraft() {
   const resetDraft = useCallback(() => {
     clearDraft();
     const empty = createEmptyDraft(getSessionEmail());
+    draftRef.current = empty;
     savedSerializedRef.current = JSON.stringify(empty);
     setDraft(empty);
   }, []);

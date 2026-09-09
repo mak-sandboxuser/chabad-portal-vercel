@@ -1,4 +1,4 @@
-import { isDateInPortalFiscalYear, getPortalFiscalYearRange, getPortalFiscalYearLabel } from './portalFiscalYear.js';
+import { isDateInPortalFiscalYear, getPortalFiscalYearRange, getPortalFiscalYearLabel, getProratedMembershipCommitment, getPortalClock, getHalfYearlySecondInstallmentDate } from './portalFiscalYear.js';
 import { ALL_MEMBERSHIP_TIERS } from '../onboard/data/membershipTiers';
 
 export { getPortalFiscalYearLabel };
@@ -233,6 +233,11 @@ export function getPayments(sfData) {
 function parseSortableDate(value) {
   const normalized = String(value ?? '').trim();
   if (!normalized) return 0;
+  // Keep clock time when present (accelerated schedule depends on it).
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(normalized)) {
+    const parsed = Date.parse(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
   if (/^\d{4}-\d{2}-\d{2}/.test(normalized)) {
     const [year, month, day] = normalized.slice(0, 10).split('-').map(Number);
     return new Date(year, month - 1, day).getTime();
@@ -581,38 +586,38 @@ export function getPledges(sfData) {
   }, 0);
 
   // MAKE_PAYMENTS_WEBHOOK_URL returned empty pledges.
-  // If Salesforce Groups has a membership, show that membership amount for
-  // commitment / outstanding / Pay flow — not invent from random cash payments.
+  // Fallback: remaining-months catalog calc (same as Contribution Schedule), not Family $2244.
   if (!rawPledges.length) {
-    // Previous (commented out): always returned [] so Commitment/Outstanding stayed $0
-    // even when Salesforce Groups had Family Membership 26-27.
-    // return [];
-
-    const tierName = membershipObj.tier
-      || sfData?.account?.groups
-      || sfData?.groups
-      || sfData?.profile?.groups
-      || '';
-    const memCommitment = resolveTierPriceFromGroup(tierName);
-    if (!(memCommitment > 0)) return [];
-
+    const tierName = membershipObj.tier || sfData?.account?.groups || sfData?.groups || '';
+    const catalogAnnual = resolveTierPriceFromGroup(tierName);
+    if (!(catalogAnnual > 0)) return [];
     const memPaid = membershipPaidFromPayments(displayPayments);
-    const memOutstanding = Math.max(memCommitment - memPaid, 0);
+    const remainingMonthsOutstanding = getProratedMembershipCommitment(catalogAnnual);
     return [{
-      id: 'sf_group_membership_pledge',
-      name: tierName,
-      purpose: tierName,
+      id: 'membership_pledge_catalog_fallback',
+      name: tierName || 'Membership',
+      purpose: tierName || 'Annual Membership',
       type: 'Pledge',
       subType: 'Annual Membership',
-      amount: formatMoney(memCommitment),
-      total: formatMoney(memCommitment),
+      amount: formatMoney(catalogAnnual),
+      total: formatMoney(catalogAnnual),
       paid: formatMoney(memPaid),
-      outstanding: formatMoney(memOutstanding),
+      outstanding: formatMoney(remainingMonthsOutstanding),
       date: membershipObj.renewalDate || sfData?.joinedDate || '',
-      status: memOutstanding > 0 ? 'Active' : 'Success',
-      source: 'salesforce_group',
+      status: remainingMonthsOutstanding > 0 ? 'Active' : 'Success',
     }];
   }
+  // Previous (commented out): invented catalog $2244 as Outstanding when pledges were empty
+  // if (!rawPledges.length) {
+  //   return [];
+  // }
+  // Previous (commented out): invented catalog commitment/outstanding when pledges were empty
+  // if (!rawPledges.length) {
+  //   const tierName = membershipObj.tier || sfData?.account?.groups || sfData?.groups || '';
+  //   const memCommitment = resolveTierPriceFromGroup(tierName);
+  //   ...
+  //   outstanding: formatMoney(Math.max(memCommitment - memPaid, 0)),
+  // }
 
   const explicitMemPledge = rawPledges.find(
     (p) => (p.type || '').toLowerCase() === 'membership'
@@ -679,9 +684,18 @@ export function getPledges(sfData) {
     // currentYtdPaid, // commented out: included $1 donations
     // parseMoney(membershipObj.contributedYtd),
   );
+  // Prefer Salesforce OneCRM__Amount_Outstanding__c. If missing, remaining-months
+  // catalog calc (Family $2244 in April → $935) — never the full catalog $2244.
+  const remainingMonthsOutstanding = getProratedMembershipCommitment(matchedTierPrice || memCommitment);
   const memOutstanding = sfOutstanding > 0
     ? sfOutstanding
-    : Math.max(memCommitment - memPaid, 0);
+    : (memPaid > 0 ? 0 : remainingMonthsOutstanding);
+  // Previous (commented out): Salesforce outstanding only (no catalog remaining-months fallback)
+  // const memOutstanding = sfOutstanding;
+  // Previous (commented out): when Amount_Outstanding__c was 0/missing, used catalog − paid ($2244)
+  // const memOutstanding = sfOutstanding > 0
+  //   ? sfOutstanding
+  //   : Math.max(memCommitment - memPaid, 0);
 
   const primaryMemPledge = {
     id: explicitMemPledge?.id || 'membership_pledge_primary',
@@ -750,6 +764,7 @@ export function markRecentMembershipPayment(email = '', paymentDetails = null) {
       JSON.stringify({
         email: fallbackEmail,
         at: Date.now(),
+        paymentId: paymentDetails?.id || paymentDetails?.paymentId || '',
         billingMode: paymentDetails?.billingMode || '',
         amount: parseMoney(paymentDetails?.amount || paymentDetails?.total || 0),
         frequency: paymentDetails?.frequency || '',
@@ -900,7 +915,9 @@ export function isGuestUser(sfData) {
 
 export function formatMembershipDisplayName(name = '') {
   return String(name || '')
-    .replace(/(?:\s*\(\s*Household\s*\))+/gi, '')
+    // Previous (commented out): hid "(Household)" in the portal Group label
+    // .replace(/(?:\s*\(\s*Household\s*\))+/gi, '')
+    .replace(/(?:\s*\(\s*Household\s*\))+/gi, ' (Household)')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -938,16 +955,18 @@ export function getMembership(sfData) {
       return formatMembershipDisplayName(latestPart);
     }
 
-    const s = rawStr.toLowerCase();
-    if (s.includes('family membership')) return 'Family Membership 26-27';
-    if (s.includes('upgraded membership')) return 'Upgraded Membership 26-27';
-    if (s.includes('senior citizen')) return 'Senior Citizen Membership 26-27';
-    if (s.includes('single membership')) return 'Single Membership 26-27';
-    if (s.includes('chai donor')) return 'Chai Donor Membership 26-27';
-    if (s.includes('chai partner')) return 'Chai Partner Membership 26-27';
-    if (s.includes('chai rabbi')) return 'Chai Rabbi Circle Membership 26-27';
-    if (s.includes('chai leadership')) return 'Chai Leadership Circle Membership 26-27';
-    if (s.includes('single parent') || /membership\s*\d{2}/.test(s)) return 'Membership 26-27';
+    // Previous (commented out): hardcoded portal labels without "(Household)"
+    // const s = rawStr.toLowerCase();
+    // if (s.includes('family membership')) return 'Family Membership 26-27';
+    // if (s.includes('upgraded membership')) return 'Upgraded Membership 26-27';
+    // if (s.includes('senior citizen')) return 'Senior Citizen Membership 26-27';
+    // if (s.includes('single membership')) return 'Single Membership 26-27';
+    // if (s.includes('chai donor')) return 'Chai Donor Membership 26-27';
+    // if (s.includes('chai partner')) return 'Chai Partner Membership 26-27';
+    // if (s.includes('chai rabbi')) return 'Chai Rabbi Circle Membership 26-27';
+    // if (s.includes('chai leadership')) return 'Chai Leadership Circle Membership 26-27';
+    // if (s.includes('single parent')) return 'Single Parent Family 26-27';
+    // if (s.includes('single parent') || /membership\s*\d{2}/.test(s)) return 'Membership 26-27';
     return formatMembershipDisplayName(rawStr);
   };
 
@@ -1003,11 +1022,11 @@ export function getMembership(sfData) {
     // || inferredFromPayments.paid;
 
   const pledgeOutstanding = membershipPledge ? parseMoney(membershipPledge.outstanding) : 0;
-  // Use pledge outstanding, or commitment - paid when we have a membership amount
-  // from SF Groups (even if Make pledges webhook was empty).
-  const calculatedOutstanding = pledgeOutstanding > 0
-    ? pledgeOutstanding
-    : (annualCommitmentVal > 0 ? Math.max(annualCommitmentVal - contributed, 0) : 0);
+  const calculatedOutstanding = pledgeOutstanding;
+  // Previous (commented out): catalog commitment − paid when pledge outstanding was missing
+  // const calculatedOutstanding = pledgeOutstanding > 0
+  //   ? pledgeOutstanding
+  //   : (annualCommitmentVal > 0 ? Math.max(annualCommitmentVal - contributed, 0) : 0);
   // Previous (commented out): only used annual - contributed when raw pledge amounts existed
   // const calculatedOutstanding = pledgeOutstanding > 0
   //   ? pledgeOutstanding
@@ -1035,13 +1054,15 @@ export function getMembership(sfData) {
   const displayCommitment = forceZeroMembershipAmounts ? '$0.00' : finalAnnualCommitmentStr;
   const displayOutstanding = forceZeroMembershipAmounts
     ? '$0.00'
-    : formatMoney(
-      calculatedOutstanding > 0
-        ? calculatedOutstanding
-        : (parseMoney(finalAnnualCommitmentStr) > 0
-          ? Math.max(parseMoney(finalAnnualCommitmentStr) - contributed, 0)
-          : 0),
-    );
+    : formatMoney(calculatedOutstanding);
+  // Previous (commented out): fell back to catalog commitment − paid ($2244)
+  // : formatMoney(
+  //     calculatedOutstanding > 0
+  //       ? calculatedOutstanding
+  //       : (parseMoney(finalAnnualCommitmentStr) > 0
+  //         ? Math.max(parseMoney(finalAnnualCommitmentStr) - contributed, 0)
+  //         : 0),
+  //   );
 
   return {
     tier: resolvedTier,
@@ -1072,9 +1093,11 @@ export function getFinancialSummary(sfData) {
   const pledges = getPledges(sfData);
   const pledgeOutstandingSum = pledges.reduce((sum, item) => sum + parseMoney(item.outstanding), 0);
   // Pledges drive outstanding / commitment; payments drive history / YTD only.
-  const calculatedOutstanding = pledgeOutstandingSum > 0
-    ? pledgeOutstandingSum
-    : (annual > 0 ? Math.max(annual - contributed, 0) : 0);
+  const calculatedOutstanding = pledgeOutstandingSum;
+  // Previous (commented out): catalog annual − contributed when pledge outstanding was missing
+  // const calculatedOutstanding = pledgeOutstandingSum > 0
+  //   ? pledgeOutstandingSum
+  //   : (annual > 0 ? Math.max(annual - contributed, 0) : 0);
   const outstanding = calculatedOutstanding;
 
   const pct = annual > 0 ? Math.round((contributed / annual) * 100) : 0;
@@ -1106,14 +1129,54 @@ function toIsoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-/** TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Yearly/full renewal → 10 min. */
+/**
+ * Next charge date for Make/CRM: calendar due date (1st of next month, etc.)
+ * with optional accelerated open time (1/5/10 min) in test mode.
+ */
+export function buildMembershipNextChargeDate({
+  frequency = 'Monthly',
+  paymentDate = '',
+  membershipPaymentCount = 0,
+} = {}) {
+  const paid = (() => {
+    const raw = String(paymentDate || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const [y, m, d] = raw.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return new Date();
+  })();
+  const freq = String(frequency || '').toLowerCase();
+  let calendar = '';
+
+  if (freq.includes('half') || freq.includes('semi') || freq.includes('install')) {
+    calendar = getHalfYearlySecondInstallmentDate(paid);
+  } else if (freq.includes('year') || freq.includes('annual') || freq.includes('full') || freq.includes('one')) {
+    const endYear = paid.getMonth() >= 8 ? paid.getFullYear() + 1 : paid.getFullYear();
+    calendar = `${endYear}-09-01`;
+  } else {
+    const count = Math.max(Number(membershipPaymentCount) || 0, 1);
+    const next = new Date(paid.getFullYear(), paid.getMonth() + count, 1);
+    calendar = toIsoDate(next);
+  }
+
+  const delay = getAcceleratedScheduleDelayMinutes(frequency);
+  if (delay > 0) {
+    const openAt = new Date();
+    openAt.setMinutes(openAt.getMinutes() + delay);
+    const [y, m, d] = calendar.slice(0, 10).split('-').map(Number);
+    return new Date(y, m - 1, d, openAt.getHours(), openAt.getMinutes(), openAt.getSeconds()).toISOString();
+  }
+  return calendar;
+}
+
+/** TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Full/Annual → 10 min. */
 const ACCELERATED_SCHEDULE_TEST = true;
 
-function getAcceleratedScheduleDelayMinutes(frequency = '') {
+function getAcceleratedScheduleDelayMinutes(frequencyOrKind = '') {
   if (!ACCELERATED_SCHEDULE_TEST) return 0;
-  const freq = String(frequency || '').toLowerCase().trim();
+  const freq = String(frequencyOrKind || '').toLowerCase().trim();
   if (freq.includes('half') || freq.includes('semi') || freq.includes('install')) return 5;
-  // Full / one-time / annual: next membership renewal after 10 minutes (test).
   if (
     freq.includes('annual')
     || freq.includes('yearly')
@@ -1125,6 +1188,14 @@ function getAcceleratedScheduleDelayMinutes(frequency = '') {
   }
   if (freq.includes('month') || freq === 'monthly' || !freq) return 1;
   return 1;
+}
+
+function acceleratedDelayForScheduleKind(scheduleKind = '') {
+  if (!ACCELERATED_SCHEDULE_TEST) return 0;
+  if (scheduleKind === 'monthly') return 1;
+  if (scheduleKind === 'installments') return 5;
+  if (scheduleKind === 'full') return 10;
+  return 0;
 }
 
 function readRecentMembershipPaymentRecord(sfData) {
@@ -1144,6 +1215,20 @@ function readRecentMembershipPaymentAt(sfData) {
   return Number(readRecentMembershipPaymentRecord(sfData)?.at) || 0;
 }
 
+/** Local accelerated clock only — never use CRM date-only midnights (those break the 1-min lock). */
+function getAcceleratedClockAt(sfData) {
+  return readRecentMembershipPaymentAt(sfData);
+}
+
+function getLatestPaymentTimestamp(sfData) {
+  let latest = 0;
+  getPayments(sfData).forEach((payment) => {
+    const ts = parseSortableDate(payment.sortDate || payment.date);
+    if (ts > latest) latest = ts;
+  });
+  return latest;
+}
+
 function getLatestMembershipPaymentTimestamp(sfData) {
   let latest = 0;
   getPayments(sfData).filter(isMembershipRelatedItem).forEach((payment) => {
@@ -1156,8 +1241,33 @@ function getLatestMembershipPaymentTimestamp(sfData) {
 }
 
 /**
- * TEST MODE: 10 minutes after a full/one-time membership payment = 1 membership year complete.
- * Dashboard should then open Membership Renewal (not an installment Make Payment).
+ * Attach CRM payment id to the local accelerated clock (do not reset the timer).
+ * Timer is started only by markRecentMembershipPayment after checkout.
+ */
+export function syncAcceleratedScheduleClock(sfData) {
+  if (!ACCELERATED_SCHEDULE_TEST || !sfData) return;
+  try {
+    const payments = getPayments(sfData).filter(isMembershipRelatedItem);
+    const last = payments[0];
+    if (!last) return;
+    const paymentId = String(last.id || `${last.date || ''}|${last.amount || ''}`);
+    if (!paymentId || paymentId === '|') return;
+
+    const existing = readRecentMembershipPaymentRecord(sfData);
+    if (!existing?.at) return;
+    if (existing.paymentId === paymentId) return;
+
+    localStorage.setItem(
+      RECENT_MEMBERSHIP_PAYMENT_KEY,
+      JSON.stringify({ ...existing, paymentId }),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * TEST MODE: 10 minutes after a full/one-time payment ≈ 1 membership year complete.
  */
 export function isAcceleratedMembershipRenewalDue(sfData) {
   if (!sfData || !ACCELERATED_SCHEDULE_TEST) return false;
@@ -1166,40 +1276,34 @@ export function isAcceleratedMembershipRenewalDue(sfData) {
   const outstanding = parseMoney(summary.outstanding);
   if (!(annual > 0) || outstanding > 0) return false;
 
-  const recent = readRecentMembershipPaymentRecord(sfData);
-  const recentBilling = String(recent?.billingMode || '').toLowerCase();
-  const recentFreq = String(recent?.frequency || '').toLowerCase();
-  const recentAmount = parseMoney(recent?.amount);
-  const recentWasInstallment = recentBilling === 'recurring'
-    && (
-      recentFreq.includes('month')
-      || recentFreq.includes('half')
-      || recentFreq.includes('semi')
-      || (recentAmount > 0 && annual > 0 && recentAmount < annual * 0.85)
-    );
-
   const activeRecurring = getActiveMembershipRecurring(sfData);
   const recurringFreq = String(activeRecurring?.frequency || '').toLowerCase();
-  const recurringLooksInstallment = (recurringFreq.includes('month') && !recurringFreq.includes('semi'))
+  const installmentFreq = (recurringFreq.includes('month') && !recurringFreq.includes('semi'))
     || recurringFreq.includes('half')
     || recurringFreq.includes('semi');
 
   const membershipPayments = getPayments(sfData).filter(isMembershipRelatedItem);
   const lastAmt = parseMoney(membershipPayments[0]?.amount || membershipPayments[0]?.total);
-  const paidFullAmount = (lastAmt > 0 && (amountsMatch(lastAmt, annual) || lastAmt >= annual * 0.9))
-    || (recentAmount > 0 && (amountsMatch(recentAmount, annual) || recentAmount >= annual * 0.9));
+  const paidFullAmount = lastAmt > 0 && (amountsMatch(lastAmt, annual) || lastAmt >= annual * 0.9);
+  if (installmentFreq && !paidFullAmount) return false;
+  if (!paidFullAmount && lastAmt > 0 && lastAmt < annual * 0.85) return false;
 
-  // Monthly / half-yearly installment path uses 1/5 min cadence — not year renewal.
-  if (recentWasInstallment) return false;
-  if (recurringLooksInstallment && !paidFullAmount) return false;
+  const clockAt = getAcceleratedClockAt(sfData);
+  if (!clockAt) return false;
+  return Date.now() >= (clockAt + 10 * 60 * 1000);
+}
 
-  const delayMinutes = getAcceleratedScheduleDelayMinutes('Annual');
-  if (!(delayMinutes > 0)) return false;
-
-  // Prefer checkout timestamp so CRM date-only rows don't fire renewal immediately.
-  const latestAt = readRecentMembershipPaymentAt(sfData) || getLatestMembershipPaymentTimestamp(sfData);
-  if (!latestAt) return false;
-  return Date.now() >= (latestAt + delayMinutes * 60 * 1000);
+/** When the next accelerated pay / renewal window opens (ms), or 0. */
+export function getAcceleratedNextOpenAt(sfData, scheduleKind = '') {
+  if (!sfData || !ACCELERATED_SCHEDULE_TEST) return 0;
+  const clockAt = getAcceleratedClockAt(sfData);
+  if (!clockAt) return 0;
+  const summary = getFinancialSummary(sfData);
+  const outstanding = parseMoney(summary.outstanding);
+  if (outstanding <= 0) return clockAt + 10 * 60 * 1000;
+  const delay = acceleratedDelayForScheduleKind(scheduleKind)
+    || getAcceleratedScheduleDelayMinutes('Monthly');
+  return clockAt + delay * 60 * 1000;
 }
 
 function addFrequencyInterval(baseDate, frequency) {
@@ -1271,6 +1375,22 @@ export function getActiveMembershipRecurring(sfData) {
   return pickActiveRecurringFromList(getRecurring(sfData).filter(isMembershipRelatedItem));
 }
 
+/** Catalog list price (Family $2244) — not a prorated CRM pledge ($935). */
+export function getMembershipCatalogListPrice(sfData) {
+  const membership = getMembership(sfData);
+  const blob = [
+    membership.tier,
+    sfData?.groups,
+    sfData?.profile?.groups,
+    sfData?.account?.groups,
+  ].filter(Boolean).join(' ').toLowerCase();
+  const mapped = ALL_MEMBERSHIP_TIERS.find((tier) => {
+    const name = String(tier.name || '').toLowerCase();
+    return name && blob.includes(name);
+  });
+  return Number(mapped?.annualPrice) || 0;
+}
+
 /**
  * Shared schedule labels/amounts for Dashboard + Financial Overview.
  * Infers monthly / two-installment / full when CRM frequency is missing.
@@ -1306,26 +1426,50 @@ export function getPaymentScheduleSummary(sfData) {
     };
   }
 
+  const catalogAnnual = getMembershipCatalogListPrice(sfData);
   let scheduleKind = scheduleKindFromFrequency(frequency);
-  if (!scheduleKind) {
-    const probe = recurringAmount > 0 ? recurringAmount : lastPaymentAmount;
-    if (summary.annual > 0 && probe > 0) {
-      if (amountsMatch(probe, summary.annual / 12)) scheduleKind = 'monthly';
-      else if (amountsMatch(probe, summary.annual / 2)) scheduleKind = 'installments';
-      else if (amountsMatch(probe, summary.annual)) scheduleKind = 'full';
-      else scheduleKind = 'full';
-    } else {
+  const probe = recurringAmount > 0 ? recurringAmount : lastPaymentAmount;
+  const monthlyRate = (catalogAnnual > 0 ? catalogAnnual : summary.annual) / 12;
+  const halfRate = (catalogAnnual > 0 ? catalogAnnual : summary.annual) / 2;
+  // Prefer installment amounts over CRM frequency (often "Annual" even for monthly payers).
+  if ((summary.annual > 0 || catalogAnnual > 0) && probe > 0) {
+    if (amountsMatch(probe, monthlyRate) || amountsMatch(probe, summary.annual / 12)) {
+      scheduleKind = 'monthly';
+    } else if (amountsMatch(probe, halfRate) || amountsMatch(probe, summary.annual / 2)) {
+      scheduleKind = 'installments';
+    } else if (!scheduleKind && (amountsMatch(probe, summary.annual) || amountsMatch(probe, catalogAnnual))) {
+      scheduleKind = 'full';
+    } else if (!scheduleKind) {
       scheduleKind = 'full';
     }
+  } else if (!scheduleKind) {
+    scheduleKind = 'full';
   }
+  // Previous (commented out): only inferred schedule when CRM frequency was missing
+  // if (!scheduleKind) {
+  //   const probe = recurringAmount > 0 ? recurringAmount : lastPaymentAmount;
+  //   ...
+  // }
+  // Previous (commented out): compared only to CRM pledge (e.g. $935), so a $187 Family
+  // monthly payment was treated as Annual leftover instead of Monthly.
+  // if (summary.annual > 0 && probe > 0) {
+  //   if (amountsMatch(probe, summary.annual / 12)) scheduleKind = 'monthly';
+  //   ...
+  // }
 
   // Membership installment only — never Recurring Balance / non-membership program amount.
   let scheduledAmount = recurringAmount;
   if (!(scheduledAmount > 0)) {
     if (scheduleKind === 'monthly') {
-      scheduledAmount = summary.annual > 0
-        ? Math.round((summary.annual / 12) * 100) / 100
-        : lastPaymentAmount;
+      scheduledAmount = lastPaymentAmount > 0
+        ? lastPaymentAmount
+        : (catalogAnnual > 0
+          ? Math.round((catalogAnnual / 12) * 100) / 100
+          : Math.round((summary.annual / 12) * 100) / 100);
+      // Previous (commented out): used CRM pledge/12 (935/12) which is not the monthly charge
+      // scheduledAmount = summary.annual > 0
+      //   ? Math.round((summary.annual / 12) * 100) / 100
+      //   : lastPaymentAmount;
     } else if (scheduleKind === 'installments') {
       scheduledAmount = summary.annual > 0
         ? Math.min(Math.round((summary.annual / 2) * 100) / 100, summary.outstanding || summary.annual / 2)
@@ -1339,80 +1483,88 @@ export function getPaymentScheduleSummary(sfData) {
     scheduledAmount = summary.outstanding;
   }
 
-  // Next payment date rules (production):
-  // - Half Yearly (Installments): 2nd installment is ALWAYS scheduled on 1st of December.
-  // - Monthly: 1st of every upcoming month.
-  // - Full payment (paid in full): upcoming renewal = Sept 1 after membership year.
-  // TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Yearly/full renewal → 10 min.
+  // Next payment date rules:
+  // - Half Yearly: first installment Sep–Nov → Dec 1 that year; Jan–Apr → May 1 that year.
+  // - Monthly: 1st of every upcoming month (e.g. after Sep pay → Oct 1; after 2 pays → Nov 1).
+  // - Full payment (paid in full): upcoming renewal = Sept 1 after membership year (e.g. 26-27 → Sep 1, 2027).
+  // TEST MODE window: Monthly → 1 min, Half Yearly → 5 min, Full → 10 min (see isPaymentWindowOpen).
   let nextPaymentDate = '';
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
-  const accelMinutes = getAcceleratedScheduleDelayMinutes(
-    frequency || (scheduleKind === 'monthly' ? 'Monthly' : scheduleKind === 'installments' ? 'Half Yearly' : 'Annual'),
-  );
-  const useAcceleratedNextPay = accelMinutes > 0
-    && summary.outstanding > 0
-    && (scheduleKind === 'monthly' || scheduleKind === 'installments');
 
-  const latestMembershipPaymentAt = () => {
-    let latestAt = 0;
-    membershipPayments.forEach((payment) => {
-      const ts = parseSortableDate(payment.sortDate || payment.date);
-      if (ts > latestAt) latestAt = ts;
-    });
-    const recentAt = readRecentMembershipPaymentAt(sfData);
-    if (recentAt > latestAt) latestAt = recentAt;
-    return latestAt;
-  };
-
-  if (useAcceleratedNextPay) {
-    const latestAt = latestMembershipPaymentAt();
-    const base = latestAt > 0 ? new Date(latestAt) : now;
-    const next = new Date(base.getTime());
-    next.setMinutes(next.getMinutes() + accelMinutes);
-    nextPaymentDate = next.toISOString();
-  } else if (scheduleKind === 'installments') {
-    const decFirstThisYear = new Date(currentYear, 11, 1);
-    if (now < decFirstThisYear) {
-      nextPaymentDate = `${currentYear}-12-01`;
-    } else {
-      nextPaymentDate = `${currentYear + 1}-12-01`;
-    }
+  if (scheduleKind === 'installments') {
+    const firstInstallmentDates = membershipPayments
+      .map((payment) => {
+        const ts = parseSortableDate(payment.sortDate || payment.date);
+        return ts ? new Date(ts) : null;
+      })
+      .filter((date) => date && !Number.isNaN(date.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime());
+    const firstPaidDate = firstInstallmentDates[0] || getPortalClock();
+    nextPaymentDate = getHalfYearlySecondInstallmentDate(firstPaidDate);
+    // Previous (commented out): 2nd installment always December 1
+    // const decFirstThisYear = new Date(currentYear, 11, 1);
+    // if (now < decFirstThisYear) {
+    //   nextPaymentDate = `${currentYear}-12-01`;
+    // } else {
+    //   nextPaymentDate = `${currentYear + 1}-12-01`;
+    // }
   } else if (scheduleKind === 'monthly') {
-    const firstOfNextMonth = new Date(currentYear, currentMonth + 1, 1);
-    nextPaymentDate = toIsoDate(firstOfNextMonth);
-  } else if (scheduleKind === 'full' && summary.outstanding <= 0) {
-    const renewalAccel = getAcceleratedScheduleDelayMinutes('Annual');
-    if (renewalAccel > 0) {
-      // TEST MODE: membership renewal opens 10 minutes after full payment.
-      const latestAt = latestMembershipPaymentAt();
-      const base = latestAt > 0 ? new Date(latestAt) : now;
-      const next = new Date(base.getTime());
-      next.setMinutes(next.getMinutes() + renewalAccel);
-      nextPaymentDate = next.toISOString();
+    // Advance displayed due date by one calendar month per membership payment.
+    // (TEST: 1 minute ≈ 1 month for the pay window; date still shows next month.)
+    const paidTimestamps = membershipPayments
+      .map((payment) => parseSortableDate(payment.sortDate || payment.date))
+      .filter((ts) => ts > 0)
+      .sort((a, b) => a - b);
+    if (paidTimestamps.length > 0) {
+      const first = new Date(paidTimestamps[0]);
+      const next = new Date(first.getFullYear(), first.getMonth() + paidTimestamps.length, 1);
+      nextPaymentDate = toIsoDate(next);
     } else {
-      // Paid in full — upcoming membership year starts Sept 1 after current tier year (26-27 → 2027-09-01).
-      const yearBlob = [
-        membership.tier,
-        sfData?.groups,
-        sfData?.profile?.groups,
-        sfData?.account?.groups,
-      ].filter(Boolean).join(';');
-      let maxEndYear = 0;
-      for (const m of String(yearBlob).matchAll(/(\d{2})[-/](\d{2})/g)) {
-        maxEndYear = Math.max(maxEndYear, 2000 + parseInt(m[2], 10));
-      }
-      nextPaymentDate = maxEndYear > 0
-        ? `${maxEndYear}-09-01`
-        : `${currentYear + 1}-09-01`;
+      nextPaymentDate = toIsoDate(new Date(currentYear, currentMonth + 1, 1));
     }
+  } else if (scheduleKind === 'full' && summary.outstanding <= 0) {
+    // Paid in full — upcoming membership year starts Sept 1 after current tier year (26-27 → 2027-09-01).
+    const yearBlob = [
+      membership.tier,
+      sfData?.groups,
+      sfData?.profile?.groups,
+      sfData?.account?.groups,
+    ].filter(Boolean).join(';');
+    let maxEndYear = 0;
+    for (const m of String(yearBlob).matchAll(/(\d{2})[-/](\d{2})/g)) {
+      maxEndYear = Math.max(maxEndYear, 2000 + parseInt(m[2], 10));
+    }
+    // Previous (commented out): used Aug 1 next year / renewalDate month, which showed Aug 1, 2027.
+    // const raw = activeRecurring?.nextDate || membership.renewalDate || membership.endDate || '';
+    // const parsed = parseLocalDate(raw);
+    // nextPaymentDate = parsed
+    //   ? toIsoDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1))
+    //   : toIsoDate(new Date(currentYear + 1, currentMonth, 1));
+    nextPaymentDate = maxEndYear > 0
+      ? `${maxEndYear}-09-01`
+      : `${currentYear + 1}-09-01`;
   } else {
     const raw = activeRecurring?.nextDate || membership.renewalDate || membership.endDate || '';
     const parsed = parseLocalDate(raw);
     nextPaymentDate = parsed
       ? toIsoDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1))
       : toIsoDate(new Date(currentYear + 1, currentMonth, 1));
+  }
+
+  // TEST MODE: keep calendar due date (e.g. Oct 1) but attach the 1/5/10-min open time.
+  const accelMinutes = acceleratedDelayForScheduleKind(scheduleKind)
+    || (/month/i.test(frequency) ? 1 : 0)
+    || (/half|semi/i.test(frequency) ? 5 : 0);
+  if (accelMinutes > 0 && nextPaymentDate && summary.outstanding > 0) {
+    const clockAt = getAcceleratedClockAt(sfData) || Date.now();
+    const openAt = new Date(clockAt + accelMinutes * 60 * 1000);
+    const [y, m, d] = String(nextPaymentDate).slice(0, 10).split('-').map(Number);
+    if (y && m && d) {
+      const withTime = new Date(y, m - 1, d, openAt.getHours(), openAt.getMinutes(), openAt.getSeconds());
+      nextPaymentDate = withTime.toISOString();
+    }
   }
 
   // Renewal Date always matches Next Payment date.
@@ -1447,6 +1599,44 @@ export function getPaymentScheduleSummary(sfData) {
   };
 }
 
+/**
+ * Presets for dashboard / overview "Make Payment" → Quick Contribution.
+ * Monthly members open Recurring + Monthly + installment (e.g. $187), not One-Time full year.
+ */
+export function buildMembershipMakePaymentPreset(sfData) {
+  const schedule = getPaymentScheduleSummary(sfData);
+  const amountValue = Number(schedule.nextPaymentAmount) > 0
+    ? Number(schedule.nextPaymentAmount)
+    : 0;
+  const amount = amountValue > 0 ? amountValue.toFixed(2) : undefined;
+
+  if (schedule.scheduleKind === 'monthly') {
+    return {
+      amount,
+      type: 'Campaign',
+      subType: 'Membership',
+      billingMode: 'recurring',
+      frequency: 'Monthly',
+    };
+  }
+  if (schedule.scheduleKind === 'installments') {
+    return {
+      amount,
+      type: 'Campaign',
+      subType: 'Membership',
+      billingMode: 'recurring',
+      frequency: 'Half Yearly',
+    };
+  }
+  return {
+    amount,
+    type: 'Campaign',
+    subType: 'Membership',
+    billingMode: 'one-time',
+    frequency: 'Annual',
+  };
+}
+
 function hasPaymentInCurrentMonth(sfData) {
   const now = new Date();
   const year = now.getFullYear();
@@ -1464,26 +1654,6 @@ function hasPaymentInCurrentMonth(sfData) {
     const d = new Date(ts);
     return d.getFullYear() === year && d.getMonth() === month;
   });
-}
-
-function getLatestPaymentTimestamp(sfData) {
-  let latest = 0;
-  getPayments(sfData).forEach((payment) => {
-    const ts = parseSortableDate(payment.sortDate || payment.date);
-    if (ts > latest) latest = ts;
-  });
-  try {
-    const raw = localStorage.getItem(RECENT_MEMBERSHIP_PAYMENT_KEY);
-    if (!raw) return latest;
-    const data = JSON.parse(raw);
-    const email = String(sfData?.email || '').trim().toLowerCase();
-    if (email && data.email && data.email !== email) return latest;
-    const at = Number(data.at) || 0;
-    if (at > latest) latest = at;
-  } catch {
-    // ignore
-  }
-  return latest;
 }
 
 /**
@@ -1633,49 +1803,44 @@ export function isPaymentWindowOpen(sfData) {
   if (needsSalesforceMembershipScheduleSetup(sfData)) return true;
 
   const schedule = getPaymentScheduleSummary(sfData);
-  const isInstallmentSchedule = schedule.scheduleKind === 'monthly'
-    || schedule.scheduleKind === 'installments';
-  const accelMinutes = isInstallmentSchedule
-    ? getAcceleratedScheduleDelayMinutes(
-      schedule.frequencyLabel || schedule.scheduleKind || '',
-    )
-    : 0;
 
-  // TEST MODE: reopen Make Payment N minutes after the last installment only.
-  // One-time / paid-in-full never reopens on a 10-minute timer.
-  if (accelMinutes > 0) {
-    const latestPaymentAt = getLatestPaymentTimestamp(sfData);
-    if (!latestPaymentAt) return true;
-    return Date.now() >= (latestPaymentAt + accelMinutes * 60 * 1000);
+  // TEST MODE: never use calendar-month lock — only the 1/5/10 minute local clock.
+  if (ACCELERATED_SCHEDULE_TEST) {
+    let accelMinutes = acceleratedDelayForScheduleKind(schedule.scheduleKind);
+    if (!accelMinutes && /month/i.test(schedule.frequencyLabel || '')) accelMinutes = 1;
+    if (!accelMinutes && /half|semi/i.test(schedule.frequencyLabel || '')) accelMinutes = 5;
+    if (!accelMinutes && /annual|year|full/i.test(schedule.frequencyLabel || '')) accelMinutes = 10;
+    // Default membership installment testing to monthly cadence when kind is ambiguous.
+    if (!accelMinutes && outstandingVal > 0) accelMinutes = 1;
+
+    const clockAt = getAcceleratedClockAt(sfData);
+    if (!clockAt) return true;
+    return Date.now() >= (clockAt + accelMinutes * 60 * 1000);
   }
 
   const isMonthly = schedule.scheduleKind === 'monthly'
     || /month/i.test(schedule.frequencyLabel || '');
 
   // Monthly: once this month's installment is paid, hide until next month.
-  // Without this, the 30-day window for the 1st of next month keeps the button
-  // visible for nearly the entire month (e.g. paid Aug 13, due Sep 1).
   if (isMonthly && hasPaymentInCurrentMonth(sfData)) {
     return false;
   }
 
   const nextDateStr = schedule.nextPaymentDate;
 
-  // If no scheduled date exists but outstanding balance remains, allow payment
   if (!nextDateStr) {
     return outstandingVal > 0;
   }
 
   const now = new Date();
   const nextDate = new Date(
-    nextDateStr.includes('T') ? nextDateStr : `${nextDateStr}T00:00:00`,
+    String(nextDateStr).includes('T') ? nextDateStr : `${nextDateStr}T00:00:00`,
   );
 
   if (isNaN(nextDate.getTime())) {
     return outstandingVal > 0;
   }
 
-  // Payment window opens 30 days prior to the scheduled next payment date
   const windowOpenDate = new Date(nextDate);
   windowOpenDate.setDate(windowOpenDate.getDate() - 30);
 

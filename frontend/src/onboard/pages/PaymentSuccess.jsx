@@ -138,8 +138,6 @@ export default function PaymentSuccess() {
           method: 'Card',
           // Previous (commented out): method: 'Stripe',
           status: 'Paid',
-          billingMode: confirmResult?.billingMode || draft?.data?.contributionSchedule?.billingMode || 'one-time',
-          frequency: confirmResult?.frequency || draft?.data?.contributionSchedule?.frequency || 'Annual',
           id: sessionId ? `stripe_${sessionId}` : undefined,
         } : null);
 

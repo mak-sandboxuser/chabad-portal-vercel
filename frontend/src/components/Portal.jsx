@@ -17,15 +17,7 @@ import QuickPaymentModal from './shared/QuickPaymentModal';
 import ContactSupportModal from './shared/ContactSupportModal';
 import { showToast } from '../utils/toast';
 import { fetchPortalApi } from '../utils/portalApi';
-import {
-  isGuestUser,
-  PAYMENT_TAB_IDS,
-  GUEST_PAYMENTS_MESSAGE,
-  isPaymentWindowOpen,
-  hasRealMembershipGroup,
-  getPaymentScheduleSummary,
-  getFinancialSummary,
-} from '../utils/portalData';
+import { isGuestUser, PAYMENT_TAB_IDS, GUEST_PAYMENTS_MESSAGE, isPaymentWindowOpen, isAcceleratedMembershipRenewalDue, hasRealMembershipGroup } from '../utils/portalData';
 import { consumeDashboardPrefetch, consumeSkipPortalFullLoader } from '../utils/dashboardPrefetch';
 
 import {
@@ -118,54 +110,21 @@ export default function Portal({ user, getAuthToken, onLogout }) {
       showToast({ message: GUEST_PAYMENTS_MESSAGE, type: 'error' });
       return;
     }
-    if (!isPaymentWindowOpen(sfData)) {
+    if (!isPaymentWindowOpen(sfData) && !isAcceleratedMembershipRenewalDue(sfData)) {
       showToast({ message: 'No payment is currently due for your billing schedule.', type: 'info' });
       return;
     }
-
-    const explicit = presetProps && typeof presetProps === 'object' ? presetProps : null;
-    const schedule = getPaymentScheduleSummary(sfData);
-    const summary = getFinancialSummary(sfData);
-    const isInstallmentSchedule = schedule.scheduleKind === 'monthly'
-      || schedule.scheduleKind === 'installments';
-    const explicitBilling = explicit?.billingMode === 'recurring' || explicit?.billingMode === 'one-time'
-      ? explicit.billingMode
-      : '';
-    const explicitLooksMembership = !explicit
-      || !explicit.type
-      || explicit.type === 'Campaign'
-      || explicit.type === 'Membership'
-      || /member/i.test(String(explicit.subType || ''));
-
-    let nextProps = null;
-    if (explicit) {
-      nextProps = {
-        defaultAmount: explicit.amount,
-        defaultType: explicit.type,
-        defaultSubType: explicit.subType,
-        defaultBillingMode: explicit.billingMode,
-        defaultFrequency: explicit.frequency,
-        pledgeAmount: explicit.pledgeAmount,
-      };
+    if (presetProps && typeof presetProps === 'object') {
+      setDonateModalProps({
+        defaultAmount: presetProps.amount,
+        defaultType: presetProps.type,
+        defaultSubType: presetProps.subType,
+        defaultBillingMode: presetProps.billingMode,
+        defaultFrequency: presetProps.frequency,
+      });
+    } else {
+      setDonateModalProps(null);
     }
-
-    // Monthly / half-yearly members: Make Payment must open as Recurring (not One-Time full year).
-    if (isInstallmentSchedule && !explicitBilling && explicitLooksMembership) {
-      const frequency = schedule.scheduleKind === 'installments' ? 'Half Yearly' : 'Monthly';
-      nextProps = {
-        ...(nextProps || {}),
-        defaultType: nextProps?.defaultType || 'Campaign',
-        defaultSubType: nextProps?.defaultSubType || 'Membership',
-        defaultBillingMode: 'recurring',
-        defaultFrequency: nextProps?.defaultFrequency || frequency,
-        defaultAmount: nextProps?.defaultAmount ?? (
-          schedule.nextPaymentAmount > 0 ? schedule.nextPaymentAmount : undefined
-        ),
-        pledgeAmount: nextProps?.pledgeAmount || summary.annual || 0,
-      };
-    }
-
-    setDonateModalProps(nextProps);
     setShowDonateModal(true);
   };
 

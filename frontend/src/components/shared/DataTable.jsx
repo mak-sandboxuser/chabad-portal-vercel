@@ -22,7 +22,9 @@ export default function DataTable({ columns, rows, emptyMessage = 'No records fo
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.key}>{column.label}</th>
+              <th key={column.key} style={column.align === 'center' ? { textAlign: 'center' } : undefined}>
+                {column.label}
+              </th>
             ))}
           </tr>
         </thead>
@@ -30,7 +32,7 @@ export default function DataTable({ columns, rows, emptyMessage = 'No records fo
           {rows.map((row, index) => (
             <tr key={row.id || index}>
               {columns.map((column) => (
-                <td key={column.key}>
+                <td key={column.key} style={column.align === 'center' ? { textAlign: 'center' } : undefined}>
                   {column.render ? column.render(row) : (row[column.key] ?? '—')}
                 </td>
               ))}
