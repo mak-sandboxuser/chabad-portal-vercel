@@ -50,9 +50,11 @@ export default function Login({ initialError = '' }) {
   }, [initialError]);
 
   // Handle theme state
-  const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('theme') || 'dark';
-  });
+  // Dark mode hidden: always light.
+  // const [theme, setTheme] = useState(() => {
+  //   return localStorage.getItem('theme') || 'dark';
+  // });
+  const [theme, setTheme] = useState('light');
 
   useEffect(() => {
     const root = document.documentElement;
@@ -289,9 +291,11 @@ export default function Login({ initialError = '' }) {
           <ChabadLogo className="chabad-header-logo" theme={theme} alt="Chabad of Bedford" />
         </div>
         <div className="header-links">
+          {/* Dark mode hidden — toggle kept for later
           <button className="theme-toggle-btn" onClick={toggleTheme} title="Toggle Theme">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
+          */}
         </div>
       </header>
 

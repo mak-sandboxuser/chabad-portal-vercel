@@ -48,7 +48,9 @@ const STEPS = [
 ];
 
 export default function OnboardWelcome() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  // Dark mode hidden: always light.
+  // const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [theme, setTheme] = useState('light');
   const [showContactModal, setShowContactModal] = useState(false);
 
   useEffect(() => {
@@ -566,6 +568,7 @@ export default function OnboardWelcome() {
           </div>
         </div>
         <div className="onboard-header-actions">
+          {/* Dark mode hidden — toggle kept for later
           <button
             type="button"
             className="onboard-theme-toggle"
@@ -574,6 +577,7 @@ export default function OnboardWelcome() {
           >
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
+          */}
           <button
             type="button"
             className="onboard-help-link"

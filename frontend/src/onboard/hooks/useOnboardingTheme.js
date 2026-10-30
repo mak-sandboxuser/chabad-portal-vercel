@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { readThemeCookie, writeThemeCookie } from '../utils/onboardingCookies';
 
 function getPreferredTheme() {
+  // Dark mode hidden: always light. Saved / system preference below is kept for later.
+  return 'light';
+  // eslint-disable-next-line no-unreachable
   if (typeof window !== 'undefined') {
     const localTheme = localStorage.getItem('theme');
     if (localTheme === 'dark' || localTheme === 'light') {

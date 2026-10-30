@@ -1273,6 +1273,7 @@ export default function OnboardAboutYou() {
           <p>Join our community in a few simple steps.</p>
         </div>
         <div className="ay-header-actions">
+          {/* Dark mode hidden — toggle kept for later
           <button
             type="button"
             className="ay-theme-toggle"
@@ -1282,6 +1283,7 @@ export default function OnboardAboutYou() {
           >
             {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
           </button>
+          */}
           <button
             type="button"
             className="ay-help-link"

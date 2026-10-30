@@ -58,6 +58,7 @@ export default function OnboardHeader({
               Contact Support
             </button>
           )}
+          {/* Dark mode hidden — toggle kept for later
           {typeof onToggleTheme === 'function' && (
             <button
               type="button"
@@ -68,6 +69,7 @@ export default function OnboardHeader({
               {theme === 'light' ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
             </button>
           )}
+          */}
         </div>
       </header>
 
