@@ -17,7 +17,13 @@ import {
   MEMBERSHIP_STEP_ID,
 } from '../data/onboardingSteps';
 import { getMembershipTierById, formatCurrency, formatMembershipSalesforceGroup } from '../data/membershipTiers';
-import { getProratedMembershipCommitment, getRemainingMembershipMonths, getPortalTestDateLabel } from '../../utils/portalFiscalYear';
+import {
+  getProratedMembershipCommitment,
+  getRemainingMembershipMonths,
+  getRemainingMembershipMonthsFromNextMonth,
+  getNextMonthStartDate,
+  getPortalTestDateLabel,
+} from '../../utils/portalFiscalYear';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
 import {
   isPostLoginStepperPending,
@@ -25,6 +31,8 @@ import {
   clearSalesforceMembershipScheduleOnly,
   dismissPostLoginStepperPending,
   isPortalUpdateMembershipMode,
+  clearPortalUpdateMembershipMode,
+  clearPostLoginStepperPending,
   readSelectedMembershipTier,
 } from '../utils/postLoginStepper';
 import '../onboard.css';
@@ -76,6 +84,74 @@ function buildScheduleOptions(commitmentPrice, remainingMonths, annualPrice) {
   ].map((option) => ({ ...option, totalCommitment: `$${formatCurrency(commitmentPrice)}` }));
 }
 
+function formatScheduleDate(date) {
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function toIsoDateOnly(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Update Membership (current month already paid): Full, Two Installments or Monthly,
+ * starting next month. No Stripe charge — the workflow updates Salesforce.
+ */
+function buildUpdateScheduleOptions(newAmount, remainingMonths, annualPrice) {
+  const firstDate = getNextMonthStartDate();
+  const secondDate = new Date(firstDate.getFullYear(), firstDate.getMonth() + Math.floor(remainingMonths / 2), 1);
+  const monthly = Math.round((Number(annualPrice || 0) / 12) * 100) / 100;
+  const half = Math.round((newAmount / 2) * 100) / 100;
+  return [
+    {
+      id: 'full',
+      number: 1,
+      title: 'Full Payment',
+      subtitle: 'One-Time Payment',
+      icon: CreditCard,
+      accent: 'blue',
+      amountLabel: `$${formatCurrency(newAmount)}`,
+      installmentAmount: newAmount,
+      firstChargeDate: toIsoDateOnly(firstDate),
+      billingLines: [`One-time payment on ${formatScheduleDate(firstDate)}`],
+    },
+    {
+      id: 'installments',
+      number: 2,
+      title: 'Two Installments',
+      subtitle: '50% + 50%',
+      icon: PieChart,
+      accent: 'purple',
+      amountLabel: `$${formatCurrency(half)}`,
+      amountSuffix: ' / installment',
+      installmentAmount: half,
+      firstChargeDate: toIsoDateOnly(firstDate),
+      secondChargeDate: toIsoDateOnly(secondDate),
+      billingLines: [
+        '2 payments',
+        `1st payment on ${formatScheduleDate(firstDate)} (50%)`,
+        `2nd payment on ${formatScheduleDate(secondDate)} (50%)`,
+      ],
+    },
+      {
+      id: 'monthly',
+      number: 3,
+      title: 'Monthly Contributions',
+      subtitle: `${remainingMonths} Monthly Payments`,
+      icon: Calendar,
+      accent: 'green',
+      amountLabel: `$${formatCurrency(monthly)}`,
+      amountSuffix: ' / month',
+      installmentAmount: monthly,
+      firstChargeDate: toIsoDateOnly(firstDate),
+      billingLines: [
+        `${remainingMonths} monthly payments`,
+        `First payment on ${formatScheduleDate(firstDate)}`,
+      ],
+    },
+].map((option) => ({ ...option, totalCommitment: `$${formatCurrency(newAmount)}` }));
+}
+
 // Previous (commented out): Total Commitment was always the full annual price
 // function buildScheduleOptions(annualPrice) {
 //   return [
@@ -123,10 +199,18 @@ export default function ContributionSchedule() {
   const { draft, updateDraft, persistNow } = useOnboardingDraft();
   const [error, setError] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [isSavingUpdate, setIsSavingUpdate] = useState(false);
 
   const draftMembership = draft.data.membership || {};
-  const isUpdateMembership = isPortalUpdateMembershipMode()
-    || draftMembership.source === 'update_membership';
+  // Pay Membership (Salesforce-assigned) is never Update Membership, even with leftovers.
+  const isSfMembershipPayUrl = new URLSearchParams(window.location.search).get('mode') === 'sf-membership-pay';
+  const isUpdateMembership = !isSfMembershipPayUrl && (
+    isPortalUpdateMembershipMode()
+    || draftMembership.source === 'update_membership'
+  );
+  // Previous (commented out): a leftover update flag/draft hijacked Pay Membership
+  // const isUpdateMembership = isPortalUpdateMembershipMode()
+  //   || draftMembership.source === 'update_membership';
   // Update Membership is a new catalog pick — do not reuse Pay Membership leftovers
   // (sf_membership_schedule_only / salesforce_assigned), which showed $1800 instead
   // of the selected tier (e.g. Single Parent Family $1560).
@@ -162,8 +246,18 @@ export default function ContributionSchedule() {
   const annualPrice = (!isExistingMembershipPay && catalogTier)
     ? Number(catalogTier.annualPrice)
     : (draftAnnual > 0 ? draftAnnual : selectedMembershipTier.annualPrice);
-  const remainingMonths = getRemainingMembershipMonths();
-  const commitmentPrice = getProratedMembershipCommitment(annualPrice);
+  // Update Membership: current month already paid → months from next month through August.
+  const remainingMonths = isUpdateMembership
+    ? getRemainingMembershipMonthsFromNextMonth()
+    : getRemainingMembershipMonths();
+  const commitmentPrice = isUpdateMembership
+    ? Math.round((annualPrice / 12) * remainingMonths * 100) / 100
+    : getProratedMembershipCommitment(annualPrice);
+  // Previous (commented out): Update Membership also included the current month
+  // const remainingMonths = getRemainingMembershipMonths();
+  // const commitmentPrice = getProratedMembershipCommitment(annualPrice);
+  const paidThisYear = Number(draftMembership.paidThisYear) || 0;
+  const updatedTotalCommitment = Math.round((paidThisYear + commitmentPrice) * 100) / 100;
   const testDateLabel = getPortalTestDateLabel();
   // Previous (commented out): Pay Membership used the full annual unless the renewal banner was showing
   // const applyProration = !isExistingMembershipPay || isMembershipRenewalWindowOpen();
@@ -191,11 +285,16 @@ export default function ContributionSchedule() {
   //   || catalogTier?.sfGroup
   //   || formatMembershipSalesforceGroup(selectedMembershipTier.name);
   // const assignedGroupName = selectedMembershipTier.sfGroup || selectedMembershipTier.name;
-  const scheduleOptions = buildScheduleOptions(commitmentPrice, remainingMonths, annualPrice);
+  const scheduleOptions = isUpdateMembership
+    ? buildUpdateScheduleOptions(commitmentPrice, remainingMonths, annualPrice)
+    : buildScheduleOptions(commitmentPrice, remainingMonths, annualPrice);
   // Previous (commented out): Total Commitment used the full annual price
   // const scheduleOptions = buildScheduleOptions(annualPrice);
 
-  const selectedOption = draft.data.contributionSchedule?.option || 'full';
+  const savedOption = draft.data.contributionSchedule?.option || (isUpdateMembership ? 'monthly' : 'full');
+  const selectedOption = scheduleOptions.some((o) => o.id === savedOption) ? savedOption : scheduleOptions[0].id;
+  // Previous (commented out): defaulted to Full Payment (not offered in Update Membership)
+  // const selectedOption = draft.data.contributionSchedule?.option || 'full';
 
   const sfUserSession = localStorage.getItem('sf_user_session');
   const sfUser = sfUserSession ? JSON.parse(sfUserSession) : {};
@@ -271,8 +370,58 @@ export default function ContributionSchedule() {
     goToOnboardingPath(isUpdateMembership ? `${membershipPath}?mode=update` : membershipPath);
   };
 
+  // Update Membership: no Stripe — send the new schedule to the membership workflow.
+  // amount = total already paid this year + new tier for the remaining months.
+  const submitUpdateMembership = async () => {
+    if (!(remainingMonths > 0) || !(commitmentPrice > 0)) {
+      setError('There are no remaining months to update this membership year.');
+      return;
+    }
+    setIsSavingUpdate(true);
+    setError('');
+    try {
+      await fetchPortalApi('/api/portal/update-membership-amount', {
+        method: 'POST',
+        getAuthToken: () => Promise.resolve(sfUser.token || `dev:${email}`),
+        body: {
+          amount: updatedTotalCommitment,
+          paidThisYear,
+          calculatedMembershipAmount: commitmentPrice,
+          annualPrice,
+          remainingMonths,
+          frequency,
+          scheduleOption: selectedOption,
+          installmentAmount: option.installmentAmount,
+          nextChargeDate: option.firstChargeDate,
+          secondChargeDate: option.secondChargeDate || '',
+          group: assignedGroupName,
+          previousGroup: draftMembership.previousGroup || '',
+          previousFrequency: draftMembership.previousFrequency || '',
+        },
+      });
+      clearPortalUpdateMembershipMode();
+      clearPostLoginStepperPending();
+      try {
+        sessionStorage.removeItem('choose_membership_existing_household');
+        sessionStorage.removeItem('portal_selected_membership_tier');
+      } catch {
+        // ignore
+      }
+      showToast({ message: 'Your membership has been updated.', type: 'success' });
+      window.setTimeout(() => window.location.replace('/'), 900);
+    } catch (err) {
+      setError(err.message || 'Failed to update membership. Please try again.');
+      showToast({ message: err.message || 'Failed to update membership.', type: 'error' });
+      setIsSavingUpdate(false);
+    }
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (isUpdateMembership) {
+      submitUpdateMembership();
+      return;
+    }
     updateDraft((prev) => ({
       ...prev,
       currentStep: THIS_STEP_ID,
@@ -302,7 +451,7 @@ export default function ContributionSchedule() {
             ? 'Update Membership'
             : (isPostLoginStepperPending() ? 'Membership Renewal' : 'Membership Onboarding')}
           subtitle={isUpdateMembership
-            ? 'Choose your contribution schedule. Amounts use remaining months through August.'
+            ? 'Choose your contribution schedule. Amounts start next month through August.'
             : (isPostLoginStepperPending() ? 'Choose your contribution schedule to complete renewal.' : 'Join our community in a few simple steps.')}
         />
 
@@ -386,7 +535,30 @@ export default function ContributionSchedule() {
               })}
             </div>
 
-            <InfoPanel description="You can update your contribution schedule at any time." />
+            {isUpdateMembership && (
+              <div className="onboard-schedule-option" style={{ display: 'block', cursor: 'default', marginTop: '16px' }}>
+                <span className="onboard-schedule-title" style={{ display: 'block', marginBottom: '10px' }}>Updated Membership Summary</span>
+                <span className="onboard-schedule-detail-row">
+                  <span className="onboard-schedule-detail-label">Already paid this year</span>
+                  <span className="onboard-schedule-detail-value">${formatCurrency(paidThisYear)}</span>
+                </span>
+                <span className="onboard-schedule-detail-row">
+                  <span className="onboard-schedule-detail-label">
+                    {selectedMembershipTier.name} · {remainingMonths} month{remainingMonths === 1 ? '' : 's'} from next month
+                  </span>
+                  <span className="onboard-schedule-detail-value">${formatCurrency(commitmentPrice)}</span>
+                </span>
+                <span className="onboard-schedule-detail-row">
+                  <span className="onboard-schedule-detail-label"><strong>New total commitment</strong></span>
+                  <span className="onboard-schedule-detail-value"><strong>${formatCurrency(updatedTotalCommitment)}</strong></span>
+                </span>
+              </div>
+            )}
+
+            <InfoPanel description={isUpdateMembership
+              ? 'Your current month is already paid. No payment is taken now — your new schedule starts next month.'
+              : 'You can update your contribution schedule at any time.'}
+            />
 
             {error && (
               <p className="onboard-error-message onboard-tier-error" role="alert" style={{ marginTop: '16px', marginBottom: '16px' }}>
@@ -398,8 +570,8 @@ export default function ContributionSchedule() {
               <SecondaryButton variant="navy" icon={ArrowLeft} onClick={handleBack}>
                 Back
               </SecondaryButton>
-              <PrimaryButton type="submit" loading={false}>
-                Continue
+              <PrimaryButton type="submit" loading={isSavingUpdate}>
+                {isUpdateMembership ? 'Update Membership' : 'Continue'}
               </PrimaryButton>
             </div>
           </form>
@@ -413,7 +585,9 @@ export default function ContributionSchedule() {
           open={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
           user={{ email }}
-          getAuthToken={() => Promise.resolve(`dev:${email}`)}
+          // Previous (commented out): dev token (rejected on the live server)
+          // getAuthToken={() => Promise.resolve(`dev:${email}`)}
+          getAuthToken={() => Promise.resolve(sfUser.token || `dev:${email}`)}
           sfData={{ contactId, accountId }}
           pledgeAmount={commitmentPrice}
           remainingMonths={remainingMonths}

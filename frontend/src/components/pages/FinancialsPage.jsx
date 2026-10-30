@@ -13,6 +13,8 @@ import {
   getRecurring,
   parseMoney,
   isPaymentWindowOpen,
+  getPaymentCrmStatus,
+  getPaymentStatusBadgeClass,
   // hasRecentMembershipPayment,
 } from '../../utils/portalData';
 
@@ -192,8 +194,21 @@ export default function FinancialsPage({ theme, sfData, onDonate, defaultTab = '
                 },
                 {
                   key: 'amountPaid',
-                  label: 'Amount Paid',
+                  // Previous (commented out): label: 'Amount Paid',
+                  label: 'Amount',
                   render: (row) => row.amount || formatMoney(parseMoney(row.total)),
+                },
+                {
+                  key: 'crmStatus',
+                  label: 'Status',
+                  // Salesforce payment OneCRM__Status__c, colored by status.
+                  render: (row) => {
+                    const status = getPaymentCrmStatus(row);
+                    if (!status) return '—';
+                    return <span className={`badge ${getPaymentStatusBadgeClass(status)}`}>{status}</span>;
+                  },
+                  // Previous (commented out): plain text
+                  // render: (row) => row.OneCRM__Status__c || row.crmStatus || (row.pending ? 'Pending' : '—'),
                 },
                 {
                   key: 'outstanding',

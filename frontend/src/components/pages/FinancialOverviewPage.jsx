@@ -9,6 +9,7 @@ import {
   formatAddress,
   formatDisplayDate,
   formatMoney,
+  getPledgeCommitmentAmount,
   getAccount,
   getFinancialSummary,
   getMembership,
@@ -241,7 +242,12 @@ export default function FinancialOverviewPage({ theme, sfData, onNavigate, onDon
             <ul className="financial-legend">
               <li><span className="dot blue" /> Contributed — {membership.contributedYtd} ({summary.progressPct}%)</li>
               <li><span className="dot gold" /> Remaining — ${summary.outstanding.toFixed(2)} ({100 - summary.progressPct}%)</li>
+              {/* Same source as the dashboard badge: Salesforce pledge OneCRM__Amount__c.
               <li><span className="dot gray" /> Total Commitment — {membership.annualCommitment}</li>
+              */}
+              <li><span className="dot gray" /> Total Commitment — {getPledgeCommitmentAmount(sfData) > 0
+                ? formatMoney(getPledgeCommitmentAmount(sfData))
+                : membership.annualCommitment}</li>
             </ul>
           </div>
         </div>

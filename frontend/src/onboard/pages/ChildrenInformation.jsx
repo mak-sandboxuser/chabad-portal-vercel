@@ -22,7 +22,7 @@ import {
   getRedirectPathIfStepDisallowed,
   isFirstPreferenceStep,
 } from '../utils/householdPreferences';
-import { signOutFromOnboarding } from '../utils/postLoginStepper';
+import { signOutFromOnboarding, goToNextRegistrationStep } from '../utils/postLoginStepper';
 import {
   createFamilyMemberViaWebhook,
   fingerprintFamilyMember,
@@ -347,7 +347,9 @@ export default function ChildrenInformation() {
           children: nextList.length > 0 ? nextList : children,
         },
       });
-      goToOnboardingPath(getStepById(nextStepId).path);
+      // Previous (commented out): always opened the next step (Membership included)
+      // goToOnboardingPath(getStepById(nextStepId).path);
+      goToNextRegistrationStep(nextStepId);
     } catch (err) {
       showToast({ message: err.message || 'Failed to create child contact.', type: 'error' });
       setIsSubmitting(false);

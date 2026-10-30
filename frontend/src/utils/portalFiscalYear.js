@@ -2,11 +2,10 @@
 const FISCAL_START_MONTH = 9;
 
 /**
- * Test clock for proration. Does not change the computer date.
- * Active test date: 5 March 2026 (6 months Mar–Aug).
+ * Optional test clock for proration. Off by default — uses the real current date.
  * Stay logged in, then:
- *   localStorage.setItem('portal_test_date', '2026-03-05'); location.reload();
- * Or open: /onboard/membership?mode=update&asOf=2026-03-05
+ *   localStorage.setItem('portal_test_date', 'YYYY-MM-DD'); location.reload();
+ * Or open: /onboard/membership?mode=update&asOf=YYYY-MM-DD
  * Clear:
  *   localStorage.removeItem('portal_test_date'); location.reload();
  */
@@ -23,8 +22,8 @@ export function persistPortalTestDateFromUrl() {
   return '';
 }
 
-/** TEST: simulate join / update on 5 March 2026 for remaining-months proration. */
-const PORTAL_PRORATION_TEST_DATE = '2026-03-05';
+// Previous (commented out): forced 5 March 2026 for remaining-months proration
+// const PORTAL_PRORATION_TEST_DATE = '2026-03-05';
 
 export function getPortalClock(fallback = new Date()) {
   try {
@@ -32,15 +31,15 @@ export function getPortalClock(fallback = new Date()) {
     let fromStore = typeof localStorage !== 'undefined'
       ? localStorage.getItem('portal_test_date')
       : '';
-    // Retired April 5 test clock.
-    if (String(fromStore || '').trim() === '2026-04-05') {
+    // Retired April 5 / March 5 test clocks — always use the live date unless asOf is set.
+    if (String(fromStore || '').trim() === '2026-04-05'
+      || String(fromStore || '').trim() === '2026-03-05') {
       try { localStorage.removeItem('portal_test_date'); } catch { /* ignore */ }
       fromStore = '';
     }
-    // Active test: default to 5 March 2026 when no other asOf is set.
-    // Previous (commented out): no default — used the real computer date
-    // const raw = String(fromStore || '').trim();
-    const raw = String(fromStore || PORTAL_PRORATION_TEST_DATE).trim();
+    // Previous (commented out): defaulted to 5 March 2026
+    // const raw = String(fromStore || PORTAL_PRORATION_TEST_DATE).trim();
+    const raw = String(fromStore || '').trim();
     if (!raw) return fallback;
     const parsed = /^\d{4}-\d{2}-\d{2}$/.test(raw)
       ? new Date(`${raw}T12:00:00`)
@@ -150,6 +149,19 @@ export function getRemainingMembershipMonths(referenceDate = getPortalClock()) {
 }
 
 /**
+ * Update Membership: the current month is already paid, so the new tier is
+ * charged from next month through August (e.g. paid October → Nov–Aug = 10).
+ */
+export function getRemainingMembershipMonthsFromNextMonth(referenceDate = getPortalClock()) {
+  return Math.max(getRemainingMembershipMonths(referenceDate) - 1, 0);
+}
+
+/** 1st of next month (e.g. 12 Oct 2026 → 2026-11-01). */
+export function getNextMonthStartDate(referenceDate = getPortalClock()) {
+  return new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1);
+}
+
+/**
  * Half-yearly 2nd installment date from the first payment.
  * Sep–Nov → Dec 1 of that year. Jan–Apr → May 1 of that year.
  */
@@ -179,6 +191,29 @@ export function getProratedMembershipCommitment(annualPrice, referenceDate = get
 // export function getProratedMembershipCommitment(annualPrice) {
 //   return Number(annualPrice || 0);
 // }
+
+/**
+ * New-member membership selection is open 1 September – 31 May.
+ * 1 June – 31 August: registration saves household details only; membership opens in September.
+ */
+export function isMembershipSelectionOpen(referenceDate = getPortalClock()) {
+  const month = referenceDate.getMonth();
+  return month >= 8 || month <= 4;
+  // Previous (commented out): closed 1 January – 31 August
+  // return referenceDate.getMonth() >= 8;
+}
+
+/** Next 1 September when new-member membership selection opens. */
+export function getMembershipSelectionOpenDate(referenceDate = getPortalClock()) {
+  const year = referenceDate.getFullYear();
+  return referenceDate.getMonth() >= 8 ? new Date(year + 1, 8, 1) : new Date(year, 8, 1);
+}
+
+/** e.g. "1 September 2027" */
+export function formatMembershipSelectionOpenDate(referenceDate = getPortalClock()) {
+  const date = getMembershipSelectionOpenDate(referenceDate);
+  return `1 September ${date.getFullYear()}`;
+}
 
 /**
  * Membership renewal season: the day after 31 August (1 September) through 31 December.

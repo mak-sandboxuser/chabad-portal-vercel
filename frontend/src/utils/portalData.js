@@ -1,4 +1,4 @@
-import { isDateInPortalFiscalYear, getPortalFiscalYearRange, getPortalFiscalYearLabel, getProratedMembershipCommitment, getPortalClock, getHalfYearlySecondInstallmentDate } from './portalFiscalYear.js';
+import { isDateInPortalFiscalYear, getPortalFiscalYearRange, getPortalFiscalYearLabel, getProratedMembershipCommitment, getPortalClock, getHalfYearlySecondInstallmentDate, getRemainingMembershipMonths, getRemainingMembershipMonthsFromNextMonth } from './portalFiscalYear.js';
 import { ALL_MEMBERSHIP_TIERS } from '../onboard/data/membershipTiers';
 
 export { getPortalFiscalYearLabel };
@@ -192,6 +192,34 @@ function normalizeContactRole(role = '') {
 
 export function getRelationships(sfData) {
   return sfData?.relationships || [];
+}
+
+/**
+ * Dashboard "Commitment" badge: Salesforce pledge OneCRM__Amount__c (from
+ * MAKE_PAYMENTS_WEBHOOK_URL). Sums the pledges that make up the outstanding
+ * balance; falls back to all pledges when none are outstanding.
+ */
+export function getPledgeCommitmentAmount(sfData) {
+  const pledges = (sfData?.financials?.pledges?.length ? sfData.financials.pledges : sfData?.pledges) || [];
+  const amountOf = (pledge) => parseMoney(pledge.OneCRM__Amount__c ?? pledge.amount ?? pledge.total);
+  const open = pledges.filter((pledge) => parseMoney(pledge.outstanding) > 0);
+  const source = open.length ? open : pledges;
+  return Math.round(source.reduce((sum, pledge) => sum + amountOf(pledge), 0) * 100) / 100;
+}
+
+/** Salesforce payment status (OneCRM__Status__c) for status columns. */
+export function getPaymentCrmStatus(payment = {}) {
+  return String(payment.OneCRM__Status__c || payment.crmStatus || '').trim()
+    || (payment.pending ? 'Pending' : (payment.status || ''));
+}
+
+/** Badge color class for a payment status: green paid, amber pending, red failed, grey other. */
+export function getPaymentStatusBadgeClass(status = '') {
+  const s = String(status).toLowerCase();
+  if (/fail|declin|reject|cancel|void|refund|revers|chargeback|error/.test(s)) return 'badge-inactive';
+  if (/pend|process|progress|schedul|hold|unpaid|open|draft/.test(s)) return 'badge-pending';
+  if (/paid|complet|success|settl|posted|clear|received|approved/.test(s)) return 'badge-active';
+  return 'badge-neutral';
 }
 
 export function getPayments(sfData) {
@@ -1171,7 +1199,9 @@ export function buildMembershipNextChargeDate({
 }
 
 /** TEST MODE: Monthly → 1 min, Half Yearly → 5 min, Full/Annual → 10 min. */
-const ACCELERATED_SCHEDULE_TEST = true;
+// Previous (commented out): 1 minute ≈ 1 month pay window
+// const ACCELERATED_SCHEDULE_TEST = true;
+const ACCELERATED_SCHEDULE_TEST = false;
 
 function getAcceleratedScheduleDelayMinutes(frequencyOrKind = '') {
   if (!ACCELERATED_SCHEDULE_TEST) return 0;
@@ -1392,6 +1422,27 @@ export function getMembershipCatalogListPrice(sfData) {
 }
 
 /**
+ * Member's latest Update Membership choice (saved by the backend), when it belongs to
+ * the current membership year. Salesforce may still report the old frequency.
+ */
+function getActiveSavedMembershipSchedule(sfData) {
+  const saved = sfData?.membershipSchedule;
+  if (!saved || !saved.scheduleOption || !saved.nextChargeDate) return null;
+  if (!isDateInPortalFiscalYear(String(saved.at || '').slice(0, 10))) return null;
+  return saved;
+}
+
+function addMonthsIso(isoDate, months) {
+  const base = parseLocalDate(isoDate);
+  if (!base) return '';
+  // Keep the charge day (Nov 23 → Dec 23); clamp to month end (Jan 31 → Feb 28).
+  const target = new Date(base.getFullYear(), base.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(base.getDate(), lastDay));
+  return toIsoDate(target);
+}
+
+/**
  * Shared schedule labels/amounts for Dashboard + Financial Overview.
  * Infers monthly / two-installment / full when CRM frequency is missing.
  */
@@ -1431,10 +1482,27 @@ export function getPaymentScheduleSummary(sfData) {
   const probe = recurringAmount > 0 ? recurringAmount : lastPaymentAmount;
   const monthlyRate = (catalogAnnual > 0 ? catalogAnnual : summary.annual) / 12;
   const halfRate = (catalogAnnual > 0 ? catalogAnnual : summary.annual) / 2;
+  // Prorated monthly (joined mid-year): commitment = remaining months × installment,
+  // e.g. Oct join → 11 × $187 = $2057; after one payment $1870 outstanding + $187.
+  const remainingMonthsNow = getRemainingMembershipMonths();
+  const isProratedMonthlyAmount = (amount) => amount > 0 && remainingMonthsNow > 0 && (
+    (summary.outstanding > 0 && amountsMatch(amount, (summary.outstanding + amount) / remainingMonthsNow))
+    || amountsMatch(amount, summary.annual / (remainingMonthsNow + 1))
+    || amountsMatch(amount, summary.annual / remainingMonthsNow)
+  );
+  // Previous (commented out): only full-year ÷ 12 rates counted as monthly
+  // if (amountsMatch(probe, monthlyRate) || amountsMatch(probe, summary.annual / 12)) {
   // Prefer installment amounts over CRM frequency (often "Annual" even for monthly payers).
-  if ((summary.annual > 0 || catalogAnnual > 0) && probe > 0) {
-    if (amountsMatch(probe, monthlyRate) || amountsMatch(probe, summary.annual / 12)) {
+  let monthlyFromLastPayment = false;
+  if ((summary.annual > 0 || catalogAnnual > 0 || summary.outstanding > 0) && probe > 0) {
+    if (amountsMatch(probe, monthlyRate) || amountsMatch(probe, summary.annual / 12)
+      || isProratedMonthlyAmount(probe)) {
       scheduleKind = 'monthly';
+    } else if (recurringAmount > 0 && lastPaymentAmount > 0
+      && (amountsMatch(lastPaymentAmount, monthlyRate) || isProratedMonthlyAmount(lastPaymentAmount))) {
+      // CRM recurring row says Annual / full balance, but the member actually pays monthly.
+      scheduleKind = 'monthly';
+      monthlyFromLastPayment = true;
     } else if (amountsMatch(probe, halfRate) || amountsMatch(probe, summary.annual / 2)) {
       scheduleKind = 'installments';
     } else if (!scheduleKind && (amountsMatch(probe, summary.annual) || amountsMatch(probe, catalogAnnual))) {
@@ -1457,8 +1525,41 @@ export function getPaymentScheduleSummary(sfData) {
   //   ...
   // }
 
+  // Update Membership choice wins (Salesforce may still say Annual after the update).
+  const savedSchedule = getActiveSavedMembershipSchedule(sfData);
+  if (savedSchedule) {
+    scheduleKind = savedSchedule.scheduleOption === 'monthly'
+      ? 'monthly'
+      : (savedSchedule.scheduleOption === 'installments' ? 'installments' : 'full');
+  }
+
+  // Pledge rule (wins over the guesses above):
+  //   pledge OneCRM__Amount__c ÷ 2 = last paid amount → Two Installments: next = outstanding.
+  //   otherwise → Monthly: next = outstanding ÷ remaining months through August
+  //   (from next month when this month is already paid).
+  const pledgeTotal = getPledgeCommitmentAmount(sfData);
+  let pledgeRuleAmount = 0;
+  if (summary.outstanding > 0 && pledgeTotal > 0 && lastPaymentAmount > 0) {
+    if (Math.abs(pledgeTotal / 2 - lastPaymentAmount) <= 1) {
+      scheduleKind = 'installments';
+      pledgeRuleAmount = summary.outstanding;
+    } else {
+      scheduleKind = 'monthly';
+      const monthsLeft = hasPaymentInCurrentMonth(sfData)
+        ? getRemainingMembershipMonthsFromNextMonth()
+        : getRemainingMembershipMonths();
+      pledgeRuleAmount = Math.round((summary.outstanding / Math.max(monthsLeft, 1)) * 100) / 100;
+    }
+  }
+
   // Membership installment only — never Recurring Balance / non-membership program amount.
-  let scheduledAmount = recurringAmount;
+  let scheduledAmount = monthlyFromLastPayment ? 0 : recurringAmount;
+  if (savedSchedule && parseMoney(savedSchedule.installmentAmount) > 0) {
+    scheduledAmount = parseMoney(savedSchedule.installmentAmount);
+  }
+  if (pledgeRuleAmount > 0) {
+    scheduledAmount = pledgeRuleAmount;
+  }
   if (!(scheduledAmount > 0)) {
     if (scheduleKind === 'monthly') {
       scheduledAmount = lastPaymentAmount > 0
@@ -1553,6 +1654,25 @@ export function getPaymentScheduleSummary(sfData) {
       : toIsoDate(new Date(currentYear + 1, currentMonth, 1));
   }
 
+  // Update Membership choice: due dates start at the saved first charge date and move on
+  // with each membership payment made on/after it.
+  if (savedSchedule && summary.outstanding > 0) {
+    const firstDue = String(savedSchedule.nextChargeDate).slice(0, 10);
+    const paidSinceUpdate = membershipPayments.filter((payment) => {
+      const ymd = toIsoDate(new Date(parseSortableDate(payment.sortDate || payment.date) || 0));
+      return ymd >= firstDue;
+    }).length;
+    if (scheduleKind === 'monthly') {
+      nextPaymentDate = addMonthsIso(firstDue, paidSinceUpdate) || firstDue;
+    } else if (scheduleKind === 'installments') {
+      nextPaymentDate = paidSinceUpdate === 0
+        ? firstDue
+        : (String(savedSchedule.secondChargeDate || '').slice(0, 10) || addMonthsIso(firstDue, 5));
+    } else {
+      nextPaymentDate = firstDue;
+    }
+  }
+
   // TEST MODE: keep calendar due date (e.g. Oct 1) but attach the 1/5/10-min open time.
   const accelMinutes = acceleratedDelayForScheduleKind(scheduleKind)
     || (/month/i.test(frequency) ? 1 : 0)
@@ -1592,9 +1712,18 @@ export function getPaymentScheduleSummary(sfData) {
     nextPaymentAmountDisplay,
     membershipRenewalDate,
     membershipRenewalDateDisplay: formatDisplayDateTime(membershipRenewalDate),
+    // Inferred monthly / half-yearly wins over CRM frequency (often still "Annual").
     frequencyLabel: formatFrequencyLabel(
-      frequency || (scheduleKind === 'monthly' ? 'Monthly' : scheduleKind === 'installments' ? 'Half Yearly' : 'Annual'),
+      scheduleKind === 'monthly'
+        ? 'Monthly'
+        : scheduleKind === 'installments'
+          ? 'Half Yearly'
+          : (frequency || 'Annual'),
     ),
+    // Previous (commented out): CRM frequency always won, so monthly payers showed "Annual"
+    // frequencyLabel: formatFrequencyLabel(
+    //   frequency || (scheduleKind === 'monthly' ? 'Monthly' : scheduleKind === 'installments' ? 'Half Yearly' : 'Annual'),
+    // ),
     paidInFull: scheduleKind === 'full' && summary.outstanding <= 0 && summary.annual > 0,
   };
 }
@@ -1654,6 +1783,51 @@ function hasPaymentInCurrentMonth(sfData) {
     const d = new Date(ts);
     return d.getFullYear() === year && d.getMonth() === month;
   });
+}
+
+function hasPaymentOnOrAfter(sfData, date) {
+  const dueDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+
+  return getPayments(sfData).some((payment) => {
+    if (/fail|declin|void|refund|cancel/i.test(String(payment.status || ''))) return false;
+    const raw = payment.sortDate || payment.date || '';
+    const pDate = parseLocalDate(raw);
+    const ts = pDate ? pDate.getTime() : parseSortableDate(raw);
+    return Boolean(ts) && ts >= dueDay;
+  });
+}
+
+/**
+ * Update Membership gate: the current month's membership payment is covered —
+ * paid in full, a payment this calendar month, or next due date after this month.
+ */
+export function isCurrentMembershipPeriodPaid(sfData) {
+  if (!sfData) return false;
+  const summary = getFinancialSummary(sfData);
+  if (parseMoney(summary.outstanding) <= 0 && getPayments(sfData).length > 0) return true;
+  if (hasPaymentInCurrentMonth(sfData)) return true;
+
+  const schedule = getPaymentScheduleSummary(sfData);
+  const next = parseLocalDate(String(schedule.nextPaymentDate || '').slice(0, 10));
+  if (!next) return false;
+  const now = getPortalClock();
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return next > endOfMonth && getPayments(sfData).length > 0;
+}
+
+/** Total membership paid in the current membership year (Sep–Aug); donations excluded. */
+export function getMembershipPaidThisYear(sfData) {
+  const total = getPayments(sfData).reduce((sum, payment) => {
+    const amount = parseMoney(payment.amount || payment.total);
+    if (amount <= 0) return sum;
+    if (payment.pending || /^pending_/i.test(String(payment.id || ''))) return sum;
+    if (/fail|declin|void|refund|cancel/i.test(String(payment.status || ''))) return sum;
+    const blob = `${payment.type || ''} ${payment.subType || ''} ${payment.name || ''} ${payment.purpose || ''}`.toLowerCase();
+    if (blob.includes('donation') && !blob.includes('membership')) return sum;
+    if (!isDateInPortalFiscalYear(payment.sortDate || payment.date || '')) return sum;
+    return sum + amount;
+  }, 0);
+  return Math.round(total * 100) / 100;
 }
 
 /**
@@ -1839,6 +2013,19 @@ export function isPaymentWindowOpen(sfData) {
 
   if (isNaN(nextDate.getTime())) {
     return outstandingVal > 0;
+  }
+
+  // Current month already paid and the next due date is in a later month → nothing due yet
+  // (e.g. paid Oct 23, Update Membership schedule starts Nov 1).
+  const endOfThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  if (hasPaymentInCurrentMonth(sfData) && nextDate > endOfThisMonth) {
+    return false;
+  }
+
+  // Any frequency: a payment on/after the due date already covers this installment
+  // (Salesforce may not have advanced Next Payment Date yet) — hide until it moves.
+  if (hasPaymentOnOrAfter(sfData, nextDate)) {
+    return false;
   }
 
   const windowOpenDate = new Date(nextDate);

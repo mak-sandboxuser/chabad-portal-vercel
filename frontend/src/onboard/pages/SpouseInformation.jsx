@@ -21,7 +21,7 @@ import {
   getRedirectPathIfStepDisallowed,
   isFirstPreferenceStep,
 } from '../utils/householdPreferences';
-import { signOutFromOnboarding } from '../utils/postLoginStepper';
+import { signOutFromOnboarding, goToNextRegistrationStep } from '../utils/postLoginStepper';
 import {
   createFamilyMemberViaWebhook,
   fingerprintFamilyMember,
@@ -158,7 +158,7 @@ export default function SpouseInformation() {
 
   const goToNextStep = () => {
     const nextStepId = getNextPreferenceStepId(THIS_STEP_ID, prefs);
-    goToOnboardingPath(getStepById(nextStepId).path);
+    goToNextRegistrationStep(nextStepId);
   };
 
   const handleBack = () => {
@@ -178,7 +178,9 @@ export default function SpouseInformation() {
   const handleContinue = () => {
     const nextStepId = getNextPreferenceStepId(THIS_STEP_ID, prefs);
     persistNow({ ...draft, currentStep: nextStepId });
-    goToOnboardingPath(getStepById(nextStepId).path);
+    // Previous (commented out): always opened the next step (Membership included)
+    // goToOnboardingPath(getStepById(nextStepId).path);
+    goToNextRegistrationStep(nextStepId);
   };
 
   const handleSubmit = async (event) => {
@@ -226,7 +228,9 @@ export default function SpouseInformation() {
           spouseSyncFingerprint: fingerprint,
         },
       });
-      goToOnboardingPath(getStepById(nextStepId).path);
+      // Previous (commented out): always opened the next step (Membership included)
+      // goToOnboardingPath(getStepById(nextStepId).path);
+      goToNextRegistrationStep(nextStepId);
     } catch (err) {
       showToast({ message: err.message || 'Failed to save spouse contact.', type: 'error' });
       setIsSubmitting(false);

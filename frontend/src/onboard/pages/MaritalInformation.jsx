@@ -276,10 +276,14 @@ export default function MaritalInformation() {
       window.location.assign(ONBOARD_SUCCESS_PATH);
     } catch (err) {
       if (err?.code === 'email_registered') {
-        setErrors((prev) => ({
-          ...prev,
-          maritalStatus: prev.maritalStatus || 'This email is already registered. Please log in.',
-        }));
+        // Show the error on the Email field (About You), not under Marital Status.
+        goToOnboardingPath(`${getStepById(ABOUT_YOU_STEP_ID).path}?emailRegistered=1`);
+        return;
+        // Previous (commented out): error appeared under Marital Status
+        // setErrors((prev) => ({
+        //   ...prev,
+        //   maritalStatus: prev.maritalStatus || 'This email is already registered. Please log in.',
+        // }));
       }
       setIsSubmitting(false);
     }

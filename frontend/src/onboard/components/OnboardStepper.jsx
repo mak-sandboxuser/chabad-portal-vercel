@@ -1,6 +1,8 @@
 import { Check } from 'lucide-react';
 import { stepperSteps as defaultStepperSteps, getStepById } from '../data/onboardingSteps';
 import { getPreferenceDrivenStepIds, getHouseholdPreferences } from '../utils/householdPreferences';
+import { MEMBERSHIP_STEP_ID } from '../data/onboardingSteps';
+import { isNewMembershipSelectionBlocked } from '../utils/postLoginStepper';
 
 function stepStatus(stepId, currentStepId) {
   if (stepId === currentStepId) return 'active';
@@ -14,9 +16,12 @@ function stepStatus(stepId, currentStepId) {
  */
 export default function OnboardStepper({ currentStepId, draft }) {
   const prefs = draft ? getHouseholdPreferences(draft) : null;
-  const steps = prefs
+  // 1 June – 31 August: Membership step hidden (opens 1 September).
+  const hideMembershipStep = isNewMembershipSelectionBlocked();
+  const steps = (prefs
     ? getPreferenceDrivenStepIds(prefs).map((id) => getStepById(id)).filter(Boolean)
-    : defaultStepperSteps;
+    : defaultStepperSteps)
+    .filter((step) => !(hideMembershipStep && step.id === MEMBERSHIP_STEP_ID));
 
   return (
     <nav className="onboard-stepper" aria-label="Onboarding progress">

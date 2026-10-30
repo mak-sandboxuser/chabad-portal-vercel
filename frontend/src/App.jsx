@@ -6,6 +6,7 @@ import { authTrace } from './utils/authTrace';
 import { showToast } from './utils/toast';
 import Login from './components/Login';
 import Portal from './components/Portal';
+import VerifyLogin, { VERIFY_LOGIN_PATH } from './components/VerifyLogin';
 // import EmailLinkVerifier, { shouldRunEmailLinkVerifier } from './components/EmailLinkVerifier';
 import ToastHost from './components/shared/ToastHost';
 import OnboardWelcome, { ONBOARD_PATH } from './components/onboard/OnboardWelcome';
@@ -281,6 +282,16 @@ export default function App() {
       email: sfUser?.email || null,
     });
   }, [sfUser]);
+
+  // Emailed magic link → exchange for a session (replaces any existing session).
+  if (path === VERIFY_LOGIN_PATH) {
+    return (
+      <>
+        <ToastHost />
+        <VerifyLogin />
+      </>
+    );
+  }
 
   // Existing pre-login onboarding — unchanged (public).
   if (path === ONBOARD_PATH) {

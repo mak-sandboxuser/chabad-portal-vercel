@@ -2622,6 +2622,12 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--color-danger);
 }
 
+/* Payment status with no known color (OneCRM__Status__c) */
+.badge-neutral {
+  background: rgba(100, 116, 139, 0.14);
+  color: #64748b;
+}
+
 /* Events Stack List */
 .events-list {
   display: flex;
@@ -2748,6 +2754,19 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 14px;
   color: var(--text-secondary);
   line-height: 1.5;
+}
+
+.portal-page-hero-action {
+  position: absolute;
+  top: 50%;
+  right: 28px;
+  z-index: 2;
+  transform: translateY(-50%);
+}
+
+.portal-page-hero-action .dash-btn-gold {
+  margin-top: 0;
+  white-space: nowrap;
 }
 
 .portal-page-hero-sketch {
@@ -3256,9 +3275,9 @@ h1, h2, h3, h4, h5, h6 {
 .membership-details-card h3 {
   font-size: 17px;
   font-weight: 700;
-  margin: 0 0 20px;
+  /* margin: 0 0 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color); */
 }
 
 .membership-detail-row {
@@ -4421,6 +4440,14 @@ h1, h2, h3, h4, h5, h6 {
 
   .portal-page-hero-text {
     max-width: 100%;
+  }
+
+  .portal-page-hero-action {
+    position: relative;
+    top: auto;
+    right: auto;
+    transform: none;
+    margin-top: 16px;
   }
 
   .portal-page-hero-sketch {
@@ -6113,3 +6140,173 @@ h1, h2, h3, h4, h5, h6 {
   overflow: hidden;
 }
 */
+
+/* =====================================================================
+   Responsive layout (phones & tablets)
+   The portal's main column is a flex item, so by default it grows to fit
+   its widest child (tables, tab bars, fixed grids) and the whole page then
+   scrolls sideways. Let it shrink to the screen; wide tables scroll inside
+   their own box instead.
+   ===================================================================== */
+.portal-content { min-width: 0; max-width: 100%; }
+.portal-content :where(div, section, article, form, nav, ul, ol, li, header, footer) { min-width: 0; }
+.portal-content img { max-width: 100%; height: auto; }
+.table-wrapper, .crm-table-wrap, .section-tabs { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 1024px) {
+  /* Three summary cards (set inline in DashboardHome): two-up on tablets */
+  .dash-balance-row { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+
+@media (max-width: 768px) {
+  .portal-header { padding: 0 16px; gap: 8px; }
+  .portal-header .header-title h1 { font-size: 18px; }
+  .dash-balance-row { grid-template-columns: minmax(0, 1fr) !important; }
+  .dash-split-row, .membership-page-grid, .financial-top-card, .financial-mid-row, .financial-bottom-grid,
+  .household-info-grid, .contributions-summary-row { grid-template-columns: minmax(0, 1fr) !important; }
+  .portal-page-hero, .dash-welcome-card { padding: 20px; }
+  .portal-page-hero-text, .dash-welcome-text { max-width: 100%; }
+  /* Decorative building sketch overlapped the text on small screens */
+  .dash-welcome-sketch, .portal-page-hero-sketch { display: none; }
+}
+
+@media (max-width: 576px) {
+  /* Header: keep the avatar, drop the name/role text and the "Sign Out" label */
+  .portal-header .user-info { display: none !important; } /* inline display:flex in Portal.jsx */
+  .portal-header .portal-signout { padding: 8px 10px; font-size: 0; gap: 0; }
+  .portal-header .portal-signout svg { margin: 0; }
+  .portal-header .user-profile { gap: 8px; }
+  .dashboard-grid { padding: 20px 14px; gap: 20px; }
+  /* Tables: tighter cells so more fits before you need to swipe the table */
+  .members-table th, .members-table td, .crm-table thead th, .crm-table td { padding: 10px 8px; font-size: 13px; }
+  .members-table td:first-child { white-space: nowrap; }
+  .glass-panel { border-radius: 14px; }
+}
+
+/* Login / join pages on phones & tablets: the desktop rule above locks html/body
+   scrolling (overflow: hidden), which hid the sign-in form below the fold. */
+@media (max-width: 991px) {
+  html:has(.chabad-login-layout),
+  body:has(.chabad-login-layout) {
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 576px) {
+  /* Bring the email field into view sooner on phones. */
+  .building-sketch--login {
+    display: none;
+  }
+}
+
+/* Touch screens (phones & tablets).
+   `body` in the selectors outranks the <style> blocks inside the onboarding components. */
+@media (pointer: coarse), (max-width: 768px) {
+  /* iPhone zooms the whole page in when a field's text is under 16px. */
+  body input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  body select,
+  body textarea {
+    font-size: 16px;
+  }
+
+  /* Let the field fill its box so a tap anywhere on the box focuses it. */
+  body .ay-input-wrap {
+    padding-top: 0;
+    padding-bottom: 0;
+    min-height: 44px;
+  }
+  body .ay-input-wrap > input,
+  body .ay-input-wrap > select,
+  body .onboard-input-shell > input,
+  body .onboard-select-shell > select,
+  body .crm-list-search input {
+    align-self: stretch;
+    min-height: 40px;
+  }
+  body .crm-list-search {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  /* Comfortable tap targets for icon buttons and stand-alone text links. */
+  .mobile-toggle {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    margin-left: -10px;
+  }
+  .theme-toggle-btn,
+  body .onboard-need-help,
+  body .ay-theme-toggle,
+  .dash-btn-icon-only {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  body .ay-help-link,
+  .dash-view-all,
+  .portal-text-link,
+  .breadcrumb-link,
+  .sidebar-help-title-btn,
+  .sidebar-help-link,
+  .onboard-footer-contact,
+  .onboard-assistance-contact a,
+  .crm-contact-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+  }
+  .portal-content a[href^="mailto:"],
+  .portal-content a[href^="tel:"] {
+    display: inline-block;
+    padding: 8px 0;
+  }
+
+  /* Nothing under 11px on small screens. */
+  .sidebar-section-label,
+  .sidebar-copyright,
+  .dash-role-tag,
+  .role-badge,
+  body .onboard-stepper-badge {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 780px) {
+  body .ay-secure-note {
+    white-space: normal;
+  }
+  body .ay-header {
+    padding: 14px 16px;
+  }
+}
+
+@media (pointer: coarse), (max-width: 768px) {
+  /* Selects inside the onboarding fields have their own, more specific font rules. */
+  body .ay-input-wrap select,
+  body .onboard-select-shell select,
+  body .onboard-select {
+    font-size: 16px;
+  }
+  body .onboard-help-link,
+  body .onboard-tier-select-btn {
+    min-height: 40px;
+  }
+  /* Footer "Contact Us" button sets padding: 0 inline, so this needs !important. */
+  body .ay-footer button,
+  body .ay-footer a,
+  .recent-payment-notice-refresh {
+    display: inline-block;
+    padding: 9px 2px !important;
+  }
+  .financial-donut span small {
+    font-size: 11px;
+  }
+}
+
+/* Keep the header avatar round when the phone header gets tight. */
+.portal-header .avatar {
+  flex-shrink: 0;
+  aspect-ratio: 1;
+}

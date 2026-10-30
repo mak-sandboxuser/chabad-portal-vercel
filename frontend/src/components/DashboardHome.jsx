@@ -31,6 +31,9 @@ import {
   needsSalesforceMembershipScheduleSetup,
   getSalesforceAssignedGroup,
   hasRealMembershipGroup,
+  getPaymentCrmStatus,
+  getPaymentStatusBadgeClass,
+  getPledgeCommitmentAmount,
 } from '../utils/portalData';
 import {
   // markPostLoginStepperPending,
@@ -39,7 +42,12 @@ import {
   startSalesforceMembershipSchedulePayment,
   startPortalMembershipRenewal,
 } from '../onboard/utils/postLoginStepper';
-import { getProratedMembershipCommitment, isMembershipRenewalWindowOpen } from '../utils/portalFiscalYear';
+import {
+  getProratedMembershipCommitment,
+  isMembershipRenewalWindowOpen,
+  isMembershipSelectionOpen,
+  formatMembershipSelectionOpenDate,
+} from '../utils/portalFiscalYear';
 // import { isMembershipRenewalWindowOpen } from '../utils/portalFiscalYear';
 import { showToast } from '../utils/toast';
 
@@ -95,6 +103,55 @@ function GuestMembershipInviteBanner({ firstName, onBecomeMember }) {
             Your support helps us strengthen our community and make a lasting impact.
           </p>
           <span className="renewed-script-note">We can&apos;t wait to welcome you! ♡</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 1 June – 31 August: registered, but membership selection opens 1 September. */
+function MembershipOpensSoonBanner({ firstName, openDateLabel }) {
+  return (
+    <div className="renewed-membership-banner guest-membership-invite-banner">
+      <div className="renewed-banner-left">
+        <div className="renewed-banner-icon-wrapper">
+          <span className="renewed-banner-sparkle sp-top-left">✦</span>
+          <span className="renewed-banner-sparkle sp-top-right">✦</span>
+          <span className="renewed-banner-sparkle sp-bottom-left">✦</span>
+          <span className="renewed-banner-sparkle sp-bottom-right">✦</span>
+          <div className="renewed-banner-shield-circle">
+            <Calendar size={38} strokeWidth={2.2} />
+          </div>
+        </div>
+
+        <div className="renewed-banner-body">
+          <h2 className="renewed-banner-title">Thank You for Registering, {firstName}!</h2>
+          <p className="renewed-banner-sub">
+            Your household details are saved. Membership for the new year opens on {openDateLabel} —
+            you&apos;ll be able to choose your membership here from that date.
+          </p>
+          <div className="renewed-banner-pill">
+            <div className="renewed-pill-icon">
+              <Heart size={18} />
+            </div>
+            <div className="renewed-pill-text">
+              <strong>Membership opens on {openDateLabel}</strong>
+              <span>We&apos;ll be ready to welcome you as a member then.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="renewed-banner-right">
+        <div className="renewed-right-divider" aria-hidden="true" />
+        <div className="renewed-right-content">
+          <div className="renewed-right-badge">
+            <Star size={16} />
+          </div>
+          <p className="renewed-right-text">
+            Your support helps us strengthen our community and make a lasting impact.
+          </p>
+          <span className="renewed-script-note">See you in September! ♡</span>
         </div>
       </div>
     </div>
@@ -157,6 +214,8 @@ export default function DashboardHome({
     : (needsSfMembershipPay ? remainingMonthsFallback : 0);
   const hasOutstandingBalance = outstandingAmount > 0;
   const outstandingDisplay = formatMoney(outstandingAmount);
+  // Commitment badge: Salesforce pledge OneCRM__Amount__c (total), not the outstanding balance.
+  const pledgeCommitment = getPledgeCommitmentAmount(sfData);
   // Previous (commented out): calculated outstanding (prorated commitment − paid)
   // const catalogListPrice = getMembershipCatalogListPrice(sfData);
   // const paidTowardMembership = parseMoney(summary.totalContributed)
@@ -218,10 +277,17 @@ export default function DashboardHome({
             <BuildingSketch theme={theme} className="dash-welcome-sketch" />
           </div>
 
-          <GuestMembershipInviteBanner
-            firstName={firstName}
-            onBecomeMember={handleBecomeMember}
-          />
+          {isMembershipSelectionOpen() ? (
+            <GuestMembershipInviteBanner
+              firstName={firstName}
+              onBecomeMember={handleBecomeMember}
+            />
+          ) : (
+            <MembershipOpensSoonBanner
+              firstName={firstName}
+              openDateLabel={formatMembershipSelectionOpenDate()}
+            />
+          )}
         </div>
       </div>
     );
@@ -324,7 +390,10 @@ export default function DashboardHome({
                 <span className="dash-card-title">Outstanding Balance</span>
               </div>
               <span className="dash-pill-badge red">
+                {pledgeCommitment > 0 ? `Commitment ${formatMoney(pledgeCommitment)}` : 'Due Balance'}
+                {/* Previous (commented out): badge repeated the outstanding amount
                 {outstandingAmount > 0 ? `Commitment ${outstandingDisplay}` : 'Due Balance'}
+                */}
                 {/* Previous (commented out): catalog annual (Family $2244) in the Outstanding card
                 {membership.annualCommitment ? `Commitment ${membership.annualCommitment}` : 'Due Balance'}
                 */}
@@ -510,7 +579,15 @@ export default function DashboardHome({
                       <td>{row.method || row.type || '—'}</td>
                       */}
                       <td>{row.amount || '—'}</td>
+                      {/* Salesforce OneCRM__Status__c, colored by status */}
+                      <td>
+                        <span className={`badge ${getPaymentStatusBadgeClass(getPaymentCrmStatus(row))}`}>
+                          {getPaymentCrmStatus(row) || '—'}
+                        </span>
+                      </td>
+                      {/* Previous (commented out): always green, simplified Paid/Pending
                       <td><span className="badge badge-active">{row.status || '—'}</span></td>
+                      */}
                     </tr>
                   )) : (
                     <tr>

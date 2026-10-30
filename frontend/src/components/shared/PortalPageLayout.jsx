@@ -24,6 +24,7 @@ export default function PortalPageLayout({
   theme,
   title,
   subtitle,
+  heroAction = null,
   breadcrumbs = [],
   showSketch = true,
   children,
@@ -59,6 +60,7 @@ export default function PortalPageLayout({
           {title && <h2>{title}</h2>}
           {subtitle && <p>{subtitle}</p>}
         </div>
+        {heroAction && <div className="portal-page-hero-action">{heroAction}</div>}
         {showSketch && <BuildingSketch theme={theme} className="portal-page-hero-sketch" />}
       </div>
       )}

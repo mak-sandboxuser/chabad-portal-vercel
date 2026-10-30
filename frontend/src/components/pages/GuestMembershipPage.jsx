@@ -13,6 +13,7 @@ import { ONBOARD_FIRST_FORM_PATH } from '../../onboard/utils/onboardingRoutes';
 import { startChooseMembershipStepper } from '../../onboard/utils/postLoginStepper';
 // import { markPostLoginStepperPending, getPostLoginStepperEntryPath } from '../../onboard/utils/postLoginStepper';
 import { getSalesforceAssignedGroup } from '../../utils/portalData';
+import { isMembershipSelectionOpen, formatMembershipSelectionOpenDate } from '../../utils/portalFiscalYear';
 
 const MEMBERSHIP_BENEFITS = [
   {
@@ -108,10 +109,17 @@ export default function GuestMembershipPage({ theme, onNavigate, user, sfData })
             meaningful programs, lifecycle support, and exclusive member benefits.
           </p>
 
-          <button type="button" className="guest-membership-primary-btn" onClick={handleBecomeMember}>
-            Become a Member
-            <ArrowRight size={18} aria-hidden="true" />
-          </button>
+          {/* 1 June – 31 August: membership selection opens 1 September. */}
+          {isMembershipSelectionOpen() ? (
+            <button type="button" className="guest-membership-primary-btn" onClick={handleBecomeMember}>
+              Become a Member
+              <ArrowRight size={18} aria-hidden="true" />
+            </button>
+          ) : (
+            <p className="guest-membership-lead" style={{ fontWeight: 700 }}>
+              Membership opens on {formatMembershipSelectionOpenDate()}.
+            </p>
+          )}
 
 
         </div>

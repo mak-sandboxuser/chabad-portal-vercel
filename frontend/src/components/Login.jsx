@@ -39,6 +39,7 @@ export default function Login({ initialError = '' }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialError);
   const [sentTo, setSentTo] = useState('');
+  const [devLink, setDevLink] = useState('');
   const [testCode, setTestCode] = useState('424242');
   const [verifyingOtp, setVerifyingOtp] = useState(false);
 
@@ -89,17 +90,39 @@ export default function Login({ initialError = '' }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: cleanEmail }),
+        // mode 'login' → backend emails a one-time sign-in link (no session until it is clicked).
+        body: JSON.stringify({ email: cleanEmail, mode: 'login' }),
       });
 
       const data = await response.json();
 
-      if (!response.ok || data.allowed === false) {
+      if (data.allowed === false || response.status === 403) {
         authTrace('LOGIN_SALESFORCE_DENIED', { email: cleanEmail, message: data.message });
         throw new Error(UNAUTHORIZED_MSG);
       }
+      if (!response.ok) {
+        throw new Error(data.message || 'Something went wrong. Please try again.');
+      }
+      // Only show "Check your email" when the backend confirms the email went out
+      // (an outdated backend answered allowed:true without sending anything).
+      // Local testing only: backend could not email but returned the link (ALLOW_DEV_TOKENS).
+      if (!data.linkSent && data.devLink) {
+        setDevLink(data.devLink);
+        setSentTo(cleanEmail);
+        showToast({ message: 'Email could not be sent — local test link shown instead.', type: 'error' });
+        return;
+      }
+      if (!data.linkSent) {
+        throw new Error('We could not send your sign-in email. Please try again in a moment.');
+      }
 
-      authTrace('LOGIN_SALESFORCE_OK', { email: cleanEmail, member: data.member?.name });
+      authTrace('LOGIN_MAGIC_LINK_SENT', { email: cleanEmail });
+      setSentTo(cleanEmail);
+      showToast({ message: 'Sign-in link sent! Check your email.', type: 'success' });
+      return;
+
+      /* Previous (commented out): logged in immediately from check-member — no email verification.
+         Session is now created in VerifyLogin after the emailed link is clicked.
 
       // Direct Salesforce Login (Clerk authentication commented out)
       const memberRole = data.member?.role || '';
@@ -145,6 +168,7 @@ export default function Login({ initialError = '' }) {
       setTimeout(() => {
         window.location.replace('/');
       }, 300);
+      */
 
       /* ==========================================================================
          ORIGINAL CLERK MAGIC LINK SEND LOGIC (COMMENTED OUT AS REQUESTED)
@@ -360,10 +384,39 @@ export default function Login({ initialError = '' }) {
                 <div className="success-icon-badge">
                   <CheckCircle size={48} />
                 </div>
+                <h2 className="card-title">{devLink ? 'Email not sent' : 'Check your email'}</h2>
+                {devLink ? (
+                  <p className="success-message-text">
+                    The sign-in email to <strong className="highlight-email">{sentTo}</strong> could not be sent.
+                  </p>
+                ) : (
+                  <>
+                    <p className="success-message-text">
+                      We sent a secure sign-in link to <strong className="highlight-email">{sentTo}</strong>.
+                      Open it on this device to sign in. The link expires in 15 minutes.
+                    </p>
+                    <p className="success-message-text" style={{ fontSize: '13px', opacity: 0.8 }}>
+                      Didn&apos;t get it? Check your spam folder, or go back and send it again.
+                    </p>
+                  </>
+                )}
+                {devLink && (
+                  <div className="auth-error-box" style={{ marginTop: '12px', flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+                    <span>
+                      <strong>Local testing:</strong> the email could not be sent (check SMTP settings in backend/.env).
+                      Use this sign-in link instead:
+                    </span>
+                    <a href={devLink} className="submit-continue-btn" style={{ textAlign: 'center', textDecoration: 'none' }}>
+                      Open sign-in link
+                    </a>
+                  </div>
+                )}
+                {/* Previous (commented out):
                 <h2 className="card-title">Sign In Verification</h2>
                 <p className="success-message-text">
                   Salesforce account verified for <strong className="highlight-email">{sentTo}</strong>.
                 </p>
+                */}
 
                 {error && (
                   <div className="auth-error-box" style={{ marginTop: '12px', marginBottom: '12px' }}>
@@ -400,7 +453,7 @@ export default function Login({ initialError = '' }) {
                 </form>
                 */}
 
-                <button className="dash-btn-outline" style={{ width: '100%', marginTop: '16px' }} onClick={() => setSentTo('')}>
+                <button className="dash-btn-outline" style={{ width: '100%', marginTop: '16px' }} onClick={() => { setSentTo(''); setDevLink(''); }}>
                   Back to Login
                 </button>
               </div>

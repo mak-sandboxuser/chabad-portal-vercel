@@ -16,7 +16,7 @@ import {
   CONTRIBUTION_SCHEDULE_STEP_ID,
 } from '../data/onboardingSteps';
 import { GENERAL_TIERS, CHAI_TIERS, formatCurrency, formatMembershipSalesforceGroup } from '../data/membershipTiers';
-import { getProratedMembershipCommitment, getRemainingMembershipMonths, getPortalTestDateLabel } from '../../utils/portalFiscalYear';
+import { getProratedMembershipCommitment, getRemainingMembershipMonths, getRemainingMembershipMonthsFromNextMonth, getPortalTestDateLabel } from '../../utils/portalFiscalYear';
 import { goToOnboardingPath } from '../utils/onboardingRoutes';
 import {
   getHouseholdPreferences,
@@ -24,15 +24,30 @@ import {
   getPreviousPreferenceStepId,
   isFirstPreferenceStep,
 } from '../utils/householdPreferences';
-import { signOutFromOnboarding, isPostLoginStepperPending, dismissPostLoginStepperPending, isMembershipFormOnlyFlow, isPortalUpdateMembershipMode, clearPortalUpdateMembershipMode, saveSelectedMembershipTier } from '../utils/postLoginStepper';
+import { signOutFromOnboarding, isPostLoginStepperPending, dismissPostLoginStepperPending, isMembershipFormOnlyFlow, isPortalUpdateMembershipMode, clearPortalUpdateMembershipMode, saveSelectedMembershipTier, isNewMembershipSelectionBlocked, finishRegistrationWithoutMembership } from '../utils/postLoginStepper';
 import '../onboard.css';
 
 const THIS_STEP_ID = MEMBERSHIP_STEP_ID;
 
+// Update Membership: current month already paid → price from next month through August.
+function getTierRemainingMonths() {
+  return isPortalUpdateMembershipMode()
+    ? getRemainingMembershipMonthsFromNextMonth()
+    : getRemainingMembershipMonths();
+}
+
+function getTierProratedCommitment(annualPrice) {
+  if (!isPortalUpdateMembershipMode()) return getProratedMembershipCommitment(annualPrice);
+  return Math.round((Number(annualPrice || 0) / 12) * getRemainingMembershipMonthsFromNextMonth() * 100) / 100;
+}
+
 function TierRow({ tier, selected, onSelect, isSubmitting }) {
   const Icon = tier.icon;
-  const remainingMonths = getRemainingMembershipMonths();
-  const proratedAmount = getProratedMembershipCommitment(tier.annualPrice);
+  // Previous (commented out): always included the current month
+  // const remainingMonths = getRemainingMembershipMonths();
+  // const proratedAmount = getProratedMembershipCommitment(tier.annualPrice);
+  const remainingMonths = getTierRemainingMonths();
+  const proratedAmount = getTierProratedCommitment(tier.annualPrice);
   const showProrated = remainingMonths > 0 && remainingMonths < 12 && !tier.isOpenEnded;
   const displayAmount = showProrated ? proratedAmount : tier.annualPrice;
   const monthlyAmount = Math.floor(tier.annualPrice / 12);
@@ -83,7 +98,7 @@ function TierRow({ tier, selected, onSelect, isSubmitting }) {
           </span>
           <span className="onboard-tier-monthly" style={{ fontSize: '11px', color: '#c4841f', fontWeight: '600' }}>{monthly}</span>
           {showProrated && (
-            <span style={{ fontSize: '10px', color: 'var(--onboard-text-secondary)' }}>
+            <span style={{ fontSize: '11px', color: 'var(--onboard-text-secondary)' }}>
               Full year ${formatCurrency(tier.annualPrice)}
             </span>
           )}
@@ -143,6 +158,15 @@ export default function MembershipSelection() {
     }
   }, [paymentStatus, sessionId]);
 
+  // 1 June – 31 August: new registrations skip membership (opens 1 September).
+  // Renew / Update Membership are not blocked.
+  const membershipSelectionBlocked = paymentStatus !== 'success' && isNewMembershipSelectionBlocked();
+  useEffect(() => {
+    if (membershipSelectionBlocked) finishRegistrationWithoutMembership();
+  }, [membershipSelectionBlocked]);
+
+  if (membershipSelectionBlocked) return null;
+
   if (paymentStatus === 'success') {
     return (
       <div className="verify-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: '16px' }}>
@@ -159,8 +183,11 @@ export default function MembershipSelection() {
     setError('');
 
     const groupName = formatMembershipSalesforceGroup(tier.name);
-    const remainingMonths = getRemainingMembershipMonths();
-    const proratedCommitment = getProratedMembershipCommitment(tier.annualPrice);
+    // Previous (commented out): always included the current month
+    // const remainingMonths = getRemainingMembershipMonths();
+    // const proratedCommitment = getProratedMembershipCommitment(tier.annualPrice);
+    const remainingMonths = getTierRemainingMonths();
+    const proratedCommitment = getTierProratedCommitment(tier.annualPrice);
 
     try {
       saveSelectedMembershipTier(tier.id);

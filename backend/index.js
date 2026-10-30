@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const { verifyToken, createClerkClient } = require('@clerk/backend');
 const db = require('./db');
@@ -64,7 +65,52 @@ async function verifyClerkSessionToken(token) {
     clockSkewInMs: SESSION_CLOCK_SKEW_MS,
   });
   ========================================================================== */
-  return jwt.verify(token, JWT_SECRET);
+  // Previous (commented out): any JWT signed with JWT_SECRET was a session (incl. emailed link tokens)
+  // return jwt.verify(token, JWT_SECRET);
+  const decoded = jwt.verify(token, JWT_SECRET);
+  if (decoded?.purpose === MAGIC_LINK_PURPOSE) {
+    throw new Error('Session expired or invalid. Please sign in again.');
+  }
+  return decoded;
+}
+
+/* --------------------------------------------------------------------------
+   Magic-link login + dev tokens
+   -------------------------------------------------------------------------- */
+const MAGIC_LINK_PURPOSE = 'magic_link';
+const MAGIC_LINK_TTL = '15m';
+const SESSION_TTL = '30d';
+// One-time use: link ids already exchanged for a session (id -> expiry ms).
+const usedMagicLinkIds = new Map();
+
+// "dev:<email>" / dev_token_for_testing log in as anyone — only when explicitly
+// enabled (ALLOW_DEV_TOKENS=true in local backend/.env). Never on the live server.
+function devTokensAllowed() {
+  return process.env.ALLOW_DEV_TOKENS === 'true';
+}
+
+function isDevToken(token) {
+  return token === 'dev_token_for_testing' || (typeof token === 'string' && token.startsWith('dev:'));
+}
+
+function isAllowedDevToken(token) {
+  return isDevToken(token) && devTokensAllowed();
+}
+
+function devTokenEmail(token, fallback = '') {
+  if (typeof token === 'string' && token.startsWith('dev:')) return token.substring(4).toLowerCase();
+  return String(fallback || '').toLowerCase();
+}
+
+function signSessionToken(email) {
+  return jwt.sign({ sub: email, email }, JWT_SECRET, { expiresIn: SESSION_TTL });
+}
+
+function pruneUsedMagicLinks() {
+  const now = Date.now();
+  for (const [id, exp] of usedMagicLinkIds) {
+    if (exp < now) usedMagicLinkIds.delete(id);
+  }
 }
 
 app.use(cors({
@@ -1098,6 +1144,39 @@ function mergeMemberProfile(sfDetails, portalData = null) {
   };
 }
 
+/* --------------------------------------------------------------------------
+   Update Membership schedule choice (Monthly / Half Yearly / Full).
+   Salesforce/Make may keep the old frequency, so the portal remembers the
+   member's latest choice and the dashboard uses it for Upcoming Payment.
+   Stored outside db.json (git-tracked) in a git-ignored file.
+   -------------------------------------------------------------------------- */
+const MEMBERSHIP_SCHEDULES_FILE = require('path').join(__dirname, 'membership-schedules.json');
+
+function readMembershipSchedules() {
+  try {
+    return JSON.parse(require('fs').readFileSync(MEMBERSHIP_SCHEDULES_FILE, 'utf-8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function getSavedMembershipSchedule(email = '') {
+  return readMembershipSchedules()[String(email || '').toLowerCase()] || null;
+}
+
+function saveMembershipSchedule(email = '', schedule = {}) {
+  const key = String(email || '').toLowerCase();
+  if (!key) return;
+  const all = readMembershipSchedules();
+  all[key] = schedule;
+  try {
+    require('fs').writeFileSync(MEMBERSHIP_SCHEDULES_FILE, JSON.stringify(all, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[MEMBERSHIP-SCHEDULE] save failed:', err.message);
+  }
+  if (userSalesforceData[key]) userSalesforceData[key].membershipSchedule = schedule;
+}
+
 async function buildPortalSfData(rawEmail) {
   const email = cleanEmailForSalesforce(rawEmail);
   const lookup = await lookupSalesforceMember(email);
@@ -1147,13 +1226,19 @@ async function buildPortalSfData(rawEmail) {
 
   const sfData = mergeMemberProfile(memberDetails, mergedPortalWithHousehold);
 
+  sfData.membershipSchedule = getSavedMembershipSchedule(email);
   userSalesforceData[email] = sfData;
   return { sfData, memberDetails, portalData: mergedPortalWithHousehold };
 }
 
 async function resolveAuthedEmail(token) {
-  if (token === 'dev_token_for_testing' || (typeof token === 'string' && token.startsWith('dev:'))) {
-    const email = (typeof token === 'string' && token.startsWith('dev:')) ? token.substring(4).toLowerCase() : 'rohitjainltp59@gmail.com';
+  // Previous (commented out): dev tokens always accepted, with a hard-coded fallback email
+  // if (token === 'dev_token_for_testing' || (typeof token === 'string' && token.startsWith('dev:'))) {
+  //   const email = (typeof token === 'string' && token.startsWith('dev:')) ? token.substring(4).toLowerCase() : 'rohitjainltp59@gmail.com';
+  if (isDevToken(token)) {
+    if (!devTokensAllowed()) throw new Error('Session expired or invalid. Please sign in again.');
+    const email = devTokenEmail(token);
+    if (!email) throw new Error('Session expired or invalid. Please sign in again.');
     return {
       userId: email,
       email: email,
@@ -1308,6 +1393,8 @@ async function sendEmail({ to, subject, html, text }) {
 
 // Endpoint to fetch dev helper link
 app.get('/api/auth/dev-last-link', (req, res) => {
+  // Local testing only — exposes the last emailed sign-in link.
+  if (!devTokensAllowed()) return res.status(404).json({ error: 'Not found' });
   res.json({ link: devLastLink, emailUrl: devLastEmailUrl });
 });
 
@@ -1415,20 +1502,107 @@ app.post('/api/auth/check-member', async (req, res) => {
   }
   ========================================================================== */
 
-  const token = jwt.sign({ sub: emailLower, email: emailLower }, JWT_SECRET, { expiresIn: '30d' });
-
-  authLog('CHECK_MEMBER_OK', {
-    email: emailLower,
-    clerkUserId: null, // clerkUser?.id || null,
-    contactId: lookup.memberDetails.contactId || null,
-    accountId: lookup.memberDetails.accountId || null,
-    nextStep: 'Direct JWT login token generated',
-  });
+  // Previous (commented out): returned a 30-day session token straight away — anyone who
+  // typed a member's email was logged in as them, no email verification.
+  // const token = jwt.sign({ sub: emailLower, email: emailLower }, JWT_SECRET, { expiresIn: '30d' });
+  // res.json({ allowed: true, token, member: lookup.memberDetails });
 
   cacheMemberLookup(emailLower, lookup.memberDetails);
-
   console.log(`[LOGIN DEBUG] email=${emailLower} | role=${lookup.memberDetails.role} | groups="${lookup.memberDetails.groups}"`);
-  res.json({ allowed: true, token, member: lookup.memberDetails });
+
+  // Existence checks (Join form) only learn "already registered" — no email, no token.
+  if (req.body?.mode !== 'login') {
+    authLog('CHECK_MEMBER_OK', { email: emailLower, nextStep: 'exists_check_only' });
+    return res.json({ allowed: true });
+  }
+
+  const linkId = crypto.randomBytes(16).toString('hex');
+  const linkToken = jwt.sign(
+    { sub: emailLower, email: emailLower, purpose: MAGIC_LINK_PURPOSE, jti: linkId },
+    JWT_SECRET,
+    { expiresIn: MAGIC_LINK_TTL },
+  );
+  const frontendBase = String(process.env.FRONTEND_URL || req.headers.origin || '').replace(/\/+$/, '');
+  const link = `${frontendBase}/verify-login?token=${encodeURIComponent(linkToken)}`;
+  const firstName = lookup.memberDetails.firstName || String(lookup.memberDetails.name || '').split(' ')[0] || 'there';
+
+  const sent = await sendEmail({
+    to: emailLower,
+    subject: 'Your Chabad Bedford sign-in link',
+    text: `Shalom ${firstName},\n\nUse this link to sign in to the Chabad Bedford Member Portal:\n${link}\n\nThis link expires in 15 minutes and can be used once. If you didn't request it, you can ignore this email.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px;">
+        <h2 style="color: #1e3a8a; margin-top: 0;">Shalom ${firstName},</h2>
+        <p>Click the button below to sign in to the <strong>Chabad Bedford Member Portal</strong>.</p>
+        <p style="text-align: center; margin: 28px 0;">
+          <a href="${link}" style="background: #c4841f; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold;">Sign in to the portal</a>
+        </p>
+        <p style="color: #64748b; font-size: 13px;">This link expires in 15 minutes and can be used once. If you didn't request it, you can ignore this email.</p>
+      </div>
+    `,
+  });
+
+  if (devTokensAllowed()) devLastLink = link;
+
+  if (!sent.success) {
+    authLog('MAGIC_LINK_SEND_FAIL', { email: emailLower, error: sent.error });
+    // Local testing only (ALLOW_DEV_TOKENS=true): hand the link to the login page so
+    // sign-in can be tested while SMTP is broken. Never enabled on the live server.
+    if (devTokensAllowed()) {
+      return res.json({ allowed: true, linkSent: false, devLink: link, emailError: sent.error });
+    }
+    return res.status(502).json({
+      allowed: true,
+      error: 'email_send_failed',
+      message: 'We could not send your sign-in email. Please try again in a moment.',
+    });
+  }
+
+  authLog('MAGIC_LINK_SENT', {
+    email: emailLower,
+    contactId: lookup.memberDetails.contactId || null,
+    expiresIn: MAGIC_LINK_TTL,
+  });
+  res.json({ allowed: true, linkSent: true });
+});
+
+// Emailed sign-in link → one-time exchange for a 30-day portal session.
+app.post('/api/auth/verify-link', async (req, res) => {
+  const linkToken = String(req.body?.token || '');
+  const invalid = (reason) => {
+    authLog('MAGIC_LINK_INVALID', { reason });
+    return res.status(401).json({
+      error: 'invalid_link',
+      message: 'This sign-in link is invalid or has expired. Please request a new one.',
+    });
+  };
+  if (!linkToken) return invalid('missing');
+
+  let decoded;
+  try {
+    decoded = jwt.verify(linkToken, JWT_SECRET);
+  } catch (err) {
+    return invalid(err.name === 'TokenExpiredError' ? 'expired' : 'bad_signature');
+  }
+  if (decoded?.purpose !== MAGIC_LINK_PURPOSE || !decoded.jti) return invalid('wrong_purpose');
+
+  pruneUsedMagicLinks();
+  if (usedMagicLinkIds.has(decoded.jti)) return invalid('already_used');
+  usedMagicLinkIds.set(decoded.jti, (decoded.exp || 0) * 1000);
+
+  const emailLower = String(decoded.email || decoded.sub || '').toLowerCase();
+  const lookup = await lookupSalesforceMember(emailLower);
+  if (!lookup.found) {
+    authLog('MAGIC_LINK_DENIED', { email: emailLower, error: lookup.error || 'unauthorized_member' });
+    return res.status(403).json({
+      error: lookup.error || 'unauthorized_member',
+      message: 'Please click "Join the Chabad of Bedford Family" button below',
+    });
+  }
+
+  cacheMemberLookup(emailLower, lookup.memberDetails);
+  authLog('MAGIC_LINK_OK', { email: emailLower, contactId: lookup.memberDetails.contactId || null });
+  res.json({ token: signSessionToken(emailLower), member: lookup.memberDetails, email: emailLower });
 });
 
 // Protected portal dashboard data (Salesforce Direct Member Login)
@@ -1437,24 +1611,30 @@ app.get('/api/portal/dashboard', async (req, res) => {
   const xUserEmail = req.headers['x-user-email'];
 
   // Extract email from header, token, or default fallback
-  let rawEmail = xUserEmail || req.query.email;
-  if (!rawEmail && authHeader.startsWith('Bearer ')) {
-    const tokenPart = authHeader.split(' ')[1];
-    if (tokenPart.startsWith('dev:')) {
-      rawEmail = tokenPart.replace(/^dev:/i, '');
+  // Previous (commented out): trusted x-user-email / ?email= / dev: tokens / raw token text,
+  // and fell back to a hard-coded email — anyone could open any member's dashboard.
+  // let rawEmail = xUserEmail || req.query.email;
+  // if (!rawEmail && authHeader.startsWith('Bearer ')) { ... }
+  // if (!rawEmail || ...) rawEmail = 'rohitjainltp59@gmail.com';
+  let rawEmail = '';
+  if (authHeader.startsWith('Bearer ')) {
+    const tokenPart = authHeader.split(' ')[1] || '';
+    if (isDevToken(tokenPart)) {
+      rawEmail = isAllowedDevToken(tokenPart) ? devTokenEmail(tokenPart) : '';
     } else {
-      // Try to decode JWT token to extract email
       try {
-        const decoded = jwt.verify(tokenPart, JWT_SECRET);
+        const decoded = await verifyClerkSessionToken(tokenPart);
         rawEmail = decoded.sub || decoded.email || '';
       } catch {
-        rawEmail = tokenPart.replace(/^dev:/i, '');
+        rawEmail = '';
       }
     }
   }
-
+  if (!rawEmail && devTokensAllowed() && (xUserEmail || req.query.email)) {
+    rawEmail = xUserEmail || req.query.email;
+  }
   if (!rawEmail || rawEmail.includes('null') || rawEmail.includes('undefined')) {
-    rawEmail = 'rohitjainltp59@gmail.com';
+    return res.status(401).json({ error: 'Session expired or invalid. Please sign in again.' });
   }
 
   const email = cleanEmailForSalesforce(rawEmail);
@@ -1756,10 +1936,26 @@ app.post('/api/portal/update-membership-amount', async (req, res) => {
     });
   }
 
-  const amount = String(req.body?.amount || req.body?.annualCommitment || '').trim();
+  // Previous (commented out): amount was taken as-is from the client
+  // const amount = String(req.body?.amount || req.body?.annualCommitment || '').trim();
   const outstanding = String(req.body?.outstanding || '').trim();
   const group = String(req.body?.group || req.body?.tier || '').trim();
   const pledgeId = String(req.body?.pledgeId || '').trim();
+
+  // Update Membership (current month already paid, no Stripe):
+  // amount = total paid this membership year + new tier × months from next month.
+  const paidThisYear = Math.round(parsePortalMoney(req.body?.paidThisYear) * 100) / 100;
+  const calculatedMembershipAmount = Math.round(parsePortalMoney(req.body?.calculatedMembershipAmount) * 100) / 100;
+  const amountValue = calculatedMembershipAmount > 0
+    ? Math.round((paidThisYear + calculatedMembershipAmount) * 100) / 100
+    : parsePortalMoney(req.body?.amount || req.body?.annualCommitment);
+  if (!(amountValue > 0)) {
+    return res.status(400).json({ error: 'Membership amount is missing.' });
+  }
+  const amount = amountValue.toFixed(2);
+  const frequency = toSalesforceFrequency(req.body?.frequency || '');
+  const nextChargeDate = String(req.body?.nextChargeDate || '').slice(0, 10);
+  const installmentAmount = Math.round(parsePortalMoney(req.body?.installmentAmount) * 100) / 100;
 
   const body = {
     action: 'update_membership_amount',
@@ -1769,6 +1965,20 @@ app.post('/api/portal/update-membership-amount', async (req, res) => {
     accountName: auth.accountName,
     amount,
     annualCommitment: amount,
+    OneCRM__Amount__c: amountValue,
+    paidThisYear,
+    paymentsTotal: paidThisYear,
+    calculatedMembershipAmount,
+    annualPrice: parsePortalMoney(req.body?.annualPrice),
+    remainingMonths: Number(req.body?.remainingMonths) || 0,
+    frequency,
+    OneCRM__Frequency__c: frequency,
+    scheduleOption: String(req.body?.scheduleOption || ''),
+    installmentAmount,
+    nextChargeDate,
+    OneCRM__Next_Charge_Date__c: nextChargeDate,
+    previousGroup: String(req.body?.previousGroup || ''),
+    previousFrequency: String(req.body?.previousFrequency || ''),
     outstanding,
     group,
     tier: group,
@@ -1794,6 +2004,18 @@ app.post('/api/portal/update-membership-amount', async (req, res) => {
       return res.status(502).json({ error: `Make.com membership amount update returned ${makeRes.status}` });
     }
 
+    saveMembershipSchedule(auth.email, {
+      scheduleOption: body.scheduleOption,
+      frequency: String(req.body?.frequency || ''),
+      installmentAmount,
+      nextChargeDate,
+      secondChargeDate: String(req.body?.secondChargeDate || '').slice(0, 10),
+      remainingMonths: body.remainingMonths,
+      group,
+      totalCommitment: amountValue,
+      at: new Date().toISOString(),
+    });
+
     return res.json({
       success: true,
       message: 'Membership amount update sent.',
@@ -1810,7 +2032,7 @@ async function resolveCheckoutContactId(authHeader, email, contactId = '') {
   if (authHeader?.startsWith('Bearer ') && !resolvedContactId) {
     try {
       const token = authHeader.split(' ')[1];
-      if (token === 'dev_token_for_testing' || (typeof token === 'string' && token.startsWith('dev:'))) {
+      if (isAllowedDevToken(token)) {
         const devEmail = (typeof token === 'string' && token.startsWith('dev:')) ? token.substring(4).toLowerCase() : (email || 'acc.appledev@gmail.com').toLowerCase();
         const cached = userSalesforceData[devEmail]?.contactId || '';
         if (cached.startsWith('003')) resolvedContactId = cached;
@@ -1934,7 +2156,9 @@ function stripeRecurringIntervalCount(frequency = 'Monthly') {
 }
 
 /** TEST MODE: Monthly → 1 min / Half Yearly → 5 min / Full year → 10 min. */
-const ACCELERATED_SCHEDULE_TEST = true;
+// Previous (commented out): 1 minute ≈ 1 month recurring nextChargeDate
+// const ACCELERATED_SCHEDULE_TEST = true;
+const ACCELERATED_SCHEDULE_TEST = false;
 
 function getAcceleratedRecurringDelayMinutes(frequency = 'Monthly') {
   if (!ACCELERATED_SCHEDULE_TEST) return 0;
@@ -2361,7 +2585,7 @@ async function resolveCheckoutAccountId(authHeader, email, accountId = '') {
   if (authHeader?.startsWith('Bearer ')) {
     try {
       const token = authHeader.split(' ')[1];
-      if (token === 'dev_token_for_testing' || (typeof token === 'string' && token.startsWith('dev:'))) {
+      if (isAllowedDevToken(token)) {
         const devEmail = (typeof token === 'string' && token.startsWith('dev:')) ? token.substring(4).toLowerCase() : (email || 'acc.appledev@gmail.com').toLowerCase();
         resolvedAccountId = userSalesforceData[devEmail]?.accountId || '';
         if (resolvedAccountId.startsWith('001')) return resolvedAccountId;
@@ -2618,6 +2842,37 @@ async function triggerFinancialWebhook(payload, authHeader = null) {
     await Promise.all(calls);
   }
 
+  // Membership schedule chosen at checkout (onboarding / Pay Membership / Renew):
+  // remember it like Update Membership does, so Upcoming Payment follows the member's
+  // choice even when Salesforce still reports a different frequency.
+  // Only when a membership pledge is created — later installment payments don't overwrite it.
+  if (!updateMembership && enriched.createPledge && fullPledgeVal > 0
+    && String(enriched.subType || '').toLowerCase().includes('member')) {
+    const isRecurringPlan = enriched.billingMode === 'recurring' || Boolean(enriched.createRecurring);
+    const freqLower = String(enriched.frequency || '').toLowerCase();
+    const scheduleOption = !isRecurringPlan
+      ? 'full'
+      : (/half|semi/.test(freqLower) ? 'installments' : 'monthly');
+    const outstandingAfterPayment = Math.round(Math.max(fullPledgeVal - paidCharge, 0) * 100) / 100;
+    if (outstandingAfterPayment > 0 || scheduleOption !== 'full') {
+      saveMembershipSchedule(enriched.email, {
+        scheduleOption,
+        frequency: scheduleOption === 'monthly' ? 'Monthly' : (scheduleOption === 'installments' ? 'Half Yearly' : 'Annual'),
+        installmentAmount: scheduleOption === 'full'
+          ? outstandingAfterPayment
+          : (Math.round((paidCharge || enriched.recurringAmount || 0) * 100) / 100),
+        // Next charge after today's payment (today's payment is before it, so not counted).
+        nextChargeDate: String(webhookPayload.nextChargeDateOnly || '').slice(0, 10),
+        secondChargeDate: '',
+        remainingMonths: Number(enriched.remainingMonths) || 0,
+        group: String(enriched.groups || enriched.group || ''),
+        totalCommitment: fullPledgeVal,
+        source: String(enriched.source || payload.source || 'checkout'),
+        at: new Date().toISOString(),
+      });
+    }
+  }
+
   console.log(`[FINANCIAL] action=${enriched.action}, contactId=${webhookPayload.contactId}, accountId=${webhookPayload.accountId}, pledge=${webhookPayload.pledgeAmount}, payment=${paidCharge}, recurring=${enriched.recurringAmount}, paymentOnly=${webhookPayload.paymentOnly}, paymentWebhook=${Boolean(webhookPayload.createPayment && paymentUrl)}, pledgeRecurringWebhook=${Boolean((enriched.createPledge || enriched.createRecurring) && pledgeRecurringUrl)}`);
   return enriched;
 }
@@ -2707,8 +2962,8 @@ app.post('/api/payments/confirm-checkout', async (req, res) => {
   try {
     const token = authHeader.split(' ')[1];
     let userEmail = '';
-    if (token === 'dev_token_for_testing' || (typeof token === 'string' && token.startsWith('dev:'))) {
-      userEmail = (typeof token === 'string' && token.startsWith('dev:')) ? token.substring(4).toLowerCase() : (req.body.email || 'acc.appledev@gmail.com').toLowerCase();
+    if (isAllowedDevToken(token)) {
+      userEmail = devTokenEmail(token, req.body.email);
     } else {
       const decoded = await verifyClerkSessionToken(token);
       /* ==========================================================================
@@ -2893,10 +3148,20 @@ async function resolveAuthedPortalMember(req) {
   const token = authHeader.split(' ')[1];
   let email;
 
-  if (token === 'dev_token_for_testing' || (typeof token === 'string' && token.startsWith('dev:'))) {
-    email = (typeof token === 'string' && token.startsWith('dev:')) ? token.substring(4).toLowerCase() : (req.body?.email || 'acc.appledev@gmail.com').toLowerCase();
+  // Previous (commented out): dev tokens always accepted, with a hard-coded fallback email
+  // if (token === 'dev_token_for_testing' || ...) { email = ... || 'acc.appledev@gmail.com'; }
+  if (isDevToken(token)) {
+    if (!isAllowedDevToken(token)) {
+      return { error: { status: 401, message: 'Session expired or invalid. Please sign in again.' } };
+    }
+    email = devTokenEmail(token, req.body?.email);
   } else {
-    const decoded = await verifyClerkSessionToken(token);
+    let decoded;
+    try {
+      decoded = await verifyClerkSessionToken(token);
+    } catch {
+      return { error: { status: 401, message: 'Session expired or invalid. Please sign in again.' } };
+    }
     /* ==========================================================================
        CLERK USER FETCH (COMMENTED OUT FOR DIRECT JWT LOGIN)
        ==========================================================================

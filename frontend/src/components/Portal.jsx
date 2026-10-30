@@ -219,7 +219,8 @@ export default function Portal({ user, getAuthToken, onLogout }) {
     //   markPostLoginStepperPending();
     // }
     // window.location.replace(getPostLoginStepperEntryPath());
-    startChooseMembershipStepper(sfData, { replace: true });
+    // silent: off-season (Jun–Aug) after household forms → stay on portal, no toast.
+    startChooseMembershipStepper(sfData, { replace: true, silent: true });
   }, [loading, sfData]);
 
   useEffect(() => {

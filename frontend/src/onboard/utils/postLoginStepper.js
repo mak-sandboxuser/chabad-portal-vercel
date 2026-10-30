@@ -15,12 +15,18 @@ import {
   getContacts,
   hasRealMembershipGroup,
   hasAssignedSalesforceGroup,
+  getMembershipPaidThisYear,
+  getPaymentScheduleSummary,
 } from '../../utils/portalData';
 import {
   getProratedMembershipCommitment,
   getRemainingMembershipMonths,
+  isMembershipSelectionOpen,
+  formatMembershipSelectionOpenDate,
+  getRemainingMembershipMonthsFromNextMonth,
   // isMembershipRenewalWindowOpen,
 } from '../../utils/portalFiscalYear';
+import { showToast } from '../../utils/toast';
 
 const PENDING_POST_LOGIN_STEPPER_KEY = 'pending_post_login_membership_stepper';
 const CHOOSE_MEMBERSHIP_EXISTING_HH_KEY = 'choose_membership_existing_household';
@@ -71,6 +77,7 @@ export function clearSalesforceMembershipScheduleOnly() {
  * Contribution Schedule (monthly / half-yearly / full), then existing checkout.
  */
 export function startSalesforceMembershipSchedulePayment(sfData = {}) {
+  clearPortalUpdateMembershipMode();
   const tier = resolveMembershipTierFromSfData(sfData);
   const commitment = Number(tier?.annualPrice)
     || parseMoney(getMembership(sfData).annualCommitment)
@@ -192,9 +199,16 @@ const UPDATE_MEMBERSHIP_MODE_KEY = 'is_portal_update_membership_mode';
 
 export function isPortalUpdateMembershipMode() {
   try {
-    if (sessionStorage.getItem(UPDATE_MEMBERSHIP_MODE_KEY) === 'true') return true;
     const mode = new URLSearchParams(window.location.search).get('mode');
-    return mode === 'update' || mode === 'update-membership';
+    if (mode === 'update' || mode === 'update-membership') return true;
+    // Another flow in the URL (Pay Membership / Renew) wins over a leftover
+    // session flag from an unfinished Update Membership.
+    if (mode) return false;
+    return sessionStorage.getItem(UPDATE_MEMBERSHIP_MODE_KEY) === 'true';
+    // Previous (commented out): session flag always won, so Pay Membership
+    // (mode=sf-membership-pay) showed the Update layout without Full Payment.
+    // if (sessionStorage.getItem(UPDATE_MEMBERSHIP_MODE_KEY) === 'true') return true;
+    // return mode === 'update' || mode === 'update-membership';
   } catch {
     return false;
   }
@@ -211,6 +225,40 @@ export function clearPortalUpdateMembershipMode() {
 /** Membership-form-only flows: existing household choose-membership, and portal renewal. */
 export function isMembershipFormOnlyFlow() {
   return isChooseMembershipExistingHousehold() || isPortalRenewalMode() || isPortalUpdateMembershipMode();
+}
+
+/**
+ * 1 June – 31 August: new members cannot choose a membership yet (opens 1 September).
+ * Renew / Update Membership / Pay Salesforce-assigned membership are not blocked.
+ */
+export function isNewMembershipSelectionBlocked() {
+  if (isMembershipSelectionOpen()) return false;
+  return !isPortalRenewalMode()
+    && !isPortalUpdateMembershipMode()
+    && !isSalesforceMembershipScheduleOnly();
+}
+
+/**
+ * Off-season registration: household forms (spouse / children) are done —
+ * mark onboarding complete and return to the portal home page (no membership step).
+ */
+export function finishRegistrationWithoutMembership() {
+  clearPostLoginStepperPending();
+  try {
+    sessionStorage.removeItem(CHOOSE_MEMBERSHIP_EXISTING_HH_KEY);
+  } catch {
+    // ignore
+  }
+  window.location.assign('/');
+}
+
+/** Spouse / Children "Save & Continue": go to the next step, or back to the portal off-season. */
+export function goToNextRegistrationStep(nextStepId) {
+  if (nextStepId === MEMBERSHIP_STEP_ID && isNewMembershipSelectionBlocked()) {
+    finishRegistrationWithoutMembership();
+    return;
+  }
+  window.location.assign(getStepById(nextStepId)?.path || '/');
 }
 
 /**
@@ -235,6 +283,27 @@ export function startChooseMembershipStepper(sfData = {}, options = {}) {
   }
 
   const memberCount = getContacts(sfData).length;
+  clearPortalUpdateMembershipMode();
+
+  // 1 June – 31 August: only the household (spouse / children) forms on first
+  // registration; membership selection opens 1 September.
+  if (isNewMembershipSelectionBlocked()) {
+    const entryPath = getPostLoginStepperEntryPath();
+    const membershipPath = getStepById(MEMBERSHIP_STEP_ID)?.path || '/onboard/membership';
+    if (hasCompletedPostLoginStepper() || memberCount > 1 || entryPath === membershipPath) {
+      if (!options.silent) {
+        showToast({
+          message: `Membership selection opens on ${formatMembershipSelectionOpenDate()}.`,
+          type: 'error',
+        });
+      }
+      return;
+    }
+    markPostLoginStepperPending();
+    go(entryPath);
+    return;
+  }
+
   markPostLoginStepperPending();
 
   try {
@@ -278,6 +347,7 @@ export function startChooseMembershipStepper(sfData = {}, options = {}) {
  * and payment. Do not open the spouse/children stepper.
  */
 export function startPortalMembershipRenewal(sfData = {}) {
+  clearPortalUpdateMembershipMode();
   markPostLoginStepperPending();
 
   try {
@@ -365,11 +435,18 @@ export function startUpdateMembershipFlow(sfData = {}) {
     // ignore
   }
 
-  const remainingMonths = getRemainingMembershipMonths();
+  // Current month is already paid → the new tier is calculated from next month.
+  // Previous (commented out): included the current month
+  // const remainingMonths = getRemainingMembershipMonths();
+  const remainingMonths = getRemainingMembershipMonthsFromNextMonth();
   const catalogCommitment = Number(resolveMembershipTierFromSfData(sfData)?.annualPrice)
     || parseMoney(getMembership(sfData).annualCommitment)
     || 0;
-  const proratedCommitment = getProratedMembershipCommitment(catalogCommitment);
+  // Previous (commented out): prorated over months including the current one
+  // const proratedCommitment = getProratedMembershipCommitment(catalogCommitment);
+  const proratedCommitment = Math.round((catalogCommitment / 12) * remainingMonths * 100) / 100;
+  const currentMembership = getMembership(sfData);
+  const currentSchedule = getPaymentScheduleSummary(sfData);
   const draft = readDraft() || createEmptyDraft(ownerEmail);
   const nameParts = String(sfData.name || '').trim().split(/\s+/).filter(Boolean);
   writeDraft({
@@ -389,6 +466,10 @@ export function startUpdateMembershipFlow(sfData = {}) {
         source: 'update_membership',
         remainingMonths,
         proratedCommitment,
+        // Workflow amount = paidThisYear + new tier × months from next month.
+        paidThisYear: getMembershipPaidThisYear(sfData),
+        previousGroup: currentMembership.tier || '',
+        previousFrequency: currentSchedule.frequencyLabel || '',
         // Drop leftover Pay Membership / fallback $1800 so Select & Pay sets the tier.
         tier: '',
         name: '',
@@ -410,7 +491,9 @@ export function startUpdateMembershipFlow(sfData = {}) {
   });
 
   const path = getStepById(MEMBERSHIP_STEP_ID)?.path || '/onboard/membership';
-  window.location.assign(`${path}?mode=update&asOf=2026-03-05`);
+  // Previous (commented out): forced test clock 5 March 2026
+  // window.location.assign(`${path}?mode=update&asOf=2026-03-05`);
+  window.location.assign(`${path}?mode=update`);
 }
 
 /** Keep logged-in members on onboarding URLs without wiping the draft. */
@@ -477,6 +560,7 @@ export function dismissPostLoginStepperPending() {
     localStorage.setItem(DISMISSED_POST_LOGIN_STEPPER_KEY, '1');
     sessionStorage.removeItem(CHOOSE_MEMBERSHIP_EXISTING_HH_KEY);
     sessionStorage.removeItem('is_portal_renewal_mode');
+    sessionStorage.removeItem(UPDATE_MEMBERSHIP_MODE_KEY);
   } catch {
     // ignore storage failures
   }

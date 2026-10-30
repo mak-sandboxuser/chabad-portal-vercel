@@ -1021,6 +1021,9 @@ function normalizePayment(raw = {}, index = 0) {
       }
       return 'Paid';
     })(),
+    // Raw Salesforce payment status for the Payments table "Status" column.
+    OneCRM__Status__c: String(raw.OneCRM__Status__c || '').trim(),
+    crmStatus: String(raw.OneCRM__Status__c || raw.Status || raw['Processing Status'] || '').trim(),
   };
 }
 
@@ -1077,6 +1080,8 @@ function normalizePledge(raw = {}, index = 0) {
     subType: raw.OneCRM__Sub_Type__c || raw.subType || raw.subtype || raw['Sub-Type'] || raw['Sub Type'] || 'Annual Membership',
     date,
     status: raw.status || raw.Status || raw.OneCRM__Status__c || 'Active',
+    // Raw Salesforce pledge total (MAKE_PAYMENTS_WEBHOOK_URL) for the dashboard "Commitment" badge.
+    OneCRM__Amount__c: parseMoneyValue(raw.OneCRM__Amount__c ?? raw.Amount ?? raw.amount),
   };
 }
 

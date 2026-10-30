@@ -472,6 +472,84 @@ export default function OnboardWelcome() {
           .onboard-panel {
             margin-top: 24px;
           }
+          .onboard-hero {
+            margin-left: 0;
+          }
+          /* Hero photo is hidden here, so the white link would vanish on a light background */
+          .onboard-help-link {
+            color: var(--text-primary);
+            text-shadow: none;
+          }
+          .onboard-benefits-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+        @media (max-width: 600px) {
+          .onboard-header {
+            padding: 14px 16px;
+            gap: 8px;
+          }
+          .onboard-header-left {
+            gap: 8px;
+            min-width: 0;
+          }
+          /* ChabadLogo sets width inline from its size prop */
+          .onboard-header-left .chabad-logo {
+            width: 48px !important;
+            height: auto !important;
+          }
+          .onboard-logo-text strong {
+            font-size: 18px;
+          }
+          .onboard-logo-text span {
+            font-size: 11px;
+          }
+          .onboard-header-actions {
+            gap: 4px;
+            flex-shrink: 0;
+          }
+          .onboard-theme-toggle,
+          .onboard-help-link {
+            min-height: 40px;
+            min-width: 40px;
+            justify-content: center;
+            white-space: nowrap;
+          }
+          .onboard-main {
+            padding: 8px 16px 0;
+          }
+          .onboard-hero h1 {
+            font-size: 30px;
+          }
+          .onboard-hero p {
+            margin-right: 0;
+          }
+          .onboard-panel-col {
+            padding: 28px 16px;
+          }
+          .onboard-benefits-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 22px 12px;
+          }
+          .onboard-cta-bar {
+            padding: 20px 16px;
+          }
+          .onboard-cta-btn {
+            width: 100%;
+            justify-content: center;
+            white-space: normal;
+            text-align: center;
+          }
+          .onboard-footer-contact {
+            padding: 10px 4px;
+          }
+        }
+        @media (max-width: 380px) {
+          /* Icon only, so the wordmark has room */
+          .onboard-help-link {
+            font-size: 0;
+            gap: 0;
+          }
         }
       `}</style>
 

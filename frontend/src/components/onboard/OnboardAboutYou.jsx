@@ -269,6 +269,45 @@ export default function OnboardAboutYou() {
     }
   };
 
+  const EMAIL_REGISTERED_MSG = 'This email is already registered. Please log in.';
+
+  /** True when Salesforce already has a member with this email (existence check only, no email sent). */
+  const isEmailRegistered = async (emailVal) => {
+    try {
+      const response = await fetch(apiUrl('/api/auth/check-member'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailVal }),
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      return Boolean(data.allowed);
+    } catch (err) {
+      console.error('Error checking email registration:', err);
+      return false;
+    }
+  };
+
+  const showEmailRegisteredError = () => {
+    setErrors((prev) => ({ ...prev, email: EMAIL_REGISTERED_MSG }));
+    showToast({ message: EMAIL_REGISTERED_MSG, type: 'warning' });
+    window.setTimeout(() => {
+      const input = document.querySelector('input[placeholder="you@example.com"]');
+      if (input) {
+        input.focus({ preventScroll: true });
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 0);
+  };
+
+  // Marital page sends members back here when the final submit finds the email registered.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('emailRegistered') === '1') {
+      showEmailRegisteredError();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   const handleEmailBlur = async () => {
     const emailVal = form.email.trim().toLowerCase();
     if (!emailVal || !/\S+@\S+\.\S+/.test(emailVal)) {
@@ -277,20 +316,10 @@ export default function OnboardAboutYou() {
 
     setCheckingEmail(true);
     try {
-      const response = await fetch(apiUrl('/api/auth/check-member'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailVal }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.allowed) {
-          setErrors((prev) => ({ ...prev, email: 'This email is already registered. Please log in.' }));
-          showToast({ message: 'This email is already registered. Please log in.', type: 'warning' });
-        }
+      if (await isEmailRegistered(emailVal)) {
+        setErrors((prev) => ({ ...prev, email: EMAIL_REGISTERED_MSG }));
+        showToast({ message: EMAIL_REGISTERED_MSG, type: 'warning' });
       }
-    } catch (err) {
-      console.error('Error checking email registration:', err);
     } finally {
       setCheckingEmail(false);
     }
@@ -529,6 +558,16 @@ export default function OnboardAboutYou() {
           firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }, 0);
+      return;
+    }
+
+    // Block Next while the email belongs to an existing member (blur check alone was
+    // cleared by validateStep, so registered emails reached the Marital page).
+    setCheckingEmail(true);
+    const registered = await isEmailRegistered(form.email.trim().toLowerCase());
+    setCheckingEmail(false);
+    if (registered) {
+      showEmailRegisteredError();
       return;
     }
 

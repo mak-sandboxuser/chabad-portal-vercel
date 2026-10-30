@@ -18,11 +18,14 @@ import {
   getSalesforceAssignedGroup,
   hasAssignedSalesforceGroup,
   hasRealMembershipGroup,
+  isCurrentMembershipPeriodPaid,
+  getPledgeCommitmentAmount,
+  formatMoney,
 } from '../../utils/portalData';
 import GuestMembershipPage from './GuestMembershipPage';
 import MembershipRenewalBanner from '../shared/MembershipRenewalBanner';
 import { startPortalMembershipRenewal, startUpdateMembershipFlow } from '../../onboard/utils/postLoginStepper';
-import { isMembershipRenewalWindowOpen } from '../../utils/portalFiscalYear';
+import { isMembershipRenewalWindowOpen, getRemainingMembershipMonthsFromNextMonth } from '../../utils/portalFiscalYear';
 
 /** SF group exists but is not a portal paid membership tier (e.g. Building Prospects). */
 // Commented out: Building Prospects now uses the same Membership layout as paid tiers with $0 amounts.
@@ -330,7 +333,11 @@ export default function MembershipPage({
     },
     {
       label: 'Commitment',
-      value: membership.annualCommitment || '—',
+      // Same source as the dashboard badge: Salesforce pledge OneCRM__Amount__c.
+      // Previous (commented out): value: membership.annualCommitment || '—',
+      value: getPledgeCommitmentAmount(sfData) > 0
+        ? formatMoney(getPledgeCommitmentAmount(sfData))
+        : (membership.annualCommitment || '—'),
       sub: 'Annual membership',
       icon: Wallet,
     },
@@ -387,6 +394,15 @@ export default function MembershipPage({
   ];
 
   const showHeaderHero = !isBeforeSeptFirst && !isExpired;
+  // Update Membership only for an existing, active membership — hidden while renewal is due —
+  // and only once the current month is paid (new tier is calculated from next month).
+  // Previous (commented out): did not require the current month to be paid
+  // const showUpdateMembership = Boolean(membership.tier) && !showMembershipRenewal && !isExpired;
+  const showUpdateMembership = Boolean(membership.tier)
+    && !showMembershipRenewal
+    && !isExpired
+    && isCurrentMembershipPeriodPaid(sfData)
+    && getRemainingMembershipMonthsFromNextMonth() > 0;
 
   const handleRenewMembership = () => {
     startPortalMembershipRenewal(sfData);
@@ -404,6 +420,15 @@ export default function MembershipPage({
       theme={theme}
       title={showHeaderHero ? (membership.tier?.toLowerCase().includes('membership') ? membership.tier : `${membership.tier} Membership`) : null}
       subtitle={showHeaderHero ? "Thank you for your ongoing commitment to our community." : null}
+      heroAction={showHeaderHero && showUpdateMembership ? (
+        <button
+          type="button"
+          className="dash-btn-gold"
+          onClick={handleUpdateMembership}
+        >
+          Update Membership
+        </button>
+      ) : null}
       breadcrumbs={[
         { label: 'Dashboard', onClick: () => onNavigate('dashboard') },
         { label: 'Membership' },
@@ -454,14 +479,17 @@ export default function MembershipPage({
           <div className="membership-details-card glass-panel">
             <div className="membership-details-header">
               <h3>Membership Details</h3>
-              <button
-                type="button"
-                className="dash-btn-gold"
-                disabled={false}
-                onClick={handleUpdateMembership}
-              >
-                Update Membership
-              </button>
+              {/* Moved to the page hero box (heroAction above).
+              {showUpdateMembership && (
+                <button
+                  type="button"
+                  className="dash-btn-gold"
+                  disabled={false}
+                  onClick={handleUpdateMembership}
+                >
+                  Update Membership
+                </button>
+              )} */}
             </div>
             {details.map((row) => {
               const Icon = row.icon;
